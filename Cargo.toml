@@ -1,0 +1,11 @@
+[workspace.package]
+authors = ["Virto team <contact@virto.team>"]
+edition = "2021"
+repository = "https://github.com/virto-network/frame-contrib.git"
+license = "GPL-3.0-only"
+
+[workspace]
+resolver = "2"
+members = [
+	"pallets/referenda-tracks",
+]

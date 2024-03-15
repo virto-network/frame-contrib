@@ -1,12 +1,11 @@
 [package]
-name = "pallet-referenda-tracks"
-version = "4.0.0-dev"
+name = "frame-contrib-referenda-tracks"
+version = "1.0.0"
 authors.workspace = true
 edition.workspace = true
-license = "Apache-2.0"
-homepage = "https://substrate.io"
+license.workspace = true
 repository.workspace = true
-description = "FRAME pallet to manage voting tracks in referenda"
+description = "Pallet to manage dynamic governance tracks for pallet referenda"
 readme = "README.md"
 
 [package.metadata.docs.rs]
@@ -16,20 +15,19 @@ targets = ["x86_64-unknown-linux-gnu"]
 codec = { package = "parity-scale-codec", version = "3.6.1", default-features = false }
 scale-info = { version = "2.10.0", default-features = false, features = ["derive"] }
 serde = { version = "1.0.188", optional = true }
-frame-benchmarking = { path = "../benchmarking", default-features = false, optional = true }
-frame-support = { path = "../support", default-features = false }
-frame-system = { path = "../system", default-features = false }
-sp-core = { path = "../../primitives/core", default-features = false }
-sp-io = { path = "../../primitives/io", default-features = false }
-sp-runtime = { path = "../../primitives/runtime", default-features = false }
-sp-std = { path = "../../primitives/std", default-features = false }
-pallet-referenda = { path = "../referenda", default-features = false }
+frame-benchmarking = { version = "29.0.0", default-features = false, optional = true }
+frame-support = { version = "29.0.0", default-features = false }
+frame-system = { version = "29.0.0", default-features = false }
+sp-core = { version = "29.0.0", default-features = false }
+sp-io = { version = "31.0.0", default-features = false }
+sp-runtime = { version = "32.0.0", default-features = false }
+sp-std = { version = "14.0.0", default-features = false }
+pallet-referenda = { version = "29.0.0", default-features = false }
 
 [dev-dependencies]
-sp-core = { path = "../../primitives/core", default-features = false}
-pallet-scheduler = { path = "../scheduler" }
-pallet-preimage = { path = "../preimage" }
-pallet-balances = { path = "../balances" }
+pallet-scheduler = { version = "30.0.0" }
+pallet-preimage = { version = "29.0.0" }
+pallet-balances = { version = "29.0.0" }
 
 [features]
 default = [ "std" ]
