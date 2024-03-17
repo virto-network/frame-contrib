@@ -4,8 +4,27 @@ edition = "2021"
 repository = "https://github.com/virto-network/frame-contrib.git"
 license = "GPL-3.0-only"
 
+[workspace.dependencies]
+codec = { package = "parity-scale-codec", version = "3.6.1", default-features = false }
+scale-info = { version = "2.10.0", default-features = false, features = ["derive"] }
+serde = { version = "1.0.188" }
+
+frame-benchmarking = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+frame-support = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+frame-system = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+
+sp-core = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+sp-io = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+sp-runtime = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+sp-std = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+
+pallet-balances = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+pallet-preimage = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+pallet-referenda = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+pallet-scheduler = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+
 [workspace]
 resolver = "2"
-members = [
+members = [ 
 	"pallets/referenda-tracks",
 ]
