@@ -27,4 +27,5 @@ pallet-scheduler = { git = "https://github.com/virto-network/polkadot-sdk", bran
 resolver = "2"
 members = [ 
 	"pallets/referenda-tracks",
+	"traits/memberships",
 ]
