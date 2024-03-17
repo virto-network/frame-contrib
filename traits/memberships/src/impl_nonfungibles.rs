@@ -4,8 +4,6 @@ use frame_support::{sp_runtime::DispatchError, traits::tokens::nonfungibles_v2 a
 const ATTR_MEMBER_COUNT: &[u8] = b"membership_member_count";
 const ATTR_MEMBER_RANK: &[u8] = b"membership_member_rank";
 
-// pub struct Adapter<T, const MGR_GROUP>(PhantomData<T>);
-
 impl<T, AccountId> Inspect<AccountId> for T
 where
     T: nonfungibles::Inspect<AccountId> + nonfungibles::InspectEnumerable<AccountId>,
@@ -52,6 +50,13 @@ where
         let count = Self::member_count(group);
         T::mint_into(group, m, who, &T::ItemConfig::default(), true)?;
         T::set_typed_collection_attribute(group, &ATTR_MEMBER_COUNT, &(count + 1))
+    }
+
+    fn release(group: &Self::Group, m: &Self::Membership) -> Result<(), DispatchError> {
+        T::burn(&group, m, None)?;
+
+        let count = Self::member_count(group);
+        T::set_typed_collection_attribute(group, &ATTR_MEMBER_COUNT, &(count - 1))
     }
 }
 

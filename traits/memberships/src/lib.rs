@@ -14,6 +14,9 @@ pub trait Manager<AccountId>: Inspect<AccountId> {
         m: &Self::Membership,
         who: &AccountId,
     ) -> Result<(), DispatchError>;
+
+    /// Releases the ownership of a claimed membership in a given group.
+    fn release(group: &Self::Group, m: &Self::Membership) -> Result<(), DispatchError>;
 }
 
 /// Access data associated to a unique membership
