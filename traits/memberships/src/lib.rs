@@ -6,6 +6,7 @@ use frame_support::{
     sp_runtime::{traits::Zero, DispatchError},
     Parameter,
 };
+use scale_info::prelude::boxed::Box;
 
 mod impl_nonfungibles;
 
