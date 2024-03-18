@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 use core::num::NonZeroU8;
 
 use frame_support::{
