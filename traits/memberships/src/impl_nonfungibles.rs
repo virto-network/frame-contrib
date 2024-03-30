@@ -1,8 +1,9 @@
 use crate::*;
-use frame_support::{sp_runtime::DispatchError, traits::tokens::nonfungibles_v2 as nonfungibles};
+use frame_support::{sp_runtime::traits::Zero, traits::tokens::nonfungibles_v2 as nonfungibles};
 
-const ATTR_MEMBER_COUNT: &[u8] = b"membership_member_count";
+const ATTR_MEMBER_TOTAL: &[u8] = b"membership_member_total";
 const ATTR_MEMBER_RANK: &[u8] = b"membership_member_rank";
+const ATTR_MEMBER_RANK_TOTAL: &[u8] = b"membership_member_total";
 
 impl<T, AccountId> Inspect<AccountId> for T
 where
@@ -25,8 +26,8 @@ where
         }
     }
 
-    fn member_count(group: &Self::Group) -> u32 {
-        T::typed_system_attribute(group, None, &ATTR_MEMBER_COUNT).unwrap_or(0u32)
+    fn members_total(group: &Self::Group) -> u32 {
+        T::typed_system_attribute(group, None, &ATTR_MEMBER_TOTAL).unwrap_or(0u32)
     }
 }
 
@@ -47,16 +48,15 @@ where
     ) -> Result<(), DispatchError> {
         let mgr_group = Self::Group::zero();
         T::burn(&mgr_group, m, None)?;
-        let count = Self::member_count(group);
+        let count = Self::members_total(group);
         T::mint_into(group, m, who, &T::ItemConfig::default(), true)?;
-        T::set_typed_collection_attribute(group, &ATTR_MEMBER_COUNT, &(count + 1))
+        T::set_typed_collection_attribute(group, &ATTR_MEMBER_TOTAL, &(count + 1))
     }
 
     fn release(group: &Self::Group, m: &Self::Membership) -> Result<(), DispatchError> {
-        T::burn(&group, m, None)?;
-
-        let count = Self::member_count(group);
-        T::set_typed_collection_attribute(group, &ATTR_MEMBER_COUNT, &(count - 1))
+        T::burn(group, m, None)?;
+        let count = Self::members_total(group);
+        T::set_typed_collection_attribute(group, &ATTR_MEMBER_TOTAL, &(count - 1))
     }
 }
 
@@ -78,6 +78,19 @@ where
         m: &Self::Membership,
         rank: impl Into<GenericRank>,
     ) -> Result<(), DispatchError> {
-        T::set_typed_attribute(group, m, &ATTR_MEMBER_RANK, &rank.into())
+        let prev = Self::rank_of(group, m);
+        let new = rank.into();
+        let prev_total = Self::ranks_total(group);
+        let new_total = if new > prev {
+            prev_total + u32::from(new - prev)
+        } else {
+            prev_total - u32::from(prev - new)
+        };
+        T::set_typed_collection_attribute(group, &ATTR_MEMBER_RANK_TOTAL, &new_total)?;
+        T::set_typed_attribute(group, m, &ATTR_MEMBER_RANK, &new)
+    }
+
+    fn ranks_total(group: &Self::Group) -> u32 {
+        T::typed_system_attribute(group, None, &ATTR_MEMBER_RANK_TOTAL).unwrap_or(0u32)
     }
 }

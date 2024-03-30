@@ -1,12 +1,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
 
-use core::num::NonZeroU8;
-
-use frame_support::{
-    sp_runtime::{traits::Zero, DispatchError},
-    Parameter,
+use alloc::boxed::Box;
+use core::{
+    num::NonZeroU8,
+    ops::{Add, Sub},
 };
-use scale_info::prelude::boxed::Box;
+use frame_support::{sp_runtime::DispatchError, Parameter};
 
 mod impl_nonfungibles;
 
@@ -41,7 +41,7 @@ pub trait Inspect<AccountId> {
     }
 
     /// How many members exist in a group
-    fn member_count(group: &Self::Group) -> u32;
+    fn members_total(group: &Self::Group) -> u32;
 }
 
 /// A membership with a rating system
@@ -56,6 +56,9 @@ where
         m: &Self::Membership,
         rank: impl Into<Rank>,
     ) -> Result<(), DispatchError>;
+
+    /// The sum of the ranks for all members in a group
+    fn ranks_total(group: &Self::Group) -> u32;
 }
 
 /// A generic rank in the range 0 to 100
@@ -94,8 +97,36 @@ impl From<GenericRank> for u8 {
         value.0
     }
 }
+impl From<GenericRank> for u16 {
+    fn from(value: GenericRank) -> u16 {
+        u8::from(value) as u16
+    }
+}
+impl From<GenericRank> for u32 {
+    fn from(value: GenericRank) -> u32 {
+        u8::from(value) as u32
+    }
+}
 impl From<u8> for GenericRank {
     fn from(value: u8) -> Self {
         GenericRank::default().set(value)
+    }
+}
+impl Add for GenericRank {
+    type Output = Self;
+    fn add(self, r: GenericRank) -> Self::Output {
+        if r.0 == 0 {
+            return self;
+        }
+        self.promote_by(NonZeroU8::new(r.0).unwrap())
+    }
+}
+impl Sub for GenericRank {
+    type Output = Self;
+    fn sub(self, r: Self) -> Self::Output {
+        if r.0 == 0 {
+            return self;
+        }
+        self.demote_by(NonZeroU8::new(r.0).unwrap())
     }
 }
