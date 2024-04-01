@@ -48,12 +48,15 @@ where
     ) -> Result<(), DispatchError> {
         let mgr_group = Self::Group::zero();
         T::burn(&mgr_group, m, None)?;
-        let count = Self::members_total(group);
         T::mint_into(group, m, who, &T::ItemConfig::default(), true)?;
+        // membership shouldn't have a rank but just in case we reset it to 0
+        T::set_typed_attribute(group, m, &ATTR_MEMBER_RANK, &GenericRank::from(0))?;
+        let count = Self::members_total(group);
         T::set_typed_collection_attribute(group, &ATTR_MEMBER_TOTAL, &(count + 1))
     }
 
     fn release(group: &Self::Group, m: &Self::Membership) -> Result<(), DispatchError> {
+        Self::set_rank(group, m, 0)?;
         T::burn(group, m, None)?;
         let count = Self::members_total(group);
         T::set_typed_collection_attribute(group, &ATTR_MEMBER_TOTAL, &(count - 1))
