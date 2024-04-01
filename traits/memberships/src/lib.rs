@@ -49,7 +49,7 @@ pub trait Rank<AccountId, Rank = GenericRank>: Inspect<AccountId>
 where
     Rank: Eq + Ord,
 {
-    fn rank_of(group: &Self::Group, m: &Self::Membership) -> Rank;
+    fn rank_of(group: &Self::Group, m: &Self::Membership) -> Option<Rank>;
 
     fn set_rank(
         group: &Self::Group,

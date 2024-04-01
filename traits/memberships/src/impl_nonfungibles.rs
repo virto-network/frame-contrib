@@ -1,5 +1,8 @@
 use crate::*;
-use frame_support::{sp_runtime::traits::Zero, traits::tokens::nonfungibles_v2 as nonfungibles};
+use frame_support::{
+    pallet_prelude::DispatchError, sp_runtime::traits::Zero,
+    traits::tokens::nonfungibles_v2 as nonfungibles,
+};
 
 const ATTR_MEMBER_TOTAL: &[u8] = b"membership_member_total";
 const ATTR_MEMBER_RANK: &[u8] = b"membership_member_rank";
@@ -72,8 +75,8 @@ where
     T::OwnedIterator: 'static,
     T::CollectionId: 'static,
 {
-    fn rank_of(group: &Self::Group, m: &Self::Membership) -> GenericRank {
-        T::typed_system_attribute(group, Some(m), &ATTR_MEMBER_RANK).unwrap_or_default()
+    fn rank_of(group: &Self::Group, m: &Self::Membership) -> Option<GenericRank> {
+        T::typed_system_attribute(group, Some(m), &ATTR_MEMBER_RANK)
     }
 
     fn set_rank(
@@ -81,7 +84,7 @@ where
         m: &Self::Membership,
         rank: impl Into<GenericRank>,
     ) -> Result<(), DispatchError> {
-        let prev = Self::rank_of(group, m);
+        let prev = Self::rank_of(group, m).ok_or(DispatchError::Other("Invalid membership"))?;
         let new = rank.into();
         let prev_total = Self::ranks_total(group);
         let new_total = if new > prev {
@@ -89,8 +92,8 @@ where
         } else {
             prev_total - u32::from(prev - new)
         };
-        T::set_typed_collection_attribute(group, &ATTR_MEMBER_RANK_TOTAL, &new_total)?;
-        T::set_typed_attribute(group, m, &ATTR_MEMBER_RANK, &new)
+        T::set_typed_attribute(group, m, &ATTR_MEMBER_RANK, &new)?;
+        T::set_typed_collection_attribute(group, &ATTR_MEMBER_RANK_TOTAL, &new_total)
     }
 
     fn ranks_total(group: &Self::Group) -> u32 {
