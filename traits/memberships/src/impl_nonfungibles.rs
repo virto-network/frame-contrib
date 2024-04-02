@@ -29,6 +29,10 @@ where
         }
     }
 
+    fn has_membership(who: &AccountId, m: &Self::Membership) -> Option<Self::Group> {
+        Self::user_memberships(who, None).find_map(|(g, membership)| membership.eq(m).then_some(g))
+    }
+
     fn members_total(group: &Self::Group) -> u32 {
         T::typed_system_attribute(group, None, &ATTR_MEMBER_TOTAL).unwrap_or(0u32)
     }
