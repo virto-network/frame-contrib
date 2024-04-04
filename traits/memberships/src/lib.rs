@@ -41,7 +41,7 @@ pub trait Inspect<AccountId> {
     }
 
     // Check if an account owns the given membership and return the group it belongs to
-    fn has_membership(who: &AccountId, m: &Self::Membership) -> Option<Self::Group>;
+    fn check_membership(who: &AccountId, m: &Self::Membership) -> Option<Self::Group>;
 
     /// How many members exist in a group
     fn members_total(group: &Self::Group) -> u32;

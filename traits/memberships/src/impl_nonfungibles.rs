@@ -29,7 +29,7 @@ where
         }
     }
 
-    fn has_membership(who: &AccountId, m: &Self::Membership) -> Option<Self::Group> {
+    fn check_membership(who: &AccountId, m: &Self::Membership) -> Option<Self::Group> {
         Self::user_memberships(who, None).find_map(|(g, membership)| membership.eq(m).then_some(g))
     }
 
