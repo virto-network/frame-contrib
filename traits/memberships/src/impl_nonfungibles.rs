@@ -6,7 +6,7 @@ use frame_support::{
 
 const ATTR_MEMBER_TOTAL: &[u8] = b"membership_member_total";
 const ATTR_MEMBER_RANK: &[u8] = b"membership_member_rank";
-const ATTR_MEMBER_RANK_TOTAL: &[u8] = b"membership_member_total";
+const ATTR_MEMBER_RANK_TOTAL: &[u8] = b"membership_rank_total";
 
 impl<T, AccountId> Inspect<AccountId> for T
 where
