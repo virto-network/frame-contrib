@@ -47,7 +47,7 @@ mod tests;
 use core::iter::Map;
 use frame_support::{storage::PrefixIterator, traits::OriginTrait};
 use frame_system::pallet_prelude::BlockNumberFor;
-use pallet_referenda::{BalanceOf, PalletsOriginOf, Track, TrackInfoOf};
+use pallet_referenda::{BalanceOf, PalletsOriginOf, Track};
 use sp_core::Get;
 use sp_std::{borrow::Cow, vec::Vec};
 
@@ -55,6 +55,7 @@ pub use pallet::*;
 pub use weights::WeightInfo;
 
 pub type TrackIdOf<T, I = ()> = <T as Config<I>>::TrackId;
+pub type TrackInfoOf<T, I = ()> = pallet_referenda::TrackInfoOf<T, I>;
 pub type TrackOf<T, I> = Track<<T as Config<I>>::TrackId, BalanceOf<T, I>, BlockNumberFor<T>>;
 
 type TracksIter<T, I> = Map<
