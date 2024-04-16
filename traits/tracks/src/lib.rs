@@ -22,5 +22,5 @@ where
 
     /// Removes an existing track with the given Id,
     /// ensuring that the dispatch origin matches.
-    fn remove(id: Self::Id, maybe_origin: Some<Self::RuntimeOrigin>) -> DispatchResult;
+    fn remove(id: Self::Id, maybe_origin: Self::RuntimeOrigin) -> DispatchResult;
 }
