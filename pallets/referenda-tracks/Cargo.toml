@@ -1,66 +1,68 @@
 [package]
-name = "fc-pallet-referenda-tracks"
-version = "1.0.0"
-authors.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
-description = "Pallet to manage dynamic governance tracks for pallet referenda"
-readme = "README.md"
+	name = "fc-pallet-referenda-tracks"
+	version = "1.0.0"
+	authors.workspace = true
+	edition.workspace = true
+	license.workspace = true
+	repository.workspace = true
+	description = "Pallet to manage dynamic governance tracks for pallet referenda"
+	readme = "README.md"
 
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+	[package.metadata.docs.rs]
+		targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-codec = { workspace = true }
-scale-info = { workspace = true }
-serde = { workspace = true, optional = true }
-frame-benchmarking = { workspace = true, optional = true }
-frame-support = { workspace = true }
-frame-system = { workspace = true }
-sp-core = { workspace = true }
-sp-io = { workspace = true }
-sp-runtime = { workspace = true }
-sp-std = { workspace = true }
-pallet-referenda = { workspace = true }
+	codec = { workspace = true }
+	scale-info = { workspace = true }
+	serde = { workspace = true, optional = true }
+	fc-traits-tracks = { workspace = true }
+	frame-benchmarking = { workspace = true, optional = true }
+	frame-support = { workspace = true }
+	frame-system = { workspace = true }
+	sp-core = { workspace = true }
+	sp-io = { workspace = true }
+	sp-runtime = { workspace = true }
+	sp-std = { workspace = true }
+	pallet-referenda = { workspace = true }
 
 [dev-dependencies]
-pallet-scheduler = { workspace = true }
-pallet-preimage = { workspace = true }
-pallet-balances = { workspace = true }
+	pallet-scheduler = { workspace = true }
+	pallet-preimage = { workspace = true }
+	pallet-balances = { workspace = true }
 
 [features]
-default = [ "std" ]
-runtime-benchmarks = [
-	"frame-benchmarking/runtime-benchmarks",
-	"frame-support/runtime-benchmarks",
-	"frame-system/runtime-benchmarks",
-	"pallet-balances/runtime-benchmarks",
-	"pallet-scheduler/runtime-benchmarks",
-	"pallet-preimage/runtime-benchmarks",
-	"pallet-referenda/runtime-benchmarks",
-	"sp-runtime/runtime-benchmarks",
-]
-std = [
-	"codec/std",
-	"frame-benchmarking?/std",
-	"frame-support/std",
-	"frame-system/std",
-	"pallet-balances/std",
-	"pallet-referenda/std",
-	"scale-info/std",
-	"serde",
-	"sp-core/std",
-	"sp-io/std",
-	"sp-runtime/std",
-	"sp-std/std",
-]
-try-runtime = [
-	"frame-support/try-runtime",
-	"frame-system/try-runtime",
-	"pallet-balances/try-runtime",
-	"pallet-scheduler/try-runtime",
-	"pallet-preimage/try-runtime",
-	"pallet-referenda/try-runtime",
-	"sp-runtime/try-runtime",
-]
+	default = ["std"]
+	runtime-benchmarks = [
+		"frame-benchmarking/runtime-benchmarks",
+		"frame-support/runtime-benchmarks",
+		"frame-system/runtime-benchmarks",
+		"pallet-balances/runtime-benchmarks",
+		"pallet-scheduler/runtime-benchmarks",
+		"pallet-preimage/runtime-benchmarks",
+		"pallet-referenda/runtime-benchmarks",
+		"sp-runtime/runtime-benchmarks",
+	]
+	std = [
+		"codec/std",
+		"fc-traits-tracks/std",
+		"frame-benchmarking?/std",
+		"frame-support/std",
+		"frame-system/std",
+		"pallet-balances/std",
+		"pallet-referenda/std",
+		"scale-info/std",
+		"serde",
+		"sp-core/std",
+		"sp-io/std",
+		"sp-runtime/std",
+		"sp-std/std",
+	]
+	try-runtime = [
+		"frame-support/try-runtime",
+		"frame-system/try-runtime",
+		"pallet-balances/try-runtime",
+		"pallet-scheduler/try-runtime",
+		"pallet-preimage/try-runtime",
+		"pallet-referenda/try-runtime",
+		"sp-runtime/try-runtime",
+	]
