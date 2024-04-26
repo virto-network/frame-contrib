@@ -31,4 +31,9 @@
 
 [workspace]
 resolver = "2"
-members = ["pallets/referenda-tracks", "traits/memberships", "traits/tracks"]
+members = [
+	"pallets/referenda-tracks",
+	"pallets/template",
+	"traits/memberships",
+	"traits/tracks",
+]
