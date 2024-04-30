@@ -32,6 +32,7 @@
 [workspace]
 resolver = "2"
 members = [
+	"pallets/pass",
 	"pallets/referenda-tracks",
 	"pallets/template",
 	"traits/memberships",

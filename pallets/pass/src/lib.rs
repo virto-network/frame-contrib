@@ -1,8 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-//! # Template Pallet
+//! # Pallet Pass
 //!
-//! This is the place where you'd put the documentation of the pallet
+//! > TODO: Update with [spec](https://hackmd.io/@pandres95/pallet-pass) document once complete
 
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
@@ -14,6 +14,9 @@ pub mod benchmarking;
 mod mock;
 #[cfg(test)]
 mod tests;
+
+mod types;
+pub use types::*;
 
 pub mod weights;
 pub use weights::*;

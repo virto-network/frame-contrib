@@ -1,6 +1,6 @@
-//! Tests for referenda template pallet.
+//! Tests for pass pallet.
 
-use super::{Error, Event, Pallet as Template};
+use super::{Error, Event, Pallet as Pass};
 use crate::mock::*;
 use frame_support::{assert_noop, assert_ok};
 
@@ -10,7 +10,7 @@ mod success {
     #[test]
     fn it_works() {
         new_test_ext().execute_with(|| {
-            assert_ok!(Template::<Test>::success(RuntimeOrigin::signed(1)));
+            assert_ok!(Pass::<Test>::success(RuntimeOrigin::signed(1)));
             System::assert_last_event(Event::<Test>::Success.into());
         });
     }
@@ -23,7 +23,7 @@ mod error {
     fn it_works() {
         new_test_ext().execute_with(|| {
             assert_noop!(
-                Template::<Test>::error(RuntimeOrigin::signed(1)),
+                Pass::<Test>::error(RuntimeOrigin::signed(1)),
                 Error::<Test>::Error
             );
         });
