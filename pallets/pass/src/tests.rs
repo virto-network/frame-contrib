@@ -4,13 +4,13 @@ use super::{Error, Event, Pallet as Pass};
 use crate::mock::*;
 use frame_support::{assert_noop, assert_ok};
 
-mod success {
+mod register {
     use super::*;
 
     #[test]
     fn it_works() {
         new_test_ext().execute_with(|| {
-            assert_ok!(Pass::<Test>::success(RuntimeOrigin::signed(1)));
+            assert_ok!(Pass::<Test>::register(RuntimeOrigin::signed(1)));
             System::assert_last_event(Event::<Test>::Success.into());
         });
     }

@@ -8,7 +8,7 @@ use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_remark.
 pub trait WeightInfo {
-	fn success() -> Weight;
+	fn register() -> Weight;
 	fn error() -> Weight;
 }
 
@@ -16,7 +16,7 @@ pub trait WeightInfo {
 pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// The range of component `l` is `[1, 1048576]`.
-	fn success() -> Weight {
+	fn register() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
@@ -41,7 +41,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 // For backwards compatibility and tests
 impl WeightInfo for () {
 	/// The range of component `l` is `[1, 1048576]`.
-	fn success() -> Weight {
+	fn register() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`

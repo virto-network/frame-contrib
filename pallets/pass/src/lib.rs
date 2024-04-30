@@ -65,7 +65,7 @@ pub mod pallet {
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
         /// Successful call
         #[pallet::call_index(0)]
-        pub fn success(origin: OriginFor<T>) -> DispatchResult {
+        pub fn register(origin: OriginFor<T>) -> DispatchResult {
             ensure_signed_or_root(origin)?;
             Self::deposit_event(Event::<T, I>::Success);
             Ok(())
