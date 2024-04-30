@@ -64,6 +64,8 @@ impl pallet_balances::Config for Test {
 impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
+    type MaxAccountNameLen = ConstU32<64>;
+    type MaxSessionDuration = ConstU64<10>;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
