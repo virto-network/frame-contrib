@@ -1,0 +1,1 @@
+pub type DeviceId = [u8;32];

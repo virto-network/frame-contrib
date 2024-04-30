@@ -101,3 +101,4 @@ impl<T: Config<I>, I> fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumbe
         Ok(().into())
     }
 }
+

@@ -1,6 +1,6 @@
-//! Test environment for template pallet.
+//! Test environment for pass pallet.
 
-use crate::{self as pallet_template, Config};
+use crate::{self as pallet_pass, Config};
 use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use sp_core::H256;
 use sp_io::TestExternalities;
@@ -14,7 +14,7 @@ frame_support::construct_runtime!(
     {
         System: frame_system,
         Balances: pallet_balances,
-        Template: pallet_template,
+        Pass: pallet_pass,
     }
 );
 
@@ -64,6 +64,7 @@ impl pallet_balances::Config for Test {
 impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
+    type MaxPayloadSize = ConstU32<1024>;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
