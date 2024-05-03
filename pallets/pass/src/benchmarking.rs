@@ -13,7 +13,7 @@ mod benchmarks {
     use super::*;
 
     #[benchmark]
-    pub fn success() {
+    pub fn register() {
         // Setup code
 
         #[extrinsic_call]
