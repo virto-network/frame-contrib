@@ -4,7 +4,7 @@
 //!
 //! > TODO: Update with [spec](https://hackmd.io/@pandres95/pallet-pass) document once complete
 
-use frame_support::pallet_prelude::*;
+use frame_support::{pallet_prelude::*, traits::Randomness};
 use frame_system::pallet_prelude::*;
 use sp_runtime::traits::{Hash, TrailingZeroInput};
 
@@ -29,6 +29,8 @@ pub use pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
+    use traits::ClaimError;
+
     use super::*;
 
     #[pallet::config]
@@ -41,6 +43,8 @@ pub mod pallet {
         type Authenticator: Parameter + Into<Box<dyn Authenticator>>;
 
         type Registrar: Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
+
+        type Randomness: Randomness<<Self as frame_system::Config>::Hash, BlockNumberFor<Self>>;
 
         /// The maximum lenght for an account name
         #[pallet::constant]
@@ -95,20 +99,27 @@ pub mod pallet {
             account_name: AccountName<T, I>,
             authenticator: T::Authenticator,
             device: DeviceDescriptor<T, I>,
-            challenge_payload: Vec<u8>,
+            challenge_response: Vec<u8>,
         ) -> DispatchResult {
             ensure_signed(origin)?;
             let authenticator: Box<dyn Authenticator> = authenticator.into();
             let account_id = Self::account_id_for(&account_name);
 
+            ensure!(
+                !Accounts::<T, I>::contains_key(account_name.clone()),
+                Error::<T, I>::AlreadyRegistered
+            );
             let account = Account::new(
                 account_id.clone(),
                 if frame_system::Pallet::<T>::account_exists(&account_id) {
                     AccountStatus::Active
                 } else {
-                    AccountStatus::Unintialized
+                    AccountStatus::Uninitialized
                 },
             );
+
+            // TODO: if account.is_unitialized()
+            //  Schedule::register(crate::call::<T, I>::UnreserveAccount { account_name }, when: T::UninitializedTimeout);
 
             Accounts::<T, I>::insert(account_name.clone(), account.clone());
 
@@ -124,7 +135,7 @@ pub mod pallet {
                 .get_device_id(device.to_vec())
                 .ok_or(Error::<T, I>::InvalidDeviceForAuthenticator)?;
             authenticator
-                .authenticate(device.clone().to_vec(), &*b"challenge", &challenge_payload)
+                .authenticate(device.clone().to_vec(), &*b"challenge", &challenge_response)
                 .map_err(|e| match e {
                     AuthenticateError::ChallengeFailed => Error::<T, I>::ChallengeFailed,
                 })?;
@@ -144,15 +155,29 @@ pub mod pallet {
 
         /// Call that errors
         #[pallet::call_index(1)]
-        pub fn claim(origin: OriginFor<T>) -> DispatchResult {
-            ensure_signed(origin)?;
+        // #[pallet::feeless_if()]
+        pub fn claim(
+            origin: OriginFor<T>,
+            account_name: AccountName<T, I>,
+            authenticator: T::Authenticator,
+            device: DeviceDescriptor<T, I>,
+            challenge_payload: Vec<u8>,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            T::Registrar::claim(account_name, who).map_err(|e| match e {
+                ClaimError::CannotClaim => Error::<T, I>::CannotClaim,
+            })?;
+
+            // TODO: Finish registering the account
+
             Err(Error::<T, I>::CannotClaim.into())
         }
     }
 }
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
-    pub(crate) fn account_id_for(account_name: &AccountName<T, I>) -> AccountIdOf<T> {
+    pub fn account_id_for(account_name: &AccountName<T, I>) -> AccountIdOf<T> {
         let hashed = <T as frame_system::Config>::Hashing::hash(&account_name);
         Decode::decode(&mut TrailingZeroInput::new(hashed.as_ref()))
             .expect("All byte sequences are valid `AccountIds`; qed")

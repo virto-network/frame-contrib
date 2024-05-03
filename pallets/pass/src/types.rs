@@ -13,18 +13,17 @@ pub type AccountOf<T> = Account<AccountIdOf<T>>;
 #[derive(Clone, Copy, Encode, Decode, MaxEncodedLen, TypeInfo)]
 pub struct Account<AccountId> {
     account_id: AccountId,
-    status: AccountStatus<AccountId>,
+    status: AccountStatus,
 }
 
 impl<AccountId> Account<AccountId> {
-    pub fn new(account_id: AccountId, status: AccountStatus<AccountId>) -> Self {
+    pub fn new(account_id: AccountId, status: AccountStatus) -> Self {
         Self { account_id, status }
     }
 }
 
 #[derive(Clone, Copy, Encode, Decode, MaxEncodedLen, TypeInfo)]
-pub enum AccountStatus<AccountId> {
-    Unintialized,
-    Claimable(AccountId),
+pub enum AccountStatus {
+    Uninitialized,
     Active,
 }

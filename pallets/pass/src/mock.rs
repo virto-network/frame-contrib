@@ -25,6 +25,8 @@ frame_support::construct_runtime!(
     {
         System: frame_system,
         Balances: pallet_balances,
+        Timestamp: pallet_timestamp,
+        Babe: pallet_babe,
         Pass: pallet_pass,
     }
 );
@@ -70,6 +72,22 @@ impl pallet_balances::Config for Test {
     type RuntimeHoldReason = ();
     type RuntimeFreezeReason = ();
     type MaxHolds = ();
+}
+
+parameter_types! {
+    pub EpochDuration: u64 = prod_or_fast!(
+        EPOCH_DURATION_IN_SLOTS as u64,
+        2 * MINUTES as u64,
+        "KSM_EPOCH_DURATION"
+    );
+    pub const ExpectedBlockTime: Moment = MILLISECS_PER_BLOCK;
+    pub ReportLongevity: u64 =
+        BondingDuration::get() as u64 * SessionsPerEra::get() as u64 * EpochDuration::get();
+}
+
+impl pallet_babe::Config for Test {
+    type EpochDuration = ConstU64<2>;
+    type ExpectedBlockTime = ConstU64<2>;
 }
 
 pub struct InvalidAuthenticator;
