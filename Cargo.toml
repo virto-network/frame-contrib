@@ -12,6 +12,8 @@
 		"derive",
 	] }
 	serde = { version = "1.0.188" }
+	env_logger = { version = "0.11.3" }
+	log = { version = "0.4.21" }
 
 	fc-traits-tracks = { path = "./traits/tracks", default-features = false }
 
@@ -29,6 +31,7 @@
 	pallet-preimage = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
 	pallet-referenda = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
 	pallet-scheduler = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
+	pallet-timestamp = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
 
 [workspace]
 resolver = "2"

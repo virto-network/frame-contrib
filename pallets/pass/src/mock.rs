@@ -3,11 +3,13 @@
 use crate::{self as pallet_pass, Config};
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
-    ensure,
-    traits::{ConstU16, ConstU32, ConstU64},
+    ensure, parameter_types,
+    traits::{ConstU16, ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize},
+    weights::Weight,
 };
+use frame_system::EnsureRoot;
 use scale_info::TypeInfo;
-use sp_core::H256;
+use sp_core::{blake2_256, H256};
 use sp_io::TestExternalities;
 use sp_runtime::{
     traits::{BlakeTwo256, IdentifyAccount, IdentityLookup, Verify},
@@ -25,8 +27,7 @@ frame_support::construct_runtime!(
     {
         System: frame_system,
         Balances: pallet_balances,
-        Timestamp: pallet_timestamp,
-        Babe: pallet_babe,
+        Scheduler: pallet_scheduler,
         Pass: pallet_pass,
     }
 );
@@ -75,19 +76,35 @@ impl pallet_balances::Config for Test {
 }
 
 parameter_types! {
-    pub EpochDuration: u64 = prod_or_fast!(
-        EPOCH_DURATION_IN_SLOTS as u64,
-        2 * MINUTES as u64,
-        "KSM_EPOCH_DURATION"
-    );
-    pub const ExpectedBlockTime: Moment = MILLISECS_PER_BLOCK;
-    pub ReportLongevity: u64 =
-        BondingDuration::get() as u64 * SessionsPerEra::get() as u64 * EpochDuration::get();
+    pub MaxScheduledPerBlock: u32 = u32::MAX;
+    pub MaximumWeight: Weight = Weight::MAX;
 }
 
-impl pallet_babe::Config for Test {
-    type EpochDuration = ConstU64<2>;
-    type ExpectedBlockTime = ConstU64<2>;
+impl pallet_scheduler::Config for Test {
+    type RuntimeCall = RuntimeCall;
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeOrigin = RuntimeOrigin;
+    type PalletsOrigin = OriginCaller;
+    type ScheduleOrigin = EnsureRoot<AccountId>;
+    type MaxScheduledPerBlock = MaxScheduledPerBlock;
+    type MaximumWeight = MaximumWeight;
+    type OriginPrivilegeCmp = EqualPrivilegeOnly;
+    type Preimages = ();
+    type WeightInfo = ();
+}
+
+pub struct RandomessFromBlockNumber;
+impl frame_support::traits::Randomness<H256, u64> for RandomessFromBlockNumber {
+    fn random(subject: &[u8]) -> (H256, u64) {
+        let block_number = System::block_number();
+        let block_number_as_bytes = block_number.to_le_bytes();
+        (
+            H256(blake2_256(
+                &vec![block_number_as_bytes.to_vec(), subject.to_vec()].concat()[..],
+            )),
+            block_number,
+        )
+    }
 }
 
 pub struct InvalidAuthenticator;
@@ -145,9 +162,15 @@ impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
     type Authenticator = MockAuthenticators;
+    type Randomness = RandomessFromBlockNumber;
     type Registrar = ();
+    type RuntimeCall = RuntimeCall;
+    type Scheduler = Scheduler;
+    type PalletsOrigin = OriginCaller;
+    type UninitializedTimeout = ConstU64<10>;
     type MaxAccountNameLen = ConstU32<64>;
     type MaxDeviceDescriptorLen = ConstU32<65535>;
+    type MaxDevicesPerAccount = ConstU32<5>;
     type MaxSessionDuration = ConstU64<10>;
 }
 
@@ -157,4 +180,16 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
         System::set_block_number(1);
     });
     ext
+}
+
+pub fn run_to(n: u64) {
+    while System::block_number() < n {
+        next_block();
+    }
+}
+
+pub fn next_block() {
+    System::set_block_number(System::block_number() + 1);
+    log::info!("Starting block {:?}", System::block_number());
+    Scheduler::on_initialize(System::block_number());
 }

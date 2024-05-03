@@ -4,9 +4,17 @@
 //!
 //! > TODO: Update with [spec](https://hackmd.io/@pandres95/pallet-pass) document once complete
 
-use frame_support::{pallet_prelude::*, traits::Randomness};
+use frame_support::{
+    pallet_prelude::*,
+    traits::{
+        schedule::{v3::Named, DispatchTime},
+        Randomness,
+    },
+};
 use frame_system::pallet_prelude::*;
-use sp_runtime::traits::{Hash, TrailingZeroInput};
+use sp_core::blake2_256;
+use sp_runtime::traits::{Dispatchable, Hash, TrailingZeroInput};
+use sp_std::fmt::Debug;
 
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
@@ -38,6 +46,12 @@ pub mod pallet {
         type RuntimeEvent: From<Event<Self, I>>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 
+        type RuntimeCall: Parameter
+            + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin>
+            + Debug
+            + From<Call<Self, I>>
+            + From<frame_system::Call<Self>>;
+
         type WeightInfo: WeightInfo;
 
         type Authenticator: Parameter + Into<Box<dyn Authenticator>>;
@@ -45,6 +59,14 @@ pub mod pallet {
         type Registrar: Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
 
         type Randomness: Randomness<<Self as frame_system::Config>::Hash, BlockNumberFor<Self>>;
+
+        type Scheduler: Named<
+            BlockNumberFor<Self>,
+            <Self as Config<I>>::RuntimeCall,
+            Self::PalletsOrigin,
+        >;
+
+        type PalletsOrigin: From<frame_system::Origin<Self>>;
 
         /// The maximum lenght for an account name
         #[pallet::constant]
@@ -54,9 +76,17 @@ pub mod pallet {
         #[pallet::constant]
         type MaxDeviceDescriptorLen: Get<u32>;
 
+        /// The maximum amount of devices per account
+        #[pallet::constant]
+        type MaxDevicesPerAccount: Get<u32>;
+
         /// The maximum duration of a session
         #[pallet::constant]
         type MaxSessionDuration: Get<BlockNumberFor<Self>>;
+
+        /// The maximum duration after an uninitialized account is unreserved
+        #[pallet::constant]
+        type UninitializedTimeout: Get<BlockNumberFor<Self>>;
     }
 
     #[pallet::pallet]
@@ -68,6 +98,14 @@ pub mod pallet {
     #[pallet::storage]
     pub type Devices<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, DeviceId, (AccountName<T, I>, DeviceDescriptor<T, I>)>;
+    #[pallet::storage]
+    pub type AccountDevices<T: Config<I>, I: 'static = ()> = StorageMap<
+        _,
+        Blake2_128Concat,
+        AccountName<T, I>,
+        BoundedVec<DeviceId, T::MaxDevicesPerAccount>,
+        ValueQuery,
+    >;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -88,6 +126,7 @@ pub mod pallet {
         CannotClaim,
         InvalidDeviceForAuthenticator,
         ChallengeFailed,
+        ExceedsMaxDevices,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -118,8 +157,9 @@ pub mod pallet {
                 },
             );
 
-            // TODO: if account.is_unitialized()
-            //  Schedule::register(crate::call::<T, I>::UnreserveAccount { account_name }, when: T::UninitializedTimeout);
+            if account.is_unitialized() {
+                Self::schedule_unreserve(&account_name)?;
+            }
 
             Accounts::<T, I>::insert(account_name.clone(), account.clone());
 
@@ -135,11 +175,17 @@ pub mod pallet {
                 .get_device_id(device.to_vec())
                 .ok_or(Error::<T, I>::InvalidDeviceForAuthenticator)?;
             authenticator
-                .authenticate(device.clone().to_vec(), &*b"challenge", &challenge_response)
+                .authenticate(
+                    device.clone().to_vec(),
+                    T::Randomness::random(&[][..]).0.as_ref(),
+                    &challenge_response,
+                )
                 .map_err(|e| match e {
                     AuthenticateError::ChallengeFailed => Error::<T, I>::ChallengeFailed,
                 })?;
 
+            AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
+                .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
             Devices::<T, I>::insert(device_id, (account_name.clone(), device));
 
             Self::deposit_event(
@@ -159,9 +205,9 @@ pub mod pallet {
         pub fn claim(
             origin: OriginFor<T>,
             account_name: AccountName<T, I>,
-            authenticator: T::Authenticator,
-            device: DeviceDescriptor<T, I>,
-            challenge_payload: Vec<u8>,
+            _authenticator: T::Authenticator,
+            _device: DeviceDescriptor<T, I>,
+            _challenge_payload: Vec<u8>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
@@ -173,6 +219,35 @@ pub mod pallet {
 
             Err(Error::<T, I>::CannotClaim.into())
         }
+
+        #[pallet::call_index(2)]
+        pub fn unreserve_uninitialized_account(
+            origin: OriginFor<T>,
+            account_name: AccountName<T, I>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Accounts::<T, I>::try_mutate(account_name.clone(), |maybe_account| {
+                log::trace!("Maybe Account for {account_name:?}? {maybe_account:?}");
+                if let Some(Account { account_id, status }) = maybe_account {
+                    if frame_system::Pallet::<T>::account_exists(account_id) {
+                        log::trace!("Removing exists, not removing account");
+                        *status = AccountStatus::Active;
+                        return Ok(());
+                    }
+
+                    log::trace!("Removing account");
+                    for device_id in AccountDevices::<T, I>::get(account_name.clone()) {
+                        Devices::<T, I>::remove(device_id);
+                    }
+                    AccountDevices::<T, I>::remove(account_name.clone());
+                    *maybe_account = None;
+
+                    return Ok(());
+                }
+
+                Ok(())
+            })
+        }
     }
 }
 
@@ -181,5 +256,29 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let hashed = <T as frame_system::Config>::Hashing::hash(&account_name);
         Decode::decode(&mut TrailingZeroInput::new(hashed.as_ref()))
             .expect("All byte sequences are valid `AccountIds`; qed")
+    }
+
+    pub(crate) fn schedule_name_from_account_id(account_name: &AccountName<T, I>) -> [u8; 32] {
+        blake2_256(&account_name.to_vec())
+    }
+
+    pub(crate) fn schedule_unreserve(account_name: &AccountName<T, I>) -> DispatchResult {
+        T::Scheduler::schedule_named(
+            Self::schedule_name_from_account_id(account_name),
+            DispatchTime::After(T::UninitializedTimeout::get()),
+            None,
+            0u8,
+            frame_system::Origin::<T>::Root.into(),
+            frame_support::traits::Bounded::Inline(BoundedVec::truncate_from(
+                <T as Config<I>>::RuntimeCall::from(
+                    Call::<T, I>::unreserve_uninitialized_account {
+                        account_name: account_name.clone(),
+                    },
+                )
+                .encode(),
+            )),
+        )?;
+
+        Ok(())
     }
 }
