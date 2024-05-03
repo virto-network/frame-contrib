@@ -9,7 +9,7 @@ use core::marker::PhantomData;
 /// Weight functions needed for pallet_remark.
 pub trait WeightInfo {
 	fn register() -> Weight;
-	fn error() -> Weight;
+	fn claim() -> Weight;
 }
 
 /// Weights for pallet_remark using the Substrate node and recommended hardware.
@@ -27,7 +27,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	}
 
 	/// The range of component `l` is `[1, 1048576]`.
-	fn error() -> Weight {
+	fn claim() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
@@ -52,7 +52,7 @@ impl WeightInfo for () {
 	}
 
 	/// The range of component `l` is `[1, 1048576]`.
-	fn error() -> Weight {
+	fn claim() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
