@@ -16,6 +16,8 @@ use sp_runtime::{
     MultiSignature,
 };
 
+use core::marker::PhantomData;
+
 pub type Block = frame_system::mocking::MockBlock<Test>;
 
 pub type AccountPublic = <MultiSignature as Verify>::Signer;
@@ -93,8 +95,8 @@ impl pallet_scheduler::Config for Test {
     type WeightInfo = ();
 }
 
-pub struct RandomessFromBlockNumber;
-impl frame_support::traits::Randomness<H256, u64> for RandomessFromBlockNumber {
+pub struct RandomnessFromBlockNumber;
+impl frame_support::traits::Randomness<H256, u64> for RandomnessFromBlockNumber {
     fn random(subject: &[u8]) -> (H256, u64) {
         let block_number = System::block_number();
         let block_number_as_bytes = block_number.to_le_bytes();
@@ -158,12 +160,70 @@ impl Into<Box<dyn pallet_pass::traits::Authenticator>> for MockAuthenticators {
     }
 }
 
+pub struct DummyRegistrar<AccountId, AccountName>(PhantomData<(AccountId, AccountName)>);
+impl<AccountId, AccountName> pallet_pass::traits::Registrar<AccountId, AccountName>
+    for DummyRegistrar<AccountId, AccountName>
+{
+    fn claim(
+        _account_name: AccountName,
+        _claimer: AccountId,
+    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+        Ok(())
+    }
+
+    fn claimer_pays_fees(_account_name: AccountName, _claimer: AccountId) -> bool {
+        true
+    }
+}
+
+pub struct EvenOddRegistrar<AccountId, AccountName>(PhantomData<(AccountId, AccountName)>);
+impl<AccountId: AsRef<[u8]>, AccountName> EvenOddRegistrar<AccountId, AccountName> {
+    // Function to determine if an account id is even
+    fn is_even_account_id(account_id: &AccountId) -> bool {
+        let bytes = account_id.as_ref();
+        if let Some(last_byte) = bytes.last() {
+            last_byte % 2 == 0
+        } else {
+            false
+        }
+    }
+
+    fn initialize_account(
+        account_name: &AccountName,
+    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+        let account_id = Pass::account_id_for(account_name);
+        System::inc_consumers(&account_id);
+        Ok(())
+    }
+}
+
+impl<AccountId: AsRef<[u8]>, AccountName> pallet_pass::traits::Registrar<AccountId, AccountName>
+    for EvenOddRegistrar<AccountId, AccountName>
+{
+    fn claim(
+        account_name: &AccountName,
+        claimer: &AccountId,
+    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+        if Self::is_even_account_id(claimer) {
+            Self::initialize_account(account_name)
+        } else {
+            Err(pallet_pass::traits::RegistrarError::CannotClaim)
+        }
+    }
+
+    fn claimer_pays_fees(_account_name: AccountName, _claimer: AccountId) -> bool {
+        true
+    }
+}
+
+pub type MockRegistrars = (DummyRegistrar, EvenOddRegistrar);
+
 impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
     type Authenticator = MockAuthenticators;
-    type Randomness = RandomessFromBlockNumber;
-    type Registrar = ();
+    type Randomness = RandomnessFromBlockNumber;
+    type Registrar = MockRegistrars;
     type RuntimeCall = RuntimeCall;
     type Scheduler = Scheduler;
     type PalletsOrigin = OriginCaller;

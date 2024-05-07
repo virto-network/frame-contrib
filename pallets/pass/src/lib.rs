@@ -35,9 +35,11 @@ pub use weights::*;
 
 pub use pallet::*;
 
+use crate::traits::RegistrarError;
+
 #[frame_support::pallet]
 pub mod pallet {
-    use traits::ClaimError;
+    use traits::RegistrarError;
 
     use super::*;
 
@@ -118,6 +120,9 @@ pub mod pallet {
             account_name: AccountName<T, I>,
             device_id: DeviceId,
         },
+        Claimed {
+            account_name: AccountName<T, I>,
+        },
     }
 
     #[pallet::error]
@@ -127,6 +132,7 @@ pub mod pallet {
         InvalidDeviceForAuthenticator,
         ChallengeFailed,
         ExceedsMaxDevices,
+        AccountNotFound,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -199,25 +205,60 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Call that errors
+        /// Call to claim an Account
         #[pallet::call_index(1)]
         // #[pallet::feeless_if()]
         pub fn claim(
             origin: OriginFor<T>,
             account_name: AccountName<T, I>,
-            _authenticator: T::Authenticator,
-            _device: DeviceDescriptor<T, I>,
-            _challenge_payload: Vec<u8>,
+            authenticator: T::Authenticator,
+            device: DeviceDescriptor<T, I>,
+            challenge_payload: Vec<u8>,
         ) -> DispatchResult {
+            // Ensures that the function is called by a signed origin
             let who = ensure_signed(origin)?;
 
-            T::Registrar::claim(account_name, who).map_err(|e| match e {
-                ClaimError::CannotClaim => Error::<T, I>::CannotClaim,
+            // Attempt to claim the account with the provided name and caller as the claimer
+            T::Registrar::claim(&account_name, &who).map_err(|e| match e {
+                RegistrarError::AlreadyRegistered => Error::<T, I>::AlreadyRegistered,
+                RegistrarError::CannotClaim => Error::<T, I>::CannotClaim,
             })?;
 
-            // TODO: Finish registering the account
+            // Simulate device authentication
+            let authenticator = Box::new(authenticator.into());
+            let device_id = authenticator
+                .get_device_id(device.to_vec())
+                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticator)?;
 
-            Err(Error::<T, I>::CannotClaim.into())
+            authenticator
+                .authenticate(
+                    device.to_vec(),
+                    T::Randomness::random(&[][..]).0.as_ref(),
+                    &challenge_payload,
+                )
+                .map_err(|_| Error::<T, I>::ChallengeFailed)?;
+
+            // Register the device with the account
+            AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
+                .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
+            Devices::<T, I>::insert(device_id, (account_name.clone(), device));
+
+            // Emit events
+            Self::deposit_event(
+                Event::<T, I>::Claimed {
+                    account_name: account_name.clone(),
+                }
+                .into(),
+            );
+            Self::deposit_event(
+                Event::<T, I>::AddedDevice {
+                    account_name,
+                    device_id,
+                }
+                .into(),
+            );
+
+            Ok(())
         }
 
         #[pallet::call_index(2)]
@@ -256,6 +297,20 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let hashed = <T as frame_system::Config>::Hashing::hash(&account_name);
         Decode::decode(&mut TrailingZeroInput::new(hashed.as_ref()))
             .expect("All byte sequences are valid `AccountIds`; qed")
+    }
+
+    pub fn create_account(account_name: &AccountName<T, I>) -> Result<(), RegistrarError> {
+        Accounts::<T, I>::try_mutate(account_name.clone(), |maybe_account| {
+            if maybe_account.is_none() {
+                *maybe_account = Some(Account {
+                    account_id: Self::account_id_for(account_name),
+                    status: AccountStatus::Active,
+                });
+                Ok(())
+            } else {
+                Err(RegistrarError::AlreadyRegistered)
+            }
+        })
     }
 
     pub(crate) fn schedule_name_from_account_id(account_name: &AccountName<T, I>) -> [u8; 32] {
