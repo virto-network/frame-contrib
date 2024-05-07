@@ -1,4 +1,5 @@
 use crate::DeviceId;
+use impl_trait_for_tuples::impl_for_tuples;
 
 pub enum ClaimError {
     CannotClaim,
@@ -19,15 +20,28 @@ pub trait Authenticator {
 }
 
 pub trait Registrar<AccountId, AccountName> {
-    fn claim(account_name: AccountName, claimer: AccountId) -> Result<(), ClaimError>;
-    fn claimer_pays_fees(account_name: AccountName, claimer: AccountId) -> bool;
+    fn claim(account_name: &AccountName, claimer: &AccountId) -> Result<(), ClaimError>;
+    fn claimer_pays_fees(account_name: &AccountName, claimer: &AccountId) -> bool;
 }
 
-impl<AccountId, AccountName> Registrar<AccountId, AccountName> for () {
-    fn claim(_account_name: AccountName, _claimer: AccountId) -> Result<(), ClaimError> {
+#[impl_for_tuples(64)]
+impl<AccountId, AccountName> Registrar<AccountId, AccountName> for Tuple {
+    fn claim(account_name: &AccountName, claimer: &AccountId) -> Result<(), ClaimError> {
+        for_tuples!(#(
+            match Tuple::claim(account_name, claimer) {
+                Ok(_) => return Ok(()),
+                _ => ()
+            }
+        )*);
         Err(ClaimError::CannotClaim)
     }
-    fn claimer_pays_fees(_account_name: AccountName, _claimer: AccountId) -> bool {
+    fn claimer_pays_fees(account_name: &AccountName, claimer: &AccountId) -> bool {
+        for_tuples!(#(
+            match Tuple::claimer_pays_fees(account_name, claimer) {
+                false => return false,
+                _ => ()
+            }
+        )*);
         true
     }
 }
