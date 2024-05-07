@@ -3,6 +3,7 @@ use impl_trait_for_tuples::impl_for_tuples;
 
 pub enum RegistrarError {
     CannotClaim,
+    CannotInitialize,
     AlreadyRegistered,
 }
 

@@ -161,23 +161,28 @@ impl Into<Box<dyn pallet_pass::traits::Authenticator>> for MockAuthenticators {
 }
 
 pub struct DummyRegistrar<AccountId, AccountName>(PhantomData<(AccountId, AccountName)>);
-impl<AccountId, AccountName> pallet_pass::traits::Registrar<AccountId, AccountName>
+impl<AccountId, AccountName: Into<frame_support::BoundedVec<u8, ConstU32<64>>>>
+    pallet_pass::traits::Registrar<AccountId, AccountName>
     for DummyRegistrar<AccountId, AccountName>
 {
     fn claim(
-        _account_name: AccountName,
-        _claimer: AccountId,
+        _account_name: &AccountName,
+        _claimer: &AccountId,
     ) -> Result<(), pallet_pass::traits::RegistrarError> {
-        Ok(())
+        Err(pallet_pass::traits::RegistrarError::CannotClaim)
     }
 
-    fn claimer_pays_fees(_account_name: AccountName, _claimer: AccountId) -> bool {
+    fn claimer_pays_fees(_account_name: &AccountName, _claimer: &AccountId) -> bool {
         true
     }
 }
 
 pub struct EvenOddRegistrar<AccountId, AccountName>(PhantomData<(AccountId, AccountName)>);
-impl<AccountId: AsRef<[u8]>, AccountName> EvenOddRegistrar<AccountId, AccountName> {
+impl<AccountId: AsRef<[u8]>, AccountName> EvenOddRegistrar<AccountId, AccountName>
+where
+    AccountName: Clone,
+    frame_support::BoundedVec<u8, ConstU32<64>>: From<AccountName>,
+{
     // Function to determine if an account id is even
     fn is_even_account_id(account_id: &AccountId) -> bool {
         let bytes = account_id.as_ref();
@@ -191,14 +196,18 @@ impl<AccountId: AsRef<[u8]>, AccountName> EvenOddRegistrar<AccountId, AccountNam
     fn initialize_account(
         account_name: &AccountName,
     ) -> Result<(), pallet_pass::traits::RegistrarError> {
-        let account_id = Pass::account_id_for(account_name);
-        System::inc_consumers(&account_id);
-        Ok(())
+        let account_id = Pass::account_id_for(&account_name.clone().into());
+        System::inc_consumers(&account_id)
+            .map_err(|_| pallet_pass::traits::RegistrarError::CannotInitialize)?;
+        Pass::create_account(&account_name.clone().into())
     }
 }
 
 impl<AccountId: AsRef<[u8]>, AccountName> pallet_pass::traits::Registrar<AccountId, AccountName>
     for EvenOddRegistrar<AccountId, AccountName>
+where
+    AccountName: Clone,
+    frame_support::BoundedVec<u8, ConstU32<64>>: From<AccountName>,
 {
     fn claim(
         account_name: &AccountName,
@@ -211,12 +220,15 @@ impl<AccountId: AsRef<[u8]>, AccountName> pallet_pass::traits::Registrar<Account
         }
     }
 
-    fn claimer_pays_fees(_account_name: AccountName, _claimer: AccountId) -> bool {
-        true
+    fn claimer_pays_fees(_account_name: &AccountName, claimer: &AccountId) -> bool {
+        !Self::is_even_account_id(claimer)
     }
 }
 
-pub type MockRegistrars = (DummyRegistrar, EvenOddRegistrar);
+pub type MockRegistrars = (
+    DummyRegistrar<AccountId, pallet_pass::AccountName<Test, ()>>,
+    EvenOddRegistrar<AccountId, pallet_pass::AccountName<Test, ()>>,
+);
 
 impl Config for Test {
     type WeightInfo = ();
