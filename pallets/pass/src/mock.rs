@@ -95,8 +95,8 @@ impl pallet_scheduler::Config for Test {
     type WeightInfo = ();
 }
 
-pub struct RandomessFromBlockNumber;
-impl frame_support::traits::Randomness<H256, u64> for RandomessFromBlockNumber {
+pub struct RandomnessFromBlockNumber;
+impl frame_support::traits::Randomness<H256, u64> for RandomnessFromBlockNumber {
     fn random(subject: &[u8]) -> (H256, u64) {
         let block_number = System::block_number();
         let block_number_as_bytes = block_number.to_le_bytes();
@@ -232,7 +232,7 @@ impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
     type Authenticator = MockAuthenticators;
-    type Randomness = RandomessFromBlockNumber;
+    type Randomness = RandomnessFromBlockNumber;
     type Registrar = MockRegistrars;
     type RuntimeCall = RuntimeCall;
     type Scheduler = Scheduler;

@@ -54,7 +54,7 @@ mod register {
     #[test]
     fn fails_if_cannot_fulfill_challenge() {
         new_test_ext().execute_with(|| {
-            let challenge_response = RandomessFromBlockNumber::random_seed()
+            let challenge_response = RandomnessFromBlockNumber::random_seed()
                 .0
                 .as_bytes()
                 .to_vec();
@@ -84,7 +84,7 @@ mod register {
                 AccountName::get(),
                 MockAuthenticators::DummyAuthenticator,
                 BoundedVec::new(),
-                RandomessFromBlockNumber::random_seed()
+                RandomnessFromBlockNumber::random_seed()
                     .0
                     .as_bytes()
                     .to_vec()
@@ -117,7 +117,7 @@ mod register {
                 AccountName::get(),
                 MockAuthenticators::DummyAuthenticator,
                 BoundedVec::new(),
-                RandomessFromBlockNumber::random_seed()
+                RandomnessFromBlockNumber::random_seed()
                     .0
                     .as_bytes()
                     .to_vec()
@@ -142,7 +142,7 @@ mod register {
                 AccountName::get(),
                 MockAuthenticators::DummyAuthenticator,
                 BoundedVec::new(),
-                RandomessFromBlockNumber::random_seed()
+                RandomnessFromBlockNumber::random_seed()
                     .0
                     .as_bytes()
                     .to_vec()
@@ -176,26 +176,56 @@ mod claim {
     #[test]
     fn claim_works_with_evenodd_registrar() {
         new_test_ext().execute_with(|| {
+            // Setup: Register and prepare an account for claiming
+            let account_name = AccountName::get();
+            let account_id = AccountId::new(SIGNER.into());
+            let account = Account {
+                account_id,
+                status: AccountStatus::Uninitialized,
+            };
+            Accounts::<Test>::insert(account_name.clone(), account);
+
+            // Device ID given by DummyAuthenticator
+            let device_id = [1u8; 32];
+
+            // Attempt to claim the account
             assert_ok!(Pass::claim(
                 RuntimeOrigin::signed(SIGNER),
-                AccountName::get(),
+                account_name.clone(),
                 MockAuthenticators::DummyAuthenticator,
                 BoundedVec::new(),
-                RandomessFromBlockNumber::random_seed()
+                RandomnessFromBlockNumber::random_seed()
                     .0
                     .as_bytes()
                     .to_vec()
             ));
 
+            // Verify the account status is now Active
+            let updated_account =
+                Accounts::<Test>::get(account_name.clone()).expect("Account should exist.");
+            assert_eq!(
+                updated_account.status,
+                AccountStatus::Active,
+                "Account should be active after claiming."
+            );
+
+            // Check for the expected events
             System::assert_has_event(
                 Event::<Test>::Claimed {
-                    account_name: AccountName::get(),
+                    account_name: account_name.clone(),
+                }
+                .into(),
+            );
+            System::assert_has_event(
+                Event::<Test>::AddedDevice {
+                    account_name,
+                    device_id,
                 }
                 .into(),
             );
         });
     }
-        
+
     #[test]
     fn claim_fails_with_evenodd_registrar() {
         new_test_ext().execute_with(|| {
@@ -207,7 +237,7 @@ mod claim {
                     AccountName::get(),
                     MockAuthenticators::DummyAuthenticator,
                     BoundedVec::new(),
-                    RandomessFromBlockNumber::random_seed()
+                    RandomnessFromBlockNumber::random_seed()
                         .0
                         .as_bytes()
                         .to_vec()

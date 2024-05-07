@@ -130,6 +130,7 @@ pub mod pallet {
         InvalidDeviceForAuthenticator,
         ChallengeFailed,
         ExceedsMaxDevices,
+        AccountNotFound,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -208,9 +209,9 @@ pub mod pallet {
         pub fn claim(
             origin: OriginFor<T>,
             account_name: AccountName<T, I>,
-            _authenticator: T::Authenticator,
-            _device: DeviceDescriptor<T, I>,
-            _challenge_payload: Vec<u8>,
+            authenticator: T::Authenticator,
+            device: DeviceDescriptor<T, I>,
+            challenge_payload: Vec<u8>,
         ) -> DispatchResult {
             // Ensures that the function is called by a signed origin
             let who = ensure_signed(origin)?;
@@ -220,14 +221,56 @@ pub mod pallet {
                 ClaimError::CannotClaim => Error::<T, I>::CannotClaim,
             })?;
 
-            Self::deposit_event(
-                Event::<T, I>::Claimed {
-                    account_name: account_name.clone(),
-                }
-                .into(),
-            );
+            // Check if the account is already initialized
+            Accounts::<T, I>::try_mutate(account_name.clone(), |maybe_account| {
+                if let Some(account) = maybe_account {
+                    if account.status != AccountStatus::Uninitialized {
+                        // Account is already initialized and can be used
+                        Ok(())
+                    } else {
+                        // Initialize the account by setting its status to Active
+                        account.status = AccountStatus::Active;
 
-            Ok(())
+                        // Simulate device authentication
+                        let authenticator = Box::new(authenticator.into());
+                        let device_id = authenticator
+                            .get_device_id(device.to_vec())
+                            .ok_or(Error::<T, I>::InvalidDeviceForAuthenticator)?;
+
+                        authenticator
+                            .authenticate(
+                                device.to_vec(),
+                                T::Randomness::random(&[][..]).0.as_ref(),
+                                &challenge_payload,
+                            )
+                            .map_err(|_| Error::<T, I>::ChallengeFailed)?;
+
+                        // Register the device with the account
+                        AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
+                            .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
+                        Devices::<T, I>::insert(device_id, (account_name.clone(), device));
+
+                        // Emit events
+                        Self::deposit_event(
+                            Event::<T, I>::Claimed {
+                                account_name: account_name.clone(),
+                            }
+                            .into(),
+                        );
+                        Self::deposit_event(
+                            Event::<T, I>::AddedDevice {
+                                account_name,
+                                device_id,
+                            }
+                            .into(),
+                        );
+
+                        Ok(())
+                    }
+                } else {
+                    Err(Error::<T, I>::AccountNotFound.into())
+                }
+            })
         }
 
         #[pallet::call_index(2)]
