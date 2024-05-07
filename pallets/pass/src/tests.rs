@@ -174,9 +174,9 @@ mod claim {
     use super::*;
 
     #[test]
-    fn claim_works_with_dummy_registrar() {
+    fn claim_works_with_evenodd_registrar() {
         new_test_ext().execute_with(|| {
-            Pass::claim(
+            assert_ok!(Pass::claim(
                 RuntimeOrigin::signed(SIGNER),
                 AccountName::get(),
                 MockAuthenticators::DummyAuthenticator,
@@ -185,11 +185,35 @@ mod claim {
                     .0
                     .as_bytes()
                     .to_vec()
+            ));
+
+            System::assert_has_event(
+                Event::<Test>::Claimed {
+                    account_name: AccountName::get(),
+                }
+                .into(),
             );
-            
-            System::assert_has_event(Event::<Test>::Claimed {
-                account_name: AccountName::get(),
-            }.into());
+        });
+    }
+        
+    #[test]
+    fn claim_fails_with_evenodd_registrar() {
+        new_test_ext().execute_with(|| {
+            const BADSIGNER: AccountId = AccountId::new([1u8; 32]);
+
+            assert_noop!(
+                Pass::claim(
+                    RuntimeOrigin::signed(BADSIGNER),
+                    AccountName::get(),
+                    MockAuthenticators::DummyAuthenticator,
+                    BoundedVec::new(),
+                    RandomessFromBlockNumber::random_seed()
+                        .0
+                        .as_bytes()
+                        .to_vec()
+                ),
+                Error::<Test>::CannotClaim
+            );
         });
     }
 }
