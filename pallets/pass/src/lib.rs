@@ -129,6 +129,7 @@ pub mod pallet {
     pub enum Error<T, I = ()> {
         AlreadyRegistered,
         CannotClaim,
+        RegistrarCannotInitialize,
         InvalidDeviceForAuthenticator,
         ChallengeFailed,
         ExceedsMaxDevices,
@@ -222,6 +223,7 @@ pub mod pallet {
             T::Registrar::claim(&account_name, &who).map_err(|e| match e {
                 RegistrarError::AlreadyRegistered => Error::<T, I>::AlreadyRegistered,
                 RegistrarError::CannotClaim => Error::<T, I>::CannotClaim,
+                RegistrarError::CannotInitialize => Error::<T, I>::RegistrarCannotInitialize,
             })?;
 
             // Simulate device authentication
