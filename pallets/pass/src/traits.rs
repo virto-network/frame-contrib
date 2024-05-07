@@ -23,11 +23,11 @@ pub trait Registrar<AccountId, AccountName> {
     fn claimer_pays_fees(account_name: AccountName, claimer: AccountId) -> bool;
 }
 
-impl<AccountId, AccountName> Registrar<AccountId, AccountName> for () {
-    fn claim(_account_name: AccountName, _claimer: AccountId) -> Result<(), ClaimError> {
-        Err(ClaimError::CannotClaim)
-    }
-    fn claimer_pays_fees(_account_name: AccountName, _claimer: AccountId) -> bool {
-        true
-    }
-}
+// impl<AccountId, AccountName> Registrar<AccountId, AccountName> for () {
+//     fn claim(_account_name: AccountName, _claimer: AccountId) -> Result<(), ClaimError> {
+//         Err(ClaimError::CannotClaim)
+//     }
+//     fn claimer_pays_fees(_account_name: AccountName, _claimer: AccountId) -> bool {
+//         true
+//     }
+// }

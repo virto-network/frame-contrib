@@ -169,3 +169,27 @@ mod register {
         });
     }
 }
+
+mod claim {
+    use super::*;
+
+    #[test]
+    fn claim_works_with_dummy_registrar() {
+        new_test_ext().execute_with(|| {
+            Pass::claim(
+                RuntimeOrigin::signed(SIGNER),
+                AccountName::get(),
+                MockAuthenticators::DummyAuthenticator,
+                BoundedVec::new(),
+                RandomessFromBlockNumber::random_seed()
+                    .0
+                    .as_bytes()
+                    .to_vec()
+            );
+            
+            System::assert_has_event(Event::<Test>::Claimed {
+                account_name: AccountName::get(),
+            }.into());
+        });
+    }
+}
