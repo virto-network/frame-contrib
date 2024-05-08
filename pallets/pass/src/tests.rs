@@ -178,13 +178,6 @@ mod claim {
         new_test_ext().execute_with(|| {
             // Setup: Register and prepare an account for claiming
             let account_name = AccountName::get();
-            let account_id = AccountId::new(SIGNER.into());
-            let account = Account {
-                account_id,
-                status: AccountStatus::Uninitialized,
-            };
-            Accounts::<Test>::insert(account_name.clone(), account);
-
             // Device ID given by DummyAuthenticator
             let device_id = [1u8; 32];
 

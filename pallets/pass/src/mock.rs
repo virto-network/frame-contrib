@@ -197,8 +197,7 @@ where
         account_name: &AccountName,
     ) -> Result<(), pallet_pass::traits::RegistrarError> {
         let account_id = Pass::account_id_for(&account_name.clone().into());
-        System::inc_consumers(&account_id)
-            .map_err(|_| pallet_pass::traits::RegistrarError::CannotInitialize)?;
+        System::inc_providers(&account_id);
         Pass::create_account(&account_name.clone().into())
     }
 }
