@@ -1,10 +1,18 @@
 use crate::DeviceId;
+use codec::{Decode, Encode, MaxEncodedLen};
+use frame_support::traits::PalletError;
 use impl_trait_for_tuples::impl_for_tuples;
+use scale_info::TypeInfo;
 
+#[derive(Encode, Decode, MaxEncodedLen, TypeInfo)]
 pub enum RegistrarError {
     CannotClaim,
     CannotInitialize,
     AlreadyRegistered,
+}
+
+impl PalletError for RegistrarError {
+    const MAX_ENCODED_SIZE: usize = 1;
 }
 
 pub enum AuthenticateError {
@@ -32,7 +40,8 @@ impl<AccountId, AccountName> Registrar<AccountId, AccountName> for Tuple {
         for_tuples!(#(
             match Tuple::claim(account_name, claimer) {
                 Ok(_) => return Ok(()),
-                _ => ()
+                Err(RegistrarError::CannotClaim) => (),
+                Err(e) => return Err(e),
             }
         )*);
         Err(RegistrarError::CannotClaim)
