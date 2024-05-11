@@ -1,6 +1,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
 
+#[cfg(test)]
+mod tests;
+
 use alloc::boxed::Box;
 use core::{
     num::NonZeroU8,

@@ -1,12 +1,15 @@
 use crate::*;
 use frame_support::{
-    pallet_prelude::DispatchError, sp_runtime::traits::Zero,
+    pallet_prelude::DispatchError,
+    sp_runtime::{str_array, traits::Zero},
     traits::tokens::nonfungibles_v2 as nonfungibles,
 };
 
 const ATTR_MEMBER_TOTAL: &[u8] = b"membership_member_total";
 const ATTR_MEMBER_RANK: &[u8] = b"membership_member_rank";
 const ATTR_MEMBER_RANK_TOTAL: &[u8] = b"membership_rank_total";
+
+pub const ASSIGNED_MEMBERSHIPS_ACCOUNT: [u8; 32] = str_array("memberships/assigned_memberships");
 
 impl<T, AccountId> Inspect<AccountId> for T
 where
@@ -42,11 +45,13 @@ impl<T, AccountId> Manager<AccountId> for T
 where
     T: nonfungibles::Mutate<AccountId>
         + nonfungibles::Inspect<AccountId>
+        + nonfungibles::Transfer<AccountId>
         + nonfungibles::InspectEnumerable<AccountId>,
     T::OwnedInCollectionIterator: 'static,
     T::OwnedIterator: 'static,
     T::CollectionId: Parameter + Zero + 'static,
     T::ItemConfig: Default,
+    AccountId: From<[u8; 32]>,
 {
     fn assign(
         group: &Self::Group,
@@ -54,7 +59,7 @@ where
         who: &AccountId,
     ) -> Result<(), DispatchError> {
         let mgr_group = Self::Group::zero();
-        T::burn(&mgr_group, m, None)?;
+        T::transfer(&mgr_group, m, &ASSIGNED_MEMBERSHIPS_ACCOUNT.into())?;
         T::mint_into(group, m, who, &T::ItemConfig::default(), true)?;
         // membership shouldn't have a rank but just in case we reset it to 0
         T::set_typed_attribute(group, m, &ATTR_MEMBER_RANK, &GenericRank::from(0))?;
@@ -66,7 +71,12 @@ where
         Self::set_rank(group, m, 0)?;
         T::burn(group, m, None)?;
         let count = Self::members_total(group);
-        T::set_typed_collection_attribute(group, &ATTR_MEMBER_TOTAL, &(count - 1))
+        T::set_typed_collection_attribute(group, &ATTR_MEMBER_TOTAL, &(count - 1))?;
+
+        let mgr_group = Self::Group::zero();
+        let group_owner = T::collection_owner(group)
+            .expect("the group existed when burning the membership, the group has an owner; qed");
+        T::transfer(&mgr_group, m, &group_owner)
     }
 }
 
