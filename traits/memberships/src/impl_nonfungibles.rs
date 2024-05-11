@@ -9,7 +9,7 @@ const ATTR_MEMBER_TOTAL: &[u8] = b"membership_member_total";
 const ATTR_MEMBER_RANK: &[u8] = b"membership_member_rank";
 const ATTR_MEMBER_RANK_TOTAL: &[u8] = b"membership_rank_total";
 
-pub const ASSIGNED_MEMBERSHIPS_ACCOUNT: [u8; 32] = str_array("modlkv/mbrsh_reserved");
+pub const ASSIGNED_MEMBERSHIPS_ACCOUNT: [u8; 32] = str_array("memberships/assigned_memberships");
 
 impl<T, AccountId> Inspect<AccountId> for T
 where
