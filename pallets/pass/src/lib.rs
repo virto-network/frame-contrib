@@ -13,7 +13,7 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use sp_core::blake2_256;
-use sp_runtime::traits::{Dispatchable, Hash, TrailingZeroInput};
+use sp_runtime::traits::{Dispatchable, Hash, TrailingZeroInput, TryMorph};
 use sp_std::fmt::Debug;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -35,11 +35,9 @@ pub use weights::*;
 
 pub use pallet::*;
 
-use crate::traits::RegistrarError;
-
 #[frame_support::pallet]
 pub mod pallet {
-    use traits::RegistrarError;
+    // use types::RegistrarResult;
 
     use super::*;
 
@@ -58,7 +56,8 @@ pub mod pallet {
 
         type Authenticator: Parameter + Into<Box<dyn Authenticator>>;
 
-        type Registrar: Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
+        // type Registrar: Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
+        type Registrar: TryMorph<(AccountName<Self, I>, AccountIdOf<Self>), Outcome = RegistrarResult>;
 
         type Randomness: Randomness<<Self as frame_system::Config>::Hash, BlockNumberFor<Self>>;
 
@@ -221,9 +220,9 @@ pub mod pallet {
 
             // Attempt to claim the account with the provided name and caller as the claimer
             T::Registrar::claim(&account_name, &who).map_err(|e| match e {
-                RegistrarError::AlreadyRegistered => Error::<T, I>::AlreadyRegistered,
-                RegistrarError::CannotClaim => Error::<T, I>::CannotClaim,
-                RegistrarError::CannotInitialize => Error::<T, I>::RegistrarCannotInitialize,
+                RegistrarResult::AlreadyRegistered => Error::<T, I>::AlreadyRegistered,
+                RegistrarResult::CannotClaim => Error::<T, I>::CannotClaim,
+                RegistrarResult::CannotInitialize => Error::<T, I>::RegistrarCannotInitialize,
             })?;
 
             // Simulate device authentication
@@ -301,7 +300,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             .expect("All byte sequences are valid `AccountIds`; qed")
     }
 
-    pub fn create_account(account_name: &AccountName<T, I>) -> Result<(), RegistrarError> {
+    pub fn create_account(account_name: &AccountName<T, I>) -> Result<(), RegistrarResult> {
         Accounts::<T, I>::try_mutate(account_name.clone(), |maybe_account| {
             if maybe_account.is_none() {
                 *maybe_account = Some(Account {
@@ -310,7 +309,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
                 });
                 Ok(())
             } else {
-                Err(RegistrarError::AlreadyRegistered)
+                Err(RegistrarResult::AlreadyRegistered)
             }
         })
     }

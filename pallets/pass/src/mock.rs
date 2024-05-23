@@ -18,6 +18,8 @@ use sp_runtime::{
 
 use core::marker::PhantomData;
 
+use crate::registrars;
+
 pub type Block = frame_system::mocking::MockBlock<Test>;
 
 pub type AccountPublic = <MultiSignature as Verify>::Signer;
@@ -161,15 +163,23 @@ impl Into<Box<dyn pallet_pass::traits::Authenticator>> for MockAuthenticators {
 }
 
 pub struct DummyRegistrar<AccountId, AccountName>(PhantomData<(AccountId, AccountName)>);
+
 impl<AccountId, AccountName: Into<frame_support::BoundedVec<u8, ConstU32<64>>>>
     pallet_pass::traits::Registrar<AccountId, AccountName>
     for DummyRegistrar<AccountId, AccountName>
 {
+    fn is_claimable(
+        _account_name: &AccountName,
+        _claimer: &AccountId,
+    ) -> pallet_pass::types::RegistrarResult {
+        pallet_pass::types::RegistrarResult::CannotClaim
+    }
+
     fn claim(
         _account_name: &AccountName,
         _claimer: &AccountId,
-    ) -> Result<(), pallet_pass::traits::RegistrarError> {
-        Err(pallet_pass::traits::RegistrarError::CannotClaim)
+    ) -> pallet_pass::types::RegistrarResult {
+        pallet_pass::types::RegistrarResult::CannotClaim
     }
 
     fn claimer_pays_fees(_account_name: &AccountName, _claimer: &AccountId) -> bool {
@@ -178,12 +188,12 @@ impl<AccountId, AccountName: Into<frame_support::BoundedVec<u8, ConstU32<64>>>>
 }
 
 pub struct EvenOddRegistrar<AccountId, AccountName>(PhantomData<(AccountId, AccountName)>);
+
 impl<AccountId: AsRef<[u8]>, AccountName> EvenOddRegistrar<AccountId, AccountName>
 where
     AccountName: Clone,
     frame_support::BoundedVec<u8, ConstU32<64>>: From<AccountName>,
 {
-    // Function to determine if an account id is even
     fn is_even_account_id(account_id: &AccountId) -> bool {
         let bytes = account_id.as_ref();
         if let Some(last_byte) = bytes.last() {
@@ -193,12 +203,12 @@ where
         }
     }
 
-    fn initialize_account(
-        account_name: &AccountName,
-    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+    fn initialize_account(account_name: &AccountName) -> pallet_pass::types::RegistrarResult {
         let account_id = Pass::account_id_for(&account_name.clone().into());
         System::inc_providers(&account_id);
         Pass::create_account(&account_name.clone().into())
+            .map(|_| pallet_pass::types::RegistrarResult::Success)
+            .unwrap_or_else(|_| pallet_pass::types::RegistrarResult::CannotInitialize)
     }
 }
 
@@ -208,14 +218,25 @@ where
     AccountName: Clone,
     frame_support::BoundedVec<u8, ConstU32<64>>: From<AccountName>,
 {
+    fn is_claimable(
+        account_name: &AccountName,
+        claimer: &AccountId,
+    ) -> pallet_pass::types::RegistrarResult {
+        if Self::is_even_account_id(claimer) {
+            pallet_pass::types::RegistrarResult::Success
+        } else {
+            pallet_pass::types::RegistrarResult::CannotClaim
+        }
+    }
+
     fn claim(
         account_name: &AccountName,
         claimer: &AccountId,
-    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+    ) -> pallet_pass::types::RegistrarResult {
         if Self::is_even_account_id(claimer) {
             Self::initialize_account(account_name)
         } else {
-            Err(pallet_pass::traits::RegistrarError::CannotClaim)
+            pallet_pass::types::RegistrarResult::CannotClaim
         }
     }
 
@@ -224,10 +245,8 @@ where
     }
 }
 
-pub type MockRegistrars = (
-    DummyRegistrar<AccountId, pallet_pass::AccountName<Test, ()>>,
-    EvenOddRegistrar<AccountId, pallet_pass::AccountName<Test, ()>>,
-);
+pub type MockRegistrars =
+    registrars!(DummyRegistrar<AccountId, AccountName>, EvenOddRegistrar<AccountId, AccountName>);
 
 impl Config for Test {
     type WeightInfo = ();

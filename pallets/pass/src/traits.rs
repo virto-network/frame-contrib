@@ -1,8 +1,9 @@
 use crate::DeviceId;
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::traits::PalletError;
-use impl_trait_for_tuples::impl_for_tuples;
 use scale_info::TypeInfo;
+use crate::types;
+
 
 #[derive(Encode, Decode, MaxEncodedLen, TypeInfo)]
 pub enum RegistrarError {
@@ -30,29 +31,7 @@ pub trait Authenticator {
 }
 
 pub trait Registrar<AccountId, AccountName> {
-    fn claim(account_name: &AccountName, claimer: &AccountId) -> Result<(), RegistrarError>;
+    fn is_claimable(account_name: &AccountName, claimer: &AccountId) -> types::RegistrarResult;
+    fn claim(account_name: &AccountName, claimer: &AccountId) -> types::RegistrarResult;
     fn claimer_pays_fees(account_name: &AccountName, claimer: &AccountId) -> bool;
-}
-
-#[impl_for_tuples(64)]
-impl<AccountId, AccountName> Registrar<AccountId, AccountName> for Tuple {
-    fn claim(account_name: &AccountName, claimer: &AccountId) -> Result<(), RegistrarError> {
-        for_tuples!(#(
-            match Tuple::claim(account_name, claimer) {
-                Ok(_) => return Ok(()),
-                Err(RegistrarError::CannotClaim) => (),
-                Err(e) => return Err(e),
-            }
-        )*);
-        Err(RegistrarError::CannotClaim)
-    }
-    fn claimer_pays_fees(account_name: &AccountName, claimer: &AccountId) -> bool {
-        for_tuples!(#(
-            match Tuple::claimer_pays_fees(account_name, claimer) {
-                false => return false,
-                _ => ()
-            }
-        )*);
-        true
-    }
 }
