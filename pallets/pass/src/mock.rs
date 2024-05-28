@@ -1,6 +1,6 @@
 //! Test environment for pallet pass.
 
-use crate::{self as pallet_pass, Config};
+use crate::{self as pallet_pass, AccountName, Config, RegistrarError};
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
     ensure, parameter_types,
@@ -17,8 +17,6 @@ use sp_runtime::{
 };
 
 use core::marker::PhantomData;
-
-use crate::registrars;
 
 pub type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -168,22 +166,25 @@ impl<AccountId, AccountName: Into<frame_support::BoundedVec<u8, ConstU32<64>>>>
     pallet_pass::traits::Registrar<AccountId, AccountName>
     for DummyRegistrar<AccountId, AccountName>
 {
-    fn is_claimable(
-        _account_name: &AccountName,
-        _claimer: &AccountId,
-    ) -> pallet_pass::types::RegistrarResult {
-        pallet_pass::types::RegistrarResult::CannotClaim
-    }
-
-    fn claim(
-        _account_name: &AccountName,
-        _claimer: &AccountId,
-    ) -> pallet_pass::types::RegistrarResult {
-        pallet_pass::types::RegistrarResult::CannotClaim
+    fn is_claimable(_account_name: &AccountName, _claimer: &AccountId) -> bool {
+        false
     }
 
     fn claimer_pays_fees(_account_name: &AccountName, _claimer: &AccountId) -> bool {
         true
+    }
+
+    fn register_claim(
+        _account_name: &AccountName,
+        _claimer: &AccountId,
+    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+        Err(RegistrarError::CannotClaim)
+    }
+
+    fn initialize_account(
+        _account_name: &AccountName,
+    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+        Err(RegistrarError::CannotInitialize)
     }
 }
 
@@ -202,14 +203,6 @@ where
             false
         }
     }
-
-    fn initialize_account(account_name: &AccountName) -> pallet_pass::types::RegistrarResult {
-        let account_id = Pass::account_id_for(&account_name.clone().into());
-        System::inc_providers(&account_id);
-        Pass::create_account(&account_name.clone().into())
-            .map(|_| pallet_pass::types::RegistrarResult::Success)
-            .unwrap_or_else(|_| pallet_pass::types::RegistrarResult::CannotInitialize)
-    }
 }
 
 impl<AccountId: AsRef<[u8]>, AccountName> pallet_pass::traits::Registrar<AccountId, AccountName>
@@ -218,35 +211,38 @@ where
     AccountName: Clone,
     frame_support::BoundedVec<u8, ConstU32<64>>: From<AccountName>,
 {
-    fn is_claimable(
-        account_name: &AccountName,
-        claimer: &AccountId,
-    ) -> pallet_pass::types::RegistrarResult {
-        if Self::is_even_account_id(claimer) {
-            pallet_pass::types::RegistrarResult::Success
-        } else {
-            pallet_pass::types::RegistrarResult::CannotClaim
-        }
-    }
-
-    fn claim(
-        account_name: &AccountName,
-        claimer: &AccountId,
-    ) -> pallet_pass::types::RegistrarResult {
-        if Self::is_even_account_id(claimer) {
-            Self::initialize_account(account_name)
-        } else {
-            pallet_pass::types::RegistrarResult::CannotClaim
-        }
+    fn is_claimable(_account_name: &AccountName, claimer: &AccountId) -> bool {
+        Self::is_even_account_id(claimer)
     }
 
     fn claimer_pays_fees(_account_name: &AccountName, claimer: &AccountId) -> bool {
         !Self::is_even_account_id(claimer)
     }
+
+    fn register_claim(
+        _account_name: &AccountName,
+        claimer: &AccountId,
+    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+        if !Self::is_even_account_id(claimer) {
+            return Err(RegistrarError::CannotClaim);
+        }
+
+        Ok(())
+    }
+
+    fn initialize_account(
+        account_name: &AccountName,
+    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+        let account_id = Pass::account_id_for(&account_name.clone().into());
+        System::inc_providers(&account_id);
+        Ok(())
+    }
 }
 
-pub type MockRegistrars =
-    registrars!(DummyRegistrar<AccountId, AccountName>, EvenOddRegistrar<AccountId, AccountName>);
+pub type MockRegistrars = (
+    DummyRegistrar<AccountId, AccountName<Test, ()>>,
+    EvenOddRegistrar<AccountId, AccountName<Test, ()>>,
+);
 
 impl Config for Test {
     type WeightInfo = ();

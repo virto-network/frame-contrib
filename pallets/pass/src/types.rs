@@ -31,32 +31,3 @@ pub enum AccountStatus {
     Uninitialized,
     Active,
 }
-
-pub enum RegistrarResult {
-    Success,
-    CannotClaim,
-    CannotInitialize,
-    AlreadyRegistered,
-}
-
-#[macro_export]
-macro_rules! registrars {
-    ($($registrar:ty),*) => {
-        |(account_name, origin)| -> Result<RegistrarResult, ()> {
-            $(
-                match <$registrar>::is_claimable(&$account_name.clone(), &$origin.clone()) {
-                    Ok(account_id) => {
-                        <$registrar>::try_initialize_account(&$account_name).map_err(|e| {
-                            log::error("Registrar {} errored with {e:?}", str!($registrar));
-                            return Ok(RegistrarResult::CannotInitialize);
-                        })?;
-                        return Ok(RegistrarResult::Success)
-                    },
-                    Ok(RegistrarError::CannotClaim) => ()
-                }
-            )*
-
-            Ok(RegistrarResult::CannotClaim)
-        }
-    };
-}

@@ -13,7 +13,7 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use sp_core::blake2_256;
-use sp_runtime::traits::{Dispatchable, Hash, TrailingZeroInput, TryMorph};
+use sp_runtime::traits::{Dispatchable, Hash, TrailingZeroInput};
 use sp_std::fmt::Debug;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -25,7 +25,7 @@ mod mock;
 mod tests;
 
 pub mod traits;
-use traits::{AuthenticateError, Authenticator, Registrar};
+use traits::{AuthenticateError, Authenticator, Registrar, RegistrarError};
 
 mod types;
 pub use types::*;
@@ -37,8 +37,6 @@ pub use pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
-    // use types::RegistrarResult;
-
     use super::*;
 
     #[pallet::config]
@@ -56,8 +54,7 @@ pub mod pallet {
 
         type Authenticator: Parameter + Into<Box<dyn Authenticator>>;
 
-        // type Registrar: Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
-        type Registrar: TryMorph<(AccountName<Self, I>, AccountIdOf<Self>), Outcome = RegistrarResult>;
+        type Registrar: traits::Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
 
         type Randomness: Randomness<<Self as frame_system::Config>::Hash, BlockNumberFor<Self>>;
 
@@ -220,10 +217,11 @@ pub mod pallet {
 
             // Attempt to claim the account with the provided name and caller as the claimer
             T::Registrar::claim(&account_name, &who).map_err(|e| match e {
-                RegistrarResult::AlreadyRegistered => Error::<T, I>::AlreadyRegistered,
-                RegistrarResult::CannotClaim => Error::<T, I>::CannotClaim,
-                RegistrarResult::CannotInitialize => Error::<T, I>::RegistrarCannotInitialize,
+                RegistrarError::CannotClaim => Error::<T, I>::CannotClaim,
+                RegistrarError::CannotInitialize => Error::<T, I>::RegistrarCannotInitialize,
+                RegistrarError::AlreadyRegistered => Error::<T, I>::AlreadyRegistered,
             })?;
+            Self::create_account(&account_name.clone().into())?;
 
             // Simulate device authentication
             let authenticator = Box::new(authenticator.into());
@@ -300,7 +298,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             .expect("All byte sequences are valid `AccountIds`; qed")
     }
 
-    pub fn create_account(account_name: &AccountName<T, I>) -> Result<(), RegistrarResult> {
+    pub(crate) fn create_account(account_name: &AccountName<T, I>) -> DispatchResult {
         Accounts::<T, I>::try_mutate(account_name.clone(), |maybe_account| {
             if maybe_account.is_none() {
                 *maybe_account = Some(Account {
@@ -309,7 +307,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
                 });
                 Ok(())
             } else {
-                Err(RegistrarResult::AlreadyRegistered)
+                Err(Error::<T, I>::AlreadyRegistered.into())
             }
         })
     }
