@@ -1,7 +1,8 @@
 //! Test environment for pallet pass.
 
-use crate::{self as pallet_pass, AccountName, Config, RegistrarError};
+use crate::{self as pallet_pass, AccountName, Config};
 use codec::{Decode, Encode, MaxEncodedLen};
+use fc_traits_authn::RegistrarError;
 use frame_support::{
     ensure, parameter_types,
     traits::{ConstU16, ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize},
@@ -110,7 +111,7 @@ impl frame_support::traits::Randomness<H256, u64> for RandomnessFromBlockNumber 
 }
 
 pub struct InvalidAuthenticator;
-impl pallet_pass::traits::Authenticator for InvalidAuthenticator {
+impl fc_traits_authn::Authenticator for InvalidAuthenticator {
     fn get_device_id(&self, _device: Vec<u8>) -> Option<pallet_pass::DeviceId> {
         None
     }
@@ -120,13 +121,13 @@ impl pallet_pass::traits::Authenticator for InvalidAuthenticator {
         _device: Vec<u8>,
         _challenge: &[u8],
         _payload: &[u8],
-    ) -> Result<(), pallet_pass::traits::AuthenticateError> {
-        Err(pallet_pass::traits::AuthenticateError::ChallengeFailed)
+    ) -> Result<(), fc_traits_authn::AuthenticateError> {
+        Err(fc_traits_authn::AuthenticateError::ChallengeFailed)
     }
 }
 
 pub struct DummyAuthenticator;
-impl pallet_pass::traits::Authenticator for DummyAuthenticator {
+impl fc_traits_authn::Authenticator for DummyAuthenticator {
     fn get_device_id(&self, _device: Vec<u8>) -> Option<pallet_pass::DeviceId> {
         Some([1u8; 32])
     }
@@ -136,10 +137,10 @@ impl pallet_pass::traits::Authenticator for DummyAuthenticator {
         _device: Vec<u8>,
         challenge: &[u8],
         payload: &[u8],
-    ) -> Result<(), pallet_pass::traits::AuthenticateError> {
+    ) -> Result<(), fc_traits_authn::AuthenticateError> {
         ensure!(
             challenge == payload,
-            pallet_pass::traits::AuthenticateError::ChallengeFailed
+            fc_traits_authn::AuthenticateError::ChallengeFailed
         );
         Ok(())
     }
@@ -151,8 +152,8 @@ pub enum MockAuthenticators {
     DummyAuthenticator,
 }
 
-impl Into<Box<dyn pallet_pass::traits::Authenticator>> for MockAuthenticators {
-    fn into(self) -> Box<dyn pallet_pass::traits::Authenticator> {
+impl Into<Box<dyn fc_traits_authn::Authenticator>> for MockAuthenticators {
+    fn into(self) -> Box<dyn fc_traits_authn::Authenticator> {
         match self {
             MockAuthenticators::InvalidAuthenticator => Box::new(InvalidAuthenticator),
             MockAuthenticators::DummyAuthenticator => Box::new(DummyAuthenticator),
@@ -163,8 +164,7 @@ impl Into<Box<dyn pallet_pass::traits::Authenticator>> for MockAuthenticators {
 pub struct DummyRegistrar<AccountId, AccountName>(PhantomData<(AccountId, AccountName)>);
 
 impl<AccountId, AccountName: Into<frame_support::BoundedVec<u8, ConstU32<64>>>>
-    pallet_pass::traits::Registrar<AccountId, AccountName>
-    for DummyRegistrar<AccountId, AccountName>
+    fc_traits_authn::Registrar<AccountId, AccountName> for DummyRegistrar<AccountId, AccountName>
 {
     fn is_claimable(_account_name: &AccountName, _claimer: &AccountId) -> bool {
         false
@@ -177,13 +177,13 @@ impl<AccountId, AccountName: Into<frame_support::BoundedVec<u8, ConstU32<64>>>>
     fn register_claim(
         _account_name: &AccountName,
         _claimer: &AccountId,
-    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+    ) -> Result<(), fc_traits_authn::RegistrarError> {
         Err(RegistrarError::CannotClaim)
     }
 
     fn initialize_account(
         _account_name: &AccountName,
-    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+    ) -> Result<(), fc_traits_authn::RegistrarError> {
         Err(RegistrarError::CannotInitialize)
     }
 }
@@ -205,7 +205,7 @@ where
     }
 }
 
-impl<AccountId: AsRef<[u8]>, AccountName> pallet_pass::traits::Registrar<AccountId, AccountName>
+impl<AccountId: AsRef<[u8]>, AccountName> fc_traits_authn::Registrar<AccountId, AccountName>
     for EvenOddRegistrar<AccountId, AccountName>
 where
     AccountName: Clone,
@@ -222,7 +222,7 @@ where
     fn register_claim(
         _account_name: &AccountName,
         claimer: &AccountId,
-    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+    ) -> Result<(), fc_traits_authn::RegistrarError> {
         if !Self::is_even_account_id(claimer) {
             return Err(RegistrarError::CannotClaim);
         }
@@ -232,7 +232,7 @@ where
 
     fn initialize_account(
         account_name: &AccountName,
-    ) -> Result<(), pallet_pass::traits::RegistrarError> {
+    ) -> Result<(), fc_traits_authn::RegistrarError> {
         let account_id = Pass::account_id_for(&account_name.clone().into());
         System::inc_providers(&account_id);
         Ok(())

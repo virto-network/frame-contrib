@@ -24,8 +24,7 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-pub mod traits;
-use traits::{AuthenticateError, Authenticator, Registrar, RegistrarError};
+use fc_traits_authn::{AuthenticateError, Authenticator, Registrar, RegistrarError};
 
 mod types;
 pub use types::*;
@@ -54,7 +53,7 @@ pub mod pallet {
 
         type Authenticator: Parameter + Into<Box<dyn Authenticator>>;
 
-        type Registrar: traits::Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
+        type Registrar: fc_traits_authn::Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
 
         type Randomness: Randomness<<Self as frame_system::Config>::Hash, BlockNumberFor<Self>>;
 

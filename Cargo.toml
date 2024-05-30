@@ -16,6 +16,7 @@
 	log = { version = "0.4.21" }
 	impl-trait-for-tuples = { version = "0.2.2" }
 
+	fc-traits-authn = { path = "./traits/authn", default-features = false }
 	fc-traits-tracks = { path = "./traits/tracks", default-features = false }
 
 	frame-benchmarking = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.5.0", default-features = false }
@@ -40,6 +41,7 @@ members = [
 	"pallets/pass",
 	"pallets/referenda-tracks",
 	"pallets/template",
+	"traits/authn",
 	"traits/memberships",
 	"traits/tracks",
 ]

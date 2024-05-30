@@ -14,7 +14,7 @@
 	codec = { workspace = true }
 	scale-info = { workspace = true }
 	serde = { workspace = true, optional = true }
-	impl-trait-for-tuples = { workspace = true }
+	fc-traits-authn = { workspace = true }
 	frame-benchmarking = { workspace = true, optional = true }
 	frame-support = { workspace = true }
 	frame-system = { workspace = true }
@@ -45,6 +45,7 @@
 	]
 	std = [
 		"codec/std",
+		"fc-traits-authn/std",
 		"frame-benchmarking?/std",
 		"frame-support/std",
 		"frame-system/std",

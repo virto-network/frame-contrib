@@ -1,8 +1,9 @@
-use crate::DeviceId;
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::traits::PalletError;
 use impl_trait_for_tuples::impl_for_tuples;
 use scale_info::TypeInfo;
+
+pub type DeviceId = [u8; 32];
 
 #[derive(Encode, Decode, MaxEncodedLen, TypeInfo)]
 pub enum RegistrarError {
@@ -53,22 +54,22 @@ pub trait Registrar<AccountId, AccountName> {
 #[impl_for_tuples(64)]
 impl<AccountId, AccountName> Registrar<AccountId, AccountName> for Tuple {
     fn is_claimable(_: &AccountName, _: &AccountId) -> bool {
-        unimplemented!("This implementation is bound to each of the types within the tuple implementing the trait");
+        false
     }
 
     fn claimer_pays_fees(account_name: &AccountName, claimer: &AccountId) -> bool {
-        unimplemented!("This implementation is bound to each of the types within the tuple implementing the trait");
+        true
     }
 
     fn register_claim(
         account_name: &AccountName,
         claimer: &AccountId,
     ) -> Result<(), RegistrarError> {
-        unimplemented!("This implementation is bound to each of the types within the tuple implementing the trait");
+        Err(RegistrarError::CannotClaim)
     }
 
     fn initialize_account(account_name: &AccountName) -> Result<(), RegistrarError> {
-        unimplemented!("This implementation is bound to each of the types within the tuple implementing the trait");
+        Err(RegistrarError::CannotInitialize)
     }
 
     fn claim(account_name: &AccountName, claimer: &AccountId) -> Result<(), RegistrarError> {
