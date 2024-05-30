@@ -36,6 +36,8 @@ pub use pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
+    use frame_support::PalletId;
+
     use super::*;
 
     #[pallet::config]
@@ -64,6 +66,9 @@ pub mod pallet {
         >;
 
         type PalletsOrigin: From<frame_system::Origin<Self>>;
+
+        #[pallet::constant]
+        type PalletId: Get<PalletId>;
 
         /// The maximum lenght for an account name
         #[pallet::constant]
@@ -179,7 +184,9 @@ pub mod pallet {
             authenticator
                 .authenticate(
                     device.clone().to_vec(),
-                    T::Randomness::random(&[][..]).0.as_ref(),
+                    T::Randomness::random(&Encode::encode(&T::PalletId::get()))
+                        .0
+                        .as_ref(),
                     &challenge_response,
                 )
                 .map_err(|e| match e {
@@ -231,7 +238,9 @@ pub mod pallet {
             authenticator
                 .authenticate(
                     device.to_vec(),
-                    T::Randomness::random(&[][..]).0.as_ref(),
+                    T::Randomness::random(&Encode::encode(&T::PalletId::get()))
+                        .0
+                        .as_ref(),
                     &challenge_payload,
                 )
                 .map_err(|_| Error::<T, I>::ChallengeFailed)?;

@@ -7,6 +7,7 @@ use frame_support::{
     ensure, parameter_types,
     traits::{ConstU16, ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize},
     weights::Weight,
+    PalletId,
 };
 use frame_system::EnsureRoot;
 use scale_info::TypeInfo;
@@ -244,6 +245,10 @@ pub type MockRegistrars = (
     EvenOddRegistrar<AccountId, AccountName<Test, ()>>,
 );
 
+parameter_types! {
+    pub PassPalletId: PalletId = PalletId(*b"py/pass_");
+}
+
 impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
@@ -252,6 +257,7 @@ impl Config for Test {
     type Registrar = MockRegistrars;
     type RuntimeCall = RuntimeCall;
     type Scheduler = Scheduler;
+    type PalletId = PassPalletId;
     type PalletsOrigin = OriginCaller;
     type UninitializedTimeout = ConstU64<10>;
     type MaxAccountNameLen = ConstU32<64>;

@@ -1,6 +1,7 @@
 //! Tests for pass pallet.
 use super::{Account, AccountStatus, Accounts, Error, Event};
 use crate::mock::*;
+use codec::Encode;
 use frame_support::{assert_noop, assert_ok, parameter_types, traits::Randomness, BoundedVec};
 use sp_core::ConstU32;
 
@@ -54,10 +55,11 @@ mod register {
     #[test]
     fn fails_if_cannot_fulfill_challenge() {
         new_test_ext().execute_with(|| {
-            let challenge_response = RandomnessFromBlockNumber::random_seed()
-                .0
-                .as_bytes()
-                .to_vec();
+            let challenge_response =
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
+                    .0
+                    .as_bytes()
+                    .to_vec();
 
             System::set_block_number(2);
 
@@ -84,7 +86,7 @@ mod register {
                 AccountName::get(),
                 MockAuthenticators::DummyAuthenticator,
                 BoundedVec::new(),
-                RandomnessFromBlockNumber::random_seed()
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                     .0
                     .as_bytes()
                     .to_vec()
@@ -117,7 +119,7 @@ mod register {
                 AccountName::get(),
                 MockAuthenticators::DummyAuthenticator,
                 BoundedVec::new(),
-                RandomnessFromBlockNumber::random_seed()
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                     .0
                     .as_bytes()
                     .to_vec()
@@ -142,7 +144,7 @@ mod register {
                 AccountName::get(),
                 MockAuthenticators::DummyAuthenticator,
                 BoundedVec::new(),
-                RandomnessFromBlockNumber::random_seed()
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                     .0
                     .as_bytes()
                     .to_vec()
@@ -187,7 +189,7 @@ mod claim {
                 account_name.clone(),
                 MockAuthenticators::DummyAuthenticator,
                 BoundedVec::new(),
-                RandomnessFromBlockNumber::random_seed()
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                     .0
                     .as_bytes()
                     .to_vec()
@@ -230,7 +232,7 @@ mod claim {
                     AccountName::get(),
                     MockAuthenticators::DummyAuthenticator,
                     BoundedVec::new(),
-                    RandomnessFromBlockNumber::random_seed()
+                    RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                         .0
                         .as_bytes()
                         .to_vec()
