@@ -14,16 +14,22 @@
 	codec = { workspace = true }
 	scale-info = { workspace = true }
 	serde = { workspace = true, optional = true }
+	fc-traits-authn = { workspace = true }
 	frame-benchmarking = { workspace = true, optional = true }
 	frame-support = { workspace = true }
 	frame-system = { workspace = true }
+	log = { workspace = true }
 	sp-core = { workspace = true }
 	sp-io = { workspace = true }
 	sp-runtime = { workspace = true }
 	sp-std = { workspace = true }
 
 [dev-dependencies]
+	env_logger = { workspace = true }
+	pallet-babe = { workspace = true }
 	pallet-balances = { workspace = true }
+	pallet-scheduler = { workspace = true }
+	pallet-timestamp = { workspace = true }
 
 [features]
 	default = ["std"]
@@ -31,15 +37,23 @@
 		"frame-benchmarking/runtime-benchmarks",
 		"frame-support/runtime-benchmarks",
 		"frame-system/runtime-benchmarks",
+		"pallet-babe/runtime-benchmarks",
 		"pallet-balances/runtime-benchmarks",
+		"pallet-scheduler/runtime-benchmarks",
+		"pallet-timestamp/runtime-benchmarks",
 		"sp-runtime/runtime-benchmarks",
 	]
 	std = [
 		"codec/std",
+		"fc-traits-authn/std",
 		"frame-benchmarking?/std",
 		"frame-support/std",
 		"frame-system/std",
+		"log/std",
+		"pallet-babe/std",
 		"pallet-balances/std",
+		"pallet-scheduler/std",
+		"pallet-timestamp/std",
 		"scale-info/std",
 		"serde",
 		"sp-core/std",
@@ -50,6 +64,9 @@
 	try-runtime = [
 		"frame-support/try-runtime",
 		"frame-system/try-runtime",
+		"pallet-babe/try-runtime",
 		"pallet-balances/try-runtime",
+		"pallet-scheduler/try-runtime",
+		"pallet-timestamp/try-runtime",
 		"sp-runtime/try-runtime",
 	]
