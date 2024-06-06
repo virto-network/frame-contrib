@@ -13,7 +13,7 @@ use frame_support::{sp_runtime::DispatchError, Parameter};
 
 mod impl_nonfungibles;
 
-pub trait Manager<AccountId>: Inspect<AccountId> {
+pub trait Manager<AccountId, ItemConfig>: Inspect<AccountId> {
     /// Transfers ownership of an unclaimed membership in the manager group to an account in the given group and activates it.
     fn assign(
         group: &Self::Group,
@@ -51,7 +51,7 @@ pub trait Inspect<AccountId> {
 }
 
 /// A membership with a rating system
-pub trait Rank<AccountId, Rank = GenericRank>: Inspect<AccountId>
+pub trait Rank<AccountId, ItemConfig, Rank = GenericRank>: Inspect<AccountId>
 where
     Rank: Eq + Ord,
 {
