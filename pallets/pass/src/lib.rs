@@ -318,8 +318,8 @@ pub mod pallet {
             origin: OriginFor<T>,
             account_name: AccountName<T, I>,
             authentication_method: T::AuthenticationMethod,
-            _device_id: DeviceId,
-            _challenge_signature: Vec<u8>,
+            device_id: DeviceId,
+            challenge_signature: Vec<u8>,
             new_session_key: AccountIdOf<T>,
             duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
@@ -333,8 +333,8 @@ pub mod pallet {
 
             // <Logic to check if who is the account or if is a valid session>
             let mut is_valid_signer = false;
-            if let Some(account_of_account_name) = Accounts::<T, I>::get(&account_name) {
-                if account_of_account_name == who.clone() {
+            if let Some(account) = Accounts::<T, I>::get(&account_name) {
+                if account.account_id == who.clone() {
                     is_valid_signer = true;
                 }
             } else {
@@ -354,21 +354,22 @@ pub mod pallet {
             // </Logic to check if who is the account or if is a valid session>
 
             // <Logic to validate device>
-            let _auth_method: Box<dyn AuthenticationMethod> = authentication_method.into();
+            let auth_method: Box<dyn AuthenticationMethod> = authentication_method.into();
             // Obtain blocknumber, then get mod 10 and transform into bytes
             let block_number = frame_system::Pallet::<T>::block_number();
-            let block_number_mod_10: u32 =
+            let block_number_mod_x: u32 =
                 block_number.try_into().unwrap_or(0) % T::ModForBlockNumber::get(); // Johan modify this with parametirezed value
-            let _block_number_mod_10_bytes = block_number_mod_10.to_le_bytes();
+            let block_number_mod_x_bytes = block_number_mod_x.to_le_bytes();
 
             // This:
-            // auth_method::authenticate(device_id, challenge_signature, block_number_mod_10_bytes)?; // Johan this is necessary but how? HELP! XD | Using the propagation error or report ChallengeFailed error?
-            // Or this:
-            // ensure!(
-            //     auth_method::authenticate(device_id, challenge_signature, block_number_mod_10_bytes).is_ok(),
-            //     Error::<T, I>::ChallengeFailed
-            // );
-            // <Logic to validate device>
+            auth_method
+                .authenticate(
+                    device_id.to_vec(),
+                    &block_number_mod_x_bytes[..],
+                    &challenge_signature[..],
+                )
+                .map_err(|_| Error::<T, I>::ChallengeFailed)?; // Johan this is necessary but how? HELP! XD | Using the propagation error or report ChallengeFailed error?;
+                                                               // <Logic to validate device>
 
             // Create the new session
             let session_duration = duration.unwrap_or(T::MaxSessionDuration::get());
@@ -409,8 +410,8 @@ pub mod pallet {
             let mut is_valid_signer = false;
 
             // <Logic to check if who is the account or if is a valid session>
-            if let Some(account_of_account_name) = Accounts::<T, I>::get(&account_name) {
-                if account_of_account_name == who.clone() {
+            if let Some(account) = Accounts::<T, I>::get(&account_name) {
+                if account.account_id == who.clone() {
                     is_valid_signer = true;
                 }
             } else {
@@ -420,6 +421,7 @@ pub mod pallet {
                             is_valid_signer = true;
                         } else {
                             // Clean the expired session logic here
+                            // todo!() clean storage Sessions for this key
                         }
                     }
                 } else {
@@ -431,15 +433,15 @@ pub mod pallet {
             // </Logic to check if who is the account or if is a valid session>
 
             // <Validate device>
-            let _auth_method: Box<dyn AuthenticationMethod> = authentication_method.into();
+            let auth_method: Box<dyn AuthenticationMethod> = authentication_method.into();
             // Obtain blocknumber, then get mod 10 and transform into bytes
             let block_number = frame_system::Pallet::<T>::block_number();
-            let block_number_mod_10: u32 =
-                block_number.try_into().unwrap_or(0) % T::ModForBlockNumber::get(); // Johan modify this with parametirezed value
-            let _block_number_mod_10_bytes = block_number_mod_10.to_le_bytes();
+            let block_number_mod_x: u32 =
+                block_number.try_into().unwrap_or(0) % T::ModForBlockNumber::get();
+            let block_number_mod_x_bytes = block_number_mod_x.to_le_bytes();
 
             // This:
-            // auth_method::authenticate(device_id, challenge_signature, block_number_mod_10_bytes)?; // Johan this is necessary but how? HELP! XD | Using the propagation error or report ChallengeFailed error?
+            // auth_method::authenticate(device_id, challenge_signature, block_number_mod_x_bytes)?; // Johan this is necessary but how? HELP! XD | Using the propagation error or report ChallengeFailed error?
             // Or this:
             // ensure!(
             //     auth_method::authenticate(device_id, challenge_signature, block_number_mod_10_bytes).is_ok(),
