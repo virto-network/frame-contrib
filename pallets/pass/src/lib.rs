@@ -24,7 +24,7 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-use fc_traits_authn::{AuthenticateError, Authenticator, Registrar, RegistrarError};
+use fc_traits_authn::{AuthenticateError, AuthenticationMethod, Registrar, RegistrarError};
 
 mod types;
 pub use types::*;
@@ -36,6 +36,7 @@ pub use pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
+    use fc_traits_authn::DeviceId;
     use frame_support::PalletId;
 
     use super::*;
@@ -53,7 +54,7 @@ pub mod pallet {
 
         type WeightInfo: WeightInfo;
 
-        type Authenticator: Parameter + Into<Box<dyn Authenticator>>;
+        type AuthenticationMethod: Parameter + Into<Box<dyn AuthenticationMethod>>;
 
         type Registrar: fc_traits_authn::Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
 
@@ -89,11 +90,18 @@ pub mod pallet {
         /// The maximum duration after an uninitialized account is unreserved
         #[pallet::constant]
         type UninitializedTimeout: Get<BlockNumberFor<Self>>;
+
+        // /// Constant maximum number of blocks allowed to keep alive a session
+        // #[pallet::constant]
+        // type MaxDuration: Get<BlockNumberFor<Self>>;
+        #[pallet::constant]
+        type ModForBlockNumber: Get<u32>;
     }
 
     #[pallet::pallet]
     pub struct Pallet<T, I = ()>(_);
 
+    // Storage
     #[pallet::storage]
     pub type Accounts<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, AccountName<T, I>, AccountOf<T>>;
@@ -108,6 +116,9 @@ pub mod pallet {
         BoundedVec<DeviceId, T::MaxDevicesPerAccount>,
         ValueQuery,
     >;
+    #[pallet::storage]
+    pub type Sessions<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, AccountIdOf<T>, (AccountName<T, I>, BlockNumberFor<T>)>; // Maybe could be a good idea modifying AccountIdOf to have extra padding so no other account can match with this
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -123,6 +134,10 @@ pub mod pallet {
         Claimed {
             account_name: AccountName<T, I>,
         },
+        SessionCreated {
+            session_key: AccountIdOf<T>,
+            until: BlockNumberFor<T>,
+        },
     }
 
     #[pallet::error]
@@ -130,10 +145,11 @@ pub mod pallet {
         AlreadyRegistered,
         CannotClaim,
         RegistrarCannotInitialize,
-        InvalidDeviceForAuthenticator,
+        InvalidDeviceForAuthenticationMethod,
         ChallengeFailed,
         ExceedsMaxDevices,
         AccountNotFound,
+        Uninitialized,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -143,12 +159,12 @@ pub mod pallet {
         pub fn register(
             origin: OriginFor<T>,
             account_name: AccountName<T, I>,
-            authenticator: T::Authenticator,
+            authenticator: T::AuthenticationMethod,
             device: DeviceDescriptor<T, I>,
             challenge_response: Vec<u8>,
         ) -> DispatchResult {
             ensure_signed(origin)?;
-            let authenticator: Box<dyn Authenticator> = authenticator.into();
+            let authenticator: Box<dyn AuthenticationMethod> = authenticator.into();
             let account_id = Self::account_id_for(&account_name);
 
             ensure!(
@@ -164,7 +180,7 @@ pub mod pallet {
                 },
             );
 
-            if account.is_unitialized() {
+            if account.is_uninitialized() {
                 Self::schedule_unreserve(&account_name)?;
             }
 
@@ -180,7 +196,7 @@ pub mod pallet {
 
             let device_id = authenticator
                 .get_device_id(device.to_vec())
-                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticator)?;
+                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
             authenticator
                 .authenticate(
                     device.clone().to_vec(),
@@ -214,7 +230,7 @@ pub mod pallet {
         pub fn claim(
             origin: OriginFor<T>,
             account_name: AccountName<T, I>,
-            authenticator: T::Authenticator,
+            authenticator: T::AuthenticationMethod,
             device: DeviceDescriptor<T, I>,
             challenge_payload: Vec<u8>,
         ) -> DispatchResult {
@@ -233,7 +249,7 @@ pub mod pallet {
             let authenticator = Box::new(authenticator.into());
             let device_id = authenticator
                 .get_device_id(device.to_vec())
-                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticator)?;
+                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
 
             authenticator
                 .authenticate(
@@ -295,6 +311,160 @@ pub mod pallet {
 
                 Ok(())
             })
+        }
+
+        #[pallet::call_index(3)]
+        pub fn authenticate(
+            origin: OriginFor<T>,
+            account_name: AccountName<T, I>,
+            authentication_method: T::AuthenticationMethod,
+            _device_id: DeviceId,
+            _challenge_signature: Vec<u8>,
+            new_session_key: AccountIdOf<T>,
+            duration: Option<BlockNumberFor<T>>,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            // Check account name exist
+            ensure!(
+                Accounts::<T, I>::contains_key(account_name.clone()),
+                Error::<T, I>::AccountNotFound
+            );
+
+            // <Logic to check if who is the account or if is a valid session>
+            let mut is_valid_signer = false;
+            if let Some(account_of_account_name) = Accounts::<T, I>::get(&account_name) {
+                if account_of_account_name == who.clone() {
+                    is_valid_signer = true;
+                }
+            } else {
+                if let Some((acc_name, duration)) = Sessions::<T, I>::get(&who) {
+                    if acc_name == account_name.clone() {
+                        if frame_system::Pallet::<T>::block_number() <= duration {
+                            is_valid_signer = true;
+                        } else {
+                            // Clean the expired session logic here
+                        }
+                    }
+                } else {
+                    // nothing here
+                }
+            }
+            ensure!(is_valid_signer, Error::<T, I>::AccountNotFound);
+            // </Logic to check if who is the account or if is a valid session>
+
+            // <Logic to validate device>
+            let _auth_method: Box<dyn AuthenticationMethod> = authentication_method.into();
+            // Obtain blocknumber, then get mod 10 and transform into bytes
+            let block_number = frame_system::Pallet::<T>::block_number();
+            let block_number_mod_10: u32 =
+                block_number.try_into().unwrap_or(0) % T::ModForBlockNumber::get(); // Johan modify this with parametirezed value
+            let _block_number_mod_10_bytes = block_number_mod_10.to_le_bytes();
+
+            // This:
+            // auth_method::authenticate(device_id, challenge_signature, block_number_mod_10_bytes)?; // Johan this is necessary but how? HELP! XD | Using the propagation error or report ChallengeFailed error?
+            // Or this:
+            // ensure!(
+            //     auth_method::authenticate(device_id, challenge_signature, block_number_mod_10_bytes).is_ok(),
+            //     Error::<T, I>::ChallengeFailed
+            // );
+            // <Logic to validate device>
+
+            // Create the new session
+            let session_duration = duration.unwrap_or(T::MaxSessionDuration::get());
+            // Add some padding to the new_session_key to don't hit with another account
+            // let new_session_key = todo!()
+            // Insert or overwrite the value of the new_session_key.
+
+            Sessions::<T, I>::insert(
+                new_session_key.clone(),
+                (account_name, block_number + session_duration),
+            );
+
+            // Event
+            Self::deposit_event(
+                Event::<T, I>::SessionCreated {
+                    session_key: new_session_key.clone(),
+                    until: session_duration.clone(),
+                }
+                .into(),
+            );
+
+            // Finish
+            Ok(())
+        }
+
+        /// Call to claim an Account
+        #[pallet::call_index(4)]
+        // #[pallet::feeless_if()]
+        pub fn add_device(
+            origin: OriginFor<T>,
+            account_name: AccountName<T, I>,
+            authentication_method: T::AuthenticationMethod,
+            device_id: DeviceId,
+            _challenge_signature: Vec<u8>,
+        ) -> DispatchResult {
+            // Ensures that the function is called by a signed origin
+            let who = ensure_signed(origin)?;
+            let mut is_valid_signer = false;
+
+            // <Logic to check if who is the account or if is a valid session>
+            if let Some(account_of_account_name) = Accounts::<T, I>::get(&account_name) {
+                if account_of_account_name == who.clone() {
+                    is_valid_signer = true;
+                }
+            } else {
+                if let Some((acc_name, duration)) = Sessions::<T, I>::get(&who) {
+                    if acc_name == account_name.clone() {
+                        if frame_system::Pallet::<T>::block_number() <= duration {
+                            is_valid_signer = true;
+                        } else {
+                            // Clean the expired session logic here
+                        }
+                    }
+                } else {
+                    // nothing here
+                }
+            }
+
+            ensure!(is_valid_signer, Error::<T, I>::AccountNotFound);
+            // </Logic to check if who is the account or if is a valid session>
+
+            // <Validate device>
+            let _auth_method: Box<dyn AuthenticationMethod> = authentication_method.into();
+            // Obtain blocknumber, then get mod 10 and transform into bytes
+            let block_number = frame_system::Pallet::<T>::block_number();
+            let block_number_mod_10: u32 =
+                block_number.try_into().unwrap_or(0) % T::ModForBlockNumber::get(); // Johan modify this with parametirezed value
+            let _block_number_mod_10_bytes = block_number_mod_10.to_le_bytes();
+
+            // This:
+            // auth_method::authenticate(device_id, challenge_signature, block_number_mod_10_bytes)?; // Johan this is necessary but how? HELP! XD | Using the propagation error or report ChallengeFailed error?
+            // Or this:
+            // ensure!(
+            //     auth_method::authenticate(device_id, challenge_signature, block_number_mod_10_bytes).is_ok(),
+            //     Error::<T, I>::ChallengeFailed
+            // );
+            // </Validate device>
+
+            // <Add device>
+            // AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
+            //     .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
+            // Devices::<T, I>::insert(device_id, (account_name.clone(), device));
+            // </Add device>
+
+            Ok(())
+        }
+
+        #[pallet::call_index(5)]
+        pub fn dispatch(
+            origin: OriginFor<T>,
+            call: Box<RuntimeCallFor<T>>,
+            maybe_authentication: Option<(AccountName<T, I>, T::AuthenticationMethod, DeviceId)>,
+            maybe_next_session_key: Option<AccountIdOf<T>>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Ok(())
         }
     }
 }

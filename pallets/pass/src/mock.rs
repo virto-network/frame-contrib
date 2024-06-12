@@ -111,8 +111,8 @@ impl frame_support::traits::Randomness<H256, u64> for RandomnessFromBlockNumber 
     }
 }
 
-pub struct InvalidAuthenticator;
-impl fc_traits_authn::Authenticator for InvalidAuthenticator {
+pub struct InvalidAuthenticationMethod;
+impl fc_traits_authn::AuthenticationMethod for InvalidAuthenticationMethod {
     fn get_device_id(&self, _device: Vec<u8>) -> Option<pallet_pass::DeviceId> {
         None
     }
@@ -127,8 +127,8 @@ impl fc_traits_authn::Authenticator for InvalidAuthenticator {
     }
 }
 
-pub struct DummyAuthenticator;
-impl fc_traits_authn::Authenticator for DummyAuthenticator {
+pub struct DummyAuthenticationMethod;
+impl fc_traits_authn::AuthenticationMethod for DummyAuthenticationMethod {
     fn get_device_id(&self, _device: Vec<u8>) -> Option<pallet_pass::DeviceId> {
         Some([1u8; 32])
     }
@@ -148,16 +148,20 @@ impl fc_traits_authn::Authenticator for DummyAuthenticator {
 }
 
 #[derive(Encode, Decode, MaxEncodedLen, TypeInfo, Debug, Clone, Eq, PartialEq)]
-pub enum MockAuthenticators {
-    InvalidAuthenticator,
-    DummyAuthenticator,
+pub enum MockAuthenticationMethods {
+    InvalidAuthenticationMethod,
+    DummyAuthenticationMethod,
 }
 
-impl Into<Box<dyn fc_traits_authn::Authenticator>> for MockAuthenticators {
-    fn into(self) -> Box<dyn fc_traits_authn::Authenticator> {
+impl Into<Box<dyn fc_traits_authn::AuthenticationMethod>> for MockAuthenticationMethods {
+    fn into(self) -> Box<dyn fc_traits_authn::AuthenticationMethod> {
         match self {
-            MockAuthenticators::InvalidAuthenticator => Box::new(InvalidAuthenticator),
-            MockAuthenticators::DummyAuthenticator => Box::new(DummyAuthenticator),
+            MockAuthenticationMethods::InvalidAuthenticationMethod => {
+                Box::new(InvalidAuthenticationMethod)
+            }
+            MockAuthenticationMethods::DummyAuthenticationMethod => {
+                Box::new(DummyAuthenticationMethod)
+            }
         }
     }
 }
@@ -252,7 +256,7 @@ parameter_types! {
 impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
-    type Authenticator = MockAuthenticators;
+    type AuthenticationMethod = MockAuthenticationMethods;
     type Randomness = RandomnessFromBlockNumber;
     type Registrar = MockRegistrars;
     type RuntimeCall = RuntimeCall;
@@ -264,6 +268,8 @@ impl Config for Test {
     type MaxDeviceDescriptorLen = ConstU32<65535>;
     type MaxDevicesPerAccount = ConstU32<5>;
     type MaxSessionDuration = ConstU64<10>;
+    type ModForBlockNumber = ConstU32<10800>;
+    // type MaxDuration = ConstU64<10>;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
