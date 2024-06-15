@@ -296,6 +296,37 @@ pub mod pallet {
                 Ok(())
             })
         }
+
+        #[pallet::call_index(3)]
+        pub fn dispatch(
+            origin: OriginFor<T>,
+            call: Box<<T as Config<I>>::RuntimeCall>,
+            maybe_authentication: Option<(AccountName<T, I>, T::Authenticator, DeviceId)>,
+        ) -> DispatchResult {
+
+            // Authentication logic (if provided)
+            if let Some((account_name, authenticator, device_id)) = maybe_authentication {
+                let (_, device) = Devices::<T, I>::get(device_id)
+                    .ok_or(Error::<T, I>::InvalidDeviceForAuthenticator)?;
+
+                let authenticator = Box::new(authenticator.into());
+                let challenge_payload = T::Randomness::random(&Encode::encode(&T::PalletId::get()))
+                    .0
+                    .as_ref()
+                    .to_vec();
+
+                authenticator
+                    .authenticate(
+                        device.to_vec(),
+                        &challenge_payload,
+                        &[], // Assuming challenge_response is provided appropriately
+                    )
+                    .map_err(|_| Error::<T, I>::ChallengeFailed)?;
+            }
+
+            // Dispatch the call
+            call.dispatch(origin)
+        }
     }
 }
 
