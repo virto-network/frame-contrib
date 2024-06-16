@@ -37,7 +37,8 @@ pub use pallet::*;
 #[frame_support::pallet]
 pub mod pallet {
     use fc_traits_authn::DeviceId;
-    use frame_support::PalletId;
+    use frame_support::{traits::tokens::pay, PalletId};
+    use frame_system::RawOrigin;
 
     use super::*;
 
@@ -463,30 +464,42 @@ pub mod pallet {
             origin: OriginFor<T>,
             call: Box<RuntimeCallFor<T>>,
             maybe_authentication: Option<(AccountName<T, I>, T::AuthenticationMethod, DeviceId)>,
-            maybe_next_session_key: Option<AccountIdOf<T>>,
+            _maybe_next_session_key: Option<AccountIdOf<T>>,
         ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
             // Authentication logic (if provided)
             if let Some((account_name, authenticator, device_id)) = maybe_authentication {
-                let (_, device) = Devices::<T, I>::get(device_id)
-                    .ok_or(Error::<T, I>::InvalidDeviceForAuthenticator)?;
+                // Commented while add_device is not implemented.
+                // let (_, device) = Devices::<T, I>::get(device_id)
+                //     .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
+                let device = DeviceDescriptor::<T, I>::default();
 
                 let authenticator = Box::new(authenticator.into());
-                let challenge_payload = T::Randomness::random(&Encode::encode(&T::PalletId::get()))
+
+                // This has to be rethought, what would a real challenge look like? Do we pass a challenge instead?
+                let challenge = T::Randomness::random(&Encode::encode(&T::PalletId::get()))
                     .0
                     .as_ref()
                     .to_vec();
+                    
+                // Same as above, what would a real payload look like?
+                let payload = challenge.clone();
 
                 authenticator
                     .authenticate(
                         device.to_vec(),
-                        &challenge_payload,
-                        &[], // Assuming challenge_response is provided appropriately
+                        &challenge,
+                        &payload,
                     )
                     .map_err(|_| Error::<T, I>::ChallengeFailed)?;
             }
 
-            // Dispatch the call
-            call.dispatch(origin)
+            // Re-dispatch the call on behalf of the caller.
+            let res = call.dispatch(RawOrigin::Signed(who).into());
+
+            // Turn the result from the `dispatch` into our expected `DispatchResult` type.
+            res.map(|_| ()).map_err(|e| e.error)
         }
     }
 }
