@@ -388,7 +388,6 @@ mod add_device {
 
 mod dispatch {
     use super::*;
-    use sp_runtime::traits::Hash;
 
     // #[test]
     // fn fails_if_already_authenticated() {
@@ -454,36 +453,30 @@ mod dispatch {
     #[test]
     fn it_works() {
         new_test_ext().execute_with(|| {
+            let account_id = Pass::account_id_for(&AccountName::get());
 
-            let call = Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                remark: vec![1u8; 32],
-            }));
-
-            // Test needs add_device to be implemented first. Otherwise, it will always error with InvalidDeviceForAuthenticationMethod.
-            // This also means that part of the call is commented out.
-            // Pass::add_device(
-            //     RuntimeOrigin::signed(SIGNER),
-            //     AccountName::get(),
-            //     MockAuthenticationMethods::DummyAuthenticationMethod,
-            //     THE_DEVICE,
-            //     ?
-            // );
-
-            assert_ok!(Pass::dispatch(
+            assert_ok!(Pass::register(
                 RuntimeOrigin::signed(SIGNER),
-                call,
-                Some((
-                    AccountName::get(),
-                    MockAuthenticationMethods::DummyAuthenticationMethod,
-                    THE_DEVICE,
-                )),
-                None,
+                AccountName::get(),
+                MockAuthenticationMethods::DummyAuthenticationMethod,
+                BoundedVec::new(),
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
+                    .0
+                    .as_bytes()
+                    .to_vec()
             ));
 
             System::assert_has_event(
-                frame_system::Event::Remarked {
-                    sender: SIGNER,
-                    hash: <Test as frame_system::Config>::Hashing::hash(&vec![1u8; 32]),
+                Event::<Test>::Registered {
+                    account_name: AccountName::get(),
+                    account_id,
+                }
+                .into(),
+            );
+            System::assert_has_event(
+                Event::<Test>::AddedDevice {
+                    account_name: AccountName::get(),
+                    device_id: [1u8; 32],
                 }
                 .into(),
             );
