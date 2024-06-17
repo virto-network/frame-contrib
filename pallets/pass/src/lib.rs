@@ -150,6 +150,7 @@ pub mod pallet {
         ExceedsMaxDevices,
         AccountNotFound,
         Uninitialized,
+        DeviceNotFound,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -319,11 +320,11 @@ pub mod pallet {
             account_name: AccountName<T, I>,
             authentication_method: T::AuthenticationMethod,
             device_id: DeviceId,
-            challenge_signature: Vec<u8>,
+            authentication_proof: Vec<u8>,
             new_session_key: AccountIdOf<T>,
-            duration: Option<BlockNumberFor<T>>,
+            maybe_duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
-            let who = ensure_signed(origin)?;
+            let _who = ensure_signed(origin)?;
 
             // Check account name exist
             ensure!(
@@ -331,51 +332,26 @@ pub mod pallet {
                 Error::<T, I>::AccountNotFound
             );
 
-            // <Logic to check if who is the account or if is a valid session>
-            let mut is_valid_signer = false;
-            if let Some(account) = Accounts::<T, I>::get(&account_name) {
-                if account.account_id == who.clone() {
-                    is_valid_signer = true;
-                }
-            } else {
-                if let Some((acc_name, duration)) = Sessions::<T, I>::get(&who) {
-                    if acc_name == account_name.clone() {
-                        if frame_system::Pallet::<T>::block_number() <= duration {
-                            is_valid_signer = true;
-                        } else {
-                            // Clean the expired session logic here
-                        }
-                    }
-                } else {
-                    // nothing here
-                }
-            }
-            ensure!(is_valid_signer, Error::<T, I>::AccountNotFound);
-            // </Logic to check if who is the account or if is a valid session>
-
-            // <Logic to validate device>
-            let auth_method: Box<dyn AuthenticationMethod> = authentication_method.into();
-            // Obtain blocknumber, then get mod 10 and transform into bytes
             let block_number = frame_system::Pallet::<T>::block_number();
-            let block_number_mod_x: u32 =
-                block_number.try_into().unwrap_or(0) % T::ModForBlockNumber::get(); // Johan modify this with parametirezed value
-            let block_number_mod_x_bytes = block_number_mod_x.to_le_bytes();
+            // Get the device from storage
+            let (ac_name_from_dev_id, dev_descript_from_dev_id) = Devices::<T,I>::get(&device_id).ok_or(Error::<T,I>::DeviceNotFound)?;
+            ensure!(
+                ac_name_from_dev_id==account_name,
+                Error::<T, I>::AccountNotFound
+            );
 
-            // This:
-            auth_method
+            authentication_method.into()
                 .authenticate(
-                    device_id.to_vec(),
-                    &block_number_mod_x_bytes[..],
-                    &challenge_signature[..],
+                    dev_descript_from_dev_id.to_vec(),
+                    T::Randomness::random(&Encode::encode(&T::PalletId::get()))
+                        .0
+                        .as_ref(),
+                    &authentication_proof,
                 )
-                .map_err(|_| Error::<T, I>::ChallengeFailed)?; // Johan this is necessary but how? HELP! XD | Using the propagation error or report ChallengeFailed error?;
-                                                               // <Logic to validate device>
+                .map_err(|_| Error::<T, I>::ChallengeFailed)?;
 
             // Create the new session
-            let session_duration = duration.unwrap_or(T::MaxSessionDuration::get());
-            // Add some padding to the new_session_key to don't hit with another account
-            // let new_session_key = todo!()
-            // Insert or overwrite the value of the new_session_key.
+            let session_duration = maybe_duration.unwrap_or(T::MaxSessionDuration::get()).max(T::MaxSessionDuration::get());
 
             Sessions::<T, I>::insert(
                 new_session_key.clone(),
@@ -403,32 +379,37 @@ pub mod pallet {
             account_name: AccountName<T, I>,
             authentication_method: T::AuthenticationMethod,
             device_id: DeviceId,
-            _challenge_signature: Vec<u8>,
+            authentication_proof: Vec<u8>,
         ) -> DispatchResult {
             // Ensures that the function is called by a signed origin
             let who = ensure_signed(origin)?;
-            let mut is_valid_signer = false;
+
+            // Check account name exist
+            ensure!(
+                Accounts::<T, I>::contains_key(account_name.clone()),
+                Error::<T, I>::AccountNotFound
+            );
 
             // <Logic to check if who is the account or if is a valid session>
+            let mut is_valid_signer = false;
             if let Some(account) = Accounts::<T, I>::get(&account_name) {
                 if account.account_id == who.clone() {
                     is_valid_signer = true;
-                }
-            } else {
-                if let Some((acc_name, duration)) = Sessions::<T, I>::get(&who) {
-                    if acc_name == account_name.clone() {
-                        if frame_system::Pallet::<T>::block_number() <= duration {
-                            is_valid_signer = true;
-                        } else {
-                            // Clean the expired session logic here
-                            // todo!() clean storage Sessions for this key
-                        }
-                    }
                 } else {
-                    // nothing here
-                }
+                    if let Some((acc_name, duration)) = Sessions::<T, I>::get(&who) {
+                        if acc_name == account_name.clone() {
+                            if frame_system::Pallet::<T>::block_number() <= duration {
+                                is_valid_signer = true;
+                            } else {
+                                // Clean the expired session logic here
+                            }
+                        }
+                    } else {
+                        // nothing here
+                    }
+            } else {
+                // Nothing here
             }
-
             ensure!(is_valid_signer, Error::<T, I>::AccountNotFound);
             // </Logic to check if who is the account or if is a valid session>
 
@@ -440,18 +421,18 @@ pub mod pallet {
                 block_number.try_into().unwrap_or(0) % T::ModForBlockNumber::get();
             let block_number_mod_x_bytes = block_number_mod_x.to_le_bytes();
 
-            // This:
-            // auth_method::authenticate(device_id, challenge_signature, block_number_mod_x_bytes)?; // Johan this is necessary but how? HELP! XD | Using the propagation error or report ChallengeFailed error?
-            // Or this:
-            // ensure!(
-            //     auth_method::authenticate(device_id, challenge_signature, block_number_mod_10_bytes).is_ok(),
-            //     Error::<T, I>::ChallengeFailed
-            // );
-            // </Validate device>
+            // Verify signature of device
+            auth_method
+                .authenticate(
+                    device_id.to_vec(),
+                    &block_number_mod_x_bytes[..],
+                    &authentication_proof[..],
+                )
+                .map_err(|_| Error::<T, I>::ChallengeFailed)?;
 
             // <Add device>
-            // AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
-            //     .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
+            AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
+                .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
             // Devices::<T, I>::insert(device_id, (account_name.clone(), device));
             // </Add device>
 
