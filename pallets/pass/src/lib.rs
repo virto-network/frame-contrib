@@ -38,6 +38,7 @@ pub use pallet::*;
 pub mod pallet {
     use fc_traits_authn::DeviceId;
     use frame_support::PalletId;
+    use frame_system::RawOrigin;
 
     use super::*;
 
