@@ -37,8 +37,7 @@ pub use pallet::*;
 #[frame_support::pallet]
 pub mod pallet {
     use fc_traits_authn::DeviceId;
-    use frame_support::{traits::tokens::pay, PalletId};
-    use frame_system::RawOrigin;
+    use frame_support::PalletId;
 
     use super::*;
 
@@ -464,14 +463,13 @@ pub mod pallet {
             origin: OriginFor<T>,
             call: Box<RuntimeCallFor<T>>,
             maybe_authentication: Option<(AccountName<T, I>, T::AuthenticationMethod, DeviceId)>,
-            _maybe_next_session_key: Option<AccountIdOf<T>>,
+            maybe_next_session_key: Option<AccountIdOf<T>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
             // Authentication logic (if provided)
             if let Some((account_name, authenticator, device_id)) = maybe_authentication {
                 // Commented while add_device is not implemented.
-                // asd
                 // let (_, device) = Devices::<T, I>::get(device_id)
                 //     .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
                 let device = DeviceDescriptor::<T, I>::default();
