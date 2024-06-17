@@ -252,8 +252,6 @@ mod authenticate {
         new_test_ext().execute_with(|| {
             let account_id = Pass::account_id_for(&AccountName::get());
             let session_key: AccountId = AccountId::new([3u8; 32]);
-            let current_block = frame_system::Pallet::<Test>::block_number();
-            let current_block_vec = current_block.encode();
             let maybe_duration = Some(10);
 
             let _ = Pass::register(
@@ -272,14 +270,17 @@ mod authenticate {
                 AccountName::get(),
                 MockAuthenticationMethods::DummyAuthenticationMethod,
                 THE_DEVICE,
-                current_block_vec,
-                session_key,
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
+                    .0
+                    .as_bytes()
+                    .to_vec(),
+                session_key.clone(),
                 maybe_duration,
             ));
 
             System::assert_has_event(
                 Event::<Test>::SessionCreated {
-                    session_key: account_id.clone(),
+                    session_key: session_key,
                     until: maybe_duration.unwrap().clone(),
                 }
                 .into(),
