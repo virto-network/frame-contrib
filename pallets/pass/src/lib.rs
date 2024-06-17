@@ -334,13 +334,15 @@ pub mod pallet {
 
             let block_number = frame_system::Pallet::<T>::block_number();
             // Get the device from storage
-            let (ac_name_from_dev_id, dev_descript_from_dev_id) = Devices::<T,I>::get(&device_id).ok_or(Error::<T,I>::DeviceNotFound)?;
+            let (ac_name_from_dev_id, dev_descript_from_dev_id) =
+                Devices::<T, I>::get(&device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
             ensure!(
-                ac_name_from_dev_id==account_name,
+                ac_name_from_dev_id == account_name,
                 Error::<T, I>::AccountNotFound
             );
 
-            authentication_method.into()
+            authentication_method
+                .into()
                 .authenticate(
                     dev_descript_from_dev_id.to_vec(),
                     T::Randomness::random(&Encode::encode(&T::PalletId::get()))
@@ -351,7 +353,9 @@ pub mod pallet {
                 .map_err(|_| Error::<T, I>::ChallengeFailed)?;
 
             // Create the new session
-            let session_duration = maybe_duration.unwrap_or(T::MaxSessionDuration::get()).max(T::MaxSessionDuration::get());
+            let session_duration = maybe_duration
+                .unwrap_or(T::MaxSessionDuration::get())
+                .max(T::MaxSessionDuration::get());
 
             Sessions::<T, I>::insert(
                 new_session_key.clone(),
@@ -382,7 +386,7 @@ pub mod pallet {
             authentication_proof: Vec<u8>,
         ) -> DispatchResult {
             // Ensures that the function is called by a signed origin
-            let who = ensure_signed(origin)?;
+            let _who = ensure_signed(origin)?;
 
             // Check account name exist
             ensure!(
@@ -390,27 +394,27 @@ pub mod pallet {
                 Error::<T, I>::AccountNotFound
             );
 
-            // <Logic to check if who is the account or if is a valid session>
-            let mut is_valid_signer = false;
-            if let Some(account) = Accounts::<T, I>::get(&account_name) {
-                if account.account_id == who.clone() {
-                    is_valid_signer = true;
-                } else {
-                    if let Some((acc_name, duration)) = Sessions::<T, I>::get(&who) {
-                        if acc_name == account_name.clone() {
-                            if frame_system::Pallet::<T>::block_number() <= duration {
-                                is_valid_signer = true;
-                            } else {
-                                // Clean the expired session logic here
-                            }
-                        }
-                    } else {
-                        // nothing here
-                    }
-            } else {
-                // Nothing here
-            }
-            ensure!(is_valid_signer, Error::<T, I>::AccountNotFound);
+            // // <Logic to check if who is the account or if is a valid session>
+            // let mut is_valid_signer = false;
+            // if let Some(account) = Accounts::<T, I>::get(&account_name) {
+            //     if account.account_id == who.clone() {
+            //         is_valid_signer = true;
+            //     } else {
+            //         if let Some((acc_name, duration)) = Sessions::<T, I>::get(&who) {
+            //             if acc_name == account_name.clone() {
+            //                 if frame_system::Pallet::<T>::block_number() <= duration {
+            //                     is_valid_signer = true;
+            //                 } else {
+            //                     // Clean the expired session logic here
+            //                 }
+            //             }
+            //         } else {
+            //             // nothing here
+            //         }
+            // } else {
+            //     // Nothing here
+            // }
+            // ensure!(is_valid_signer, Error::<T, I>::AccountNotFound);
             // </Logic to check if who is the account or if is a valid session>
 
             // <Validate device>
@@ -463,16 +467,12 @@ pub mod pallet {
                     .0
                     .as_ref()
                     .to_vec();
-                    
+
                 // Same as above, what would a real payload look like?
                 let payload = challenge.clone();
 
                 authenticator
-                    .authenticate(
-                        device.to_vec(),
-                        &challenge,
-                        &payload,
-                    )
+                    .authenticate(device.to_vec(), &challenge, &payload)
                     .map_err(|_| Error::<T, I>::ChallengeFailed)?;
             }
 
