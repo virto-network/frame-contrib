@@ -38,6 +38,7 @@ pub use pallet::*;
 pub mod pallet {
     use fc_traits_authn::DeviceId;
     use frame_support::PalletId;
+    use frame_system::RawOrigin;
 
     use super::*;
 
@@ -470,7 +471,6 @@ pub mod pallet {
             // Authentication logic (if provided)
             if let Some((account_name, authenticator, device_id)) = maybe_authentication {
                 // Commented while add_device is not implemented.
-                // asd
                 // let (_, device) = Devices::<T, I>::get(device_id)
                 //     .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
                 let device = DeviceDescriptor::<T, I>::default();
