@@ -395,42 +395,16 @@ pub mod pallet {
                 Error::<T, I>::AccountNotFound
             );
 
-            // // <Logic to check if who is the account or if is a valid session>
-            // let mut is_valid_signer = false;
-            // if let Some(account) = Accounts::<T, I>::get(&account_name) {
-            //     if account.account_id == who.clone() {
-            //         is_valid_signer = true;
-            //     } else {
-            //         if let Some((acc_name, duration)) = Sessions::<T, I>::get(&who) {
-            //             if acc_name == account_name.clone() {
-            //                 if frame_system::Pallet::<T>::block_number() <= duration {
-            //                     is_valid_signer = true;
-            //                 } else {
-            //                     // Clean the expired session logic here
-            //                 }
-            //             }
-            //         } else {
-            //             // nothing here
-            //         }
-            // } else {
-            //     // Nothing here
-            // }
-            // ensure!(is_valid_signer, Error::<T, I>::AccountNotFound);
-            // </Logic to check if who is the account or if is a valid session>
-
             // <Validate device>
             let auth_method: Box<dyn AuthenticationMethod> = authentication_method.into();
-            // Obtain blocknumber, then get mod 10 and transform into bytes
-            let block_number = frame_system::Pallet::<T>::block_number();
-            let block_number_mod_x: u32 =
-                block_number.try_into().unwrap_or(0) % T::ModForBlockNumber::get();
-            let block_number_mod_x_bytes = block_number_mod_x.to_le_bytes();
 
             // Verify signature of device
             auth_method
                 .authenticate(
                     device_id.to_vec(),
-                    &block_number_mod_x_bytes[..],
+                    T::Randomness::random(&Encode::encode(&T::PalletId::get()))
+                        .0
+                        .as_ref(),
                     &authentication_proof[..],
                 )
                 .map_err(|_| Error::<T, I>::ChallengeFailed)?;
@@ -438,7 +412,6 @@ pub mod pallet {
             // <Add device>
             AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
                 .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
-            // Devices::<T, I>::insert(device_id, (account_name.clone(), device));
             // </Add device>
 
             Ok(())
@@ -449,12 +422,12 @@ pub mod pallet {
             origin: OriginFor<T>,
             call: Box<RuntimeCallFor<T>>,
             maybe_authentication: Option<(AccountName<T, I>, T::AuthenticationMethod, DeviceId)>,
-            maybe_next_session_key: Option<AccountIdOf<T>>,
+            _maybe_next_session_key: Option<AccountIdOf<T>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
             // Authentication logic (if provided)
-            if let Some((account_name, authenticator, device_id)) = maybe_authentication {
+            if let Some((_account_name, authenticator, _device_id)) = maybe_authentication {
                 // Commented while add_device is not implemented.
                 // let (_, device) = Devices::<T, I>::get(device_id)
                 //     .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
