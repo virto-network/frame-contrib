@@ -4,7 +4,7 @@ use super::*;
 use crate::Pallet;
 use frame_benchmarking::v2::*;
 
-fn assert_last_event<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>::RuntimeEvent) {
+fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
     frame_system::Pallet::<T>::assert_last_event(generic_event.into());
 }
 
@@ -17,7 +17,7 @@ mod benchmarks {
         // Setup code
 
         #[extrinsic_call]
-        _(RawOrigin::Root);
+        _(frame_system::RawOrigin::Root);
 
         // Verification code
         assert_last_event::<T>(Event::Success.into());

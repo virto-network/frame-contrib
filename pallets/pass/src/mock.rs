@@ -4,7 +4,7 @@ use crate::{self as pallet_pass, AccountName, Config};
 use codec::{Decode, Encode, MaxEncodedLen};
 use fc_traits_authn::RegistrarError;
 use frame_support::{
-    ensure, parameter_types,
+    derive_impl, ensure, parameter_types,
     traits::{ConstU16, ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize},
     weights::Weight,
     PalletId,
@@ -36,30 +36,13 @@ frame_support::construct_runtime!(
     }
 );
 
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
 impl frame_system::Config for Test {
     type BaseCallFilter = frame_support::traits::Everything;
-    type BlockWeights = ();
-    type BlockLength = ();
-    type RuntimeOrigin = RuntimeOrigin;
-    type RuntimeCall = RuntimeCall;
-    type Nonce = u64;
-    type Hash = H256;
-    type Hashing = BlakeTwo256;
     type AccountId = AccountId;
-    type Lookup = IdentityLookup<Self::AccountId>;
+    type Lookup = IdentityLookup<AccountId>;
     type Block = Block;
-    type RuntimeEvent = RuntimeEvent;
-    type BlockHashCount = ConstU64<250>;
-    type DbWeight = ();
-    type Version = ();
-    type PalletInfo = PalletInfo;
     type AccountData = pallet_balances::AccountData<u64>;
-    type OnNewAccount = ();
-    type OnKilledAccount = ();
-    type SystemWeightInfo = ();
-    type SS58Prefix = ConstU16<42>;
-    type OnSetCode = ();
-    type MaxConsumers = ConstU32<16>;
 }
 
 impl pallet_balances::Config for Test {
@@ -76,7 +59,6 @@ impl pallet_balances::Config for Test {
     type MaxFreezes = ();
     type RuntimeHoldReason = ();
     type RuntimeFreezeReason = ();
-    type MaxHolds = ();
 }
 
 parameter_types! {

@@ -291,67 +291,6 @@ mod authenticate {
 mod add_device {
     use super::*;
 
-    // #[test]
-    // fn fails_if_already_authenticated() {
-    //     new_test_ext().execute_with(|| {
-    //         Accounts::<Test>::insert(
-    //             AccountName::get(),
-    //             Account::new(AccountId::new([0u8; 32]), crate::AccountStatus::Active),
-    //         );
-
-    //         assert_noop!(
-    //             Pass::register(
-    //                 RuntimeOrigin::signed(SIGNER),
-    //                 AccountName::get(),
-    //                 MockAuthenticationMethods::DummyAuthenticationMethod,
-    //                 BoundedVec::new(),
-    //                 (*b"challeng").to_vec()
-    //             ),
-    //             Error::<Test>::AlreadyRegistered
-    //         );
-    //     });
-    // }
-
-    // #[test]
-    // fn fails_if_cannot_resolve_device() {
-    //     new_test_ext().execute_with(|| {
-    //         assert_noop!(
-    //             Pass::register(
-    //                 RuntimeOrigin::signed(SIGNER),
-    //                 AccountName::get(),
-    //                 MockAuthenticationMethods::InvalidAuthenticationMethod,
-    //                 BoundedVec::new(),
-    //                 (*b"challeng").to_vec()
-    //             ),
-    //             Error::<Test>::InvalidDeviceForAuthenticationMethod
-    //         );
-    //     });
-    // }
-
-    // #[test]
-    // fn fails_if_cannot_fulfill_challenge() {
-    //     new_test_ext().execute_with(|| {
-    //         let challenge_response =
-    //             RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-    //                 .0
-    //                 .as_bytes()
-    //                 .to_vec();
-
-    //         System::set_block_number(2);
-
-    //         assert_noop!(
-    //             Pass::register(
-    //                 RuntimeOrigin::signed(SIGNER),
-    //                 AccountName::get(),
-    //                 MockAuthenticationMethods::DummyAuthenticationMethod,
-    //                 BoundedVec::new(),
-    //                 challenge_response,
-    //             ),
-    //             Error::<Test>::ChallengeFailed
-    //         );
-    //     });
-    // }
-
     #[test]
     fn it_works() {
         new_test_ext().execute_with(|| {
@@ -388,67 +327,6 @@ mod add_device {
 
 mod dispatch {
     use super::*;
-
-    // #[test]
-    // fn fails_if_already_authenticated() {
-    //     new_test_ext().execute_with(|| {
-    //         Accounts::<Test>::insert(
-    //             AccountName::get(),
-    //             Account::new(AccountId::new([0u8; 32]), crate::AccountStatus::Active),
-    //         );
-
-    //         assert_noop!(
-    //             Pass::register(
-    //                 RuntimeOrigin::signed(SIGNER),
-    //                 AccountName::get(),
-    //                 MockAuthenticationMethods::DummyAuthenticationMethod,
-    //                 BoundedVec::new(),
-    //                 (*b"challeng").to_vec()
-    //             ),
-    //             Error::<Test>::AlreadyRegistered
-    //         );
-    //     });
-    // }
-
-    // #[test]
-    // fn fails_if_cannot_resolve_device() {
-    //     new_test_ext().execute_with(|| {
-    //         assert_noop!(
-    //             Pass::register(
-    //                 RuntimeOrigin::signed(SIGNER),
-    //                 AccountName::get(),
-    //                 MockAuthenticationMethods::InvalidAuthenticationMethod,
-    //                 BoundedVec::new(),
-    //                 (*b"challeng").to_vec()
-    //             ),
-    //             Error::<Test>::InvalidDeviceForAuthenticationMethod
-    //         );
-    //     });
-    // }
-
-    // #[test]
-    // fn fails_if_cannot_fulfill_challenge() {
-    //     new_test_ext().execute_with(|| {
-    //         let challenge_response =
-    //             RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-    //                 .0
-    //                 .as_bytes()
-    //                 .to_vec();
-
-    //         System::set_block_number(2);
-
-    //         assert_noop!(
-    //             Pass::register(
-    //                 RuntimeOrigin::signed(SIGNER),
-    //                 AccountName::get(),
-    //                 MockAuthenticationMethods::DummyAuthenticationMethod,
-    //                 BoundedVec::new(),
-    //                 challenge_response,
-    //             ),
-    //             Error::<Test>::ChallengeFailed
-    //         );
-    //     });
-    // }
 
     #[test]
     fn it_works() {

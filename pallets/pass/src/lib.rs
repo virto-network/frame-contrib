@@ -146,7 +146,6 @@ pub mod pallet {
         AlreadyRegistered,
         CannotClaim,
         RegistrarCannotInitialize,
-        DeviceNotFound,
         InvalidDeviceForAuthenticationMethod,
         ChallengeFailed,
         ExceedsMaxDevices,
@@ -154,6 +153,7 @@ pub mod pallet {
         SessionNotFound,
         ExpiredSession,
         Uninitialized,
+        DeviceNotFound,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]

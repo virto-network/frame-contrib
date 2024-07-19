@@ -3,24 +3,19 @@ use super::*;
 use frame_support::ensure;
 use sp_runtime::{BoundedVec, DispatchError, DispatchResult};
 
-impl<T: Config<I>, I> pallet_referenda::TracksInfo<BalanceOf<T, I>, BlockNumberFor<T>>
+impl<T: Config<I>, I: 'static> pallet_referenda::TracksInfo<BalanceOf<T, I>, BlockNumberFor<T>>
     for Pallet<T, I>
 {
     type Id = T::TrackId;
     type RuntimeOrigin = <T::RuntimeOrigin as OriginTrait>::PalletsOrigin;
-    type TracksIter = TracksIter<T, I>;
 
-    fn tracks() -> Self::TracksIter {
+    fn tracks(
+    ) -> impl Iterator<Item = Cow<'static, Track<Self::Id, BalanceOf<T, I>, BlockNumberFor<T>>>>
+    {
         Tracks::<T, I>::iter().map(|(id, info)| Cow::Owned(Track { id, info }))
     }
     fn track_for(origin: &Self::RuntimeOrigin) -> Result<Self::Id, ()> {
         OriginToTrackId::<T, I>::get(origin).ok_or(())
-    }
-    fn tracks_ids() -> Vec<Self::Id> {
-        TracksIds::<T, I>::get().into_inner()
-    }
-    fn info(id: Self::Id) -> Option<Cow<'static, TrackInfoOf<T, I>>> {
-        Tracks::<T, I>::get(id).map(Cow::Owned)
     }
 }
 

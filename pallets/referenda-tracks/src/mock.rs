@@ -17,22 +17,18 @@
 
 //! Test environment for remarks pallet.
 
-use crate as pallet_referenda_tracks;
+use crate::{self as pallet_referenda_tracks, Config};
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
-    parameter_types,
-    traits::{ConstU16, ConstU32, ConstU64, EnsureOriginWithArg, EqualPrivilegeOnly, VoteTally},
+    derive_impl, parameter_types,
+    traits::{ConstU32, ConstU64, EnsureOriginWithArg, EqualPrivilegeOnly, VoteTally},
     weights::Weight,
 };
 use frame_system::EnsureRoot;
 use pallet_referenda::{PalletsOriginOf, TrackIdOf, TrackInfoOf, TracksInfo};
 use scale_info::TypeInfo;
-use sp_core::H256;
 use sp_io::TestExternalities;
-use sp_runtime::{
-    traits::{BlakeTwo256, IdentityLookup},
-    BuildStorage, Perbill,
-};
+use sp_runtime::{BuildStorage, Perbill};
 
 pub type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -49,31 +45,18 @@ frame_support::construct_runtime!(
     }
 );
 
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
 impl frame_system::Config for Test {
     type BaseCallFilter = frame_support::traits::Everything;
-    type BlockWeights = ();
-    type BlockLength = ();
-    type RuntimeOrigin = RuntimeOrigin;
-    type RuntimeCall = RuntimeCall;
-    type Nonce = u64;
-    type Hash = H256;
-    type Hashing = BlakeTwo256;
-    type AccountId = u64;
-    type Lookup = IdentityLookup<Self::AccountId>;
     type Block = Block;
-    type RuntimeEvent = RuntimeEvent;
-    type BlockHashCount = ConstU64<250>;
-    type DbWeight = ();
-    type Version = ();
-    type PalletInfo = PalletInfo;
     type AccountData = pallet_balances::AccountData<u64>;
-    type OnNewAccount = ();
-    type OnKilledAccount = ();
-    type SystemWeightInfo = ();
-    type SS58Prefix = ConstU16<42>;
-    type OnSetCode = ();
-    type MaxConsumers = ConstU32<16>;
 }
+
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
+impl pallet_balances::Config for Test {
+    type AccountStore = System;
+}
+
 impl pallet_preimage::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
@@ -95,22 +78,6 @@ impl pallet_scheduler::Config for Test {
     type WeightInfo = ();
     type OriginPrivilegeCmp = EqualPrivilegeOnly;
     type Preimages = Preimage;
-}
-impl pallet_balances::Config for Test {
-    type MaxReserves = ();
-    type ReserveIdentifier = [u8; 8];
-    type MaxLocks = ConstU32<10>;
-    type Balance = u64;
-    type RuntimeEvent = RuntimeEvent;
-    type DustRemoval = ();
-    type ExistentialDeposit = ConstU64<1>;
-    type AccountStore = System;
-    type WeightInfo = ();
-    type FreezeIdentifier = ();
-    type MaxFreezes = ();
-    type RuntimeHoldReason = ();
-    type RuntimeFreezeReason = ();
-    type MaxHolds = ();
 }
 
 pub struct EnsureOriginToTrack;
@@ -148,21 +115,6 @@ impl crate::BenchmarkHelper<Test, ()> for BenchmarkHelper {
 }
 
 parameter_types! {
-    pub const MaxTracks: u32 = u8::MAX as u32;
-}
-impl pallet_referenda_tracks::Config for Test {
-    type TrackId = u32;
-    type RuntimeEvent = RuntimeEvent;
-    type MaxTracks = MaxTracks;
-    type AdminOrigin = EnsureRoot<u64>;
-    type UpdateOrigin = EnsureOriginToTrack;
-    type WeightInfo = ();
-
-    #[cfg(feature = "runtime-benchmarks")]
-    type BenchmarkHelper = BenchmarkHelper;
-}
-
-parameter_types! {
     pub static AlarmInterval: u64 = 1;
 }
 impl pallet_referenda::Config for Test {
@@ -183,6 +135,21 @@ impl pallet_referenda::Config for Test {
     type AlarmInterval = AlarmInterval;
     type Tracks = Tracks;
     type Preimages = Preimage;
+}
+
+parameter_types! {
+    pub const MaxTracks: u32 = u8::MAX as u32;
+}
+impl Config for Test {
+    type TrackId = u32;
+    type RuntimeEvent = RuntimeEvent;
+    type MaxTracks = MaxTracks;
+    type AdminOrigin = EnsureRoot<u64>;
+    type UpdateOrigin = EnsureOriginToTrack;
+    type WeightInfo = ();
+
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = BenchmarkHelper;
 }
 
 #[derive(Encode, Debug, Decode, TypeInfo, Eq, PartialEq, Clone, MaxEncodedLen)]
