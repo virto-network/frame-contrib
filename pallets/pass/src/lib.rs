@@ -150,23 +150,24 @@ pub mod pallet {
         ChallengeFailed,
         ExceedsMaxDevices,
         AccountNotFound,
+        SessionNotFound,
+        ExpiredSession,
         Uninitialized,
         DeviceNotFound,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
-        /// Successful call
+        /// Register an account
         #[pallet::call_index(0)]
         pub fn register(
             origin: OriginFor<T>,
             account_name: AccountName<T, I>,
-            authenticator: T::AuthenticationMethod,
+            authentication_method: T::AuthenticationMethod,
             device: DeviceDescriptor<T, I>,
             challenge_response: Vec<u8>,
         ) -> DispatchResult {
             ensure_signed(origin)?;
-            let authenticator: Box<dyn AuthenticationMethod> = authenticator.into();
             let account_id = Self::account_id_for(&account_name);
 
             ensure!(
@@ -196,32 +197,13 @@ pub mod pallet {
                 .into(),
             );
 
-            let device_id = authenticator
+            let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
+            let device_id = authentication_method
                 .get_device_id(device.to_vec())
                 .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
-            authenticator
-                .authenticate(
-                    device.clone().to_vec(),
-                    T::Randomness::random(&Encode::encode(&T::PalletId::get()))
-                        .0
-                        .as_ref(),
-                    &challenge_response,
-                )
-                .map_err(|e| match e {
-                    AuthenticateError::ChallengeFailed => Error::<T, I>::ChallengeFailed,
-                })?;
 
-            AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
-                .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
-            Devices::<T, I>::insert(device_id, (account_name.clone(), device));
-
-            Self::deposit_event(
-                Event::<T, I>::AddedDevice {
-                    account_name,
-                    device_id,
-                }
-                .into(),
-            );
+            Self::do_authenticate(&authentication_method, &device, &challenge_response)?;
+            Self::do_add_device(&account_name, device_id, device)?;
 
             Ok(())
         }
@@ -232,9 +214,9 @@ pub mod pallet {
         pub fn claim(
             origin: OriginFor<T>,
             account_name: AccountName<T, I>,
-            authenticator: T::AuthenticationMethod,
+            authentication_method: T::AuthenticationMethod,
             device: DeviceDescriptor<T, I>,
-            challenge_payload: Vec<u8>,
+            challenge_response: Vec<u8>,
         ) -> DispatchResult {
             // Ensures that the function is called by a signed origin
             let who = ensure_signed(origin)?;
@@ -247,41 +229,20 @@ pub mod pallet {
             })?;
             Self::create_account(&account_name.clone().into())?;
 
-            // Simulate device authentication
-            let authenticator = Box::new(authenticator.into());
-            let device_id = authenticator
-                .get_device_id(device.to_vec())
-                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
-
-            authenticator
-                .authenticate(
-                    device.to_vec(),
-                    T::Randomness::random(&Encode::encode(&T::PalletId::get()))
-                        .0
-                        .as_ref(),
-                    &challenge_payload,
-                )
-                .map_err(|_| Error::<T, I>::ChallengeFailed)?;
-
-            // Register the device with the account
-            AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
-                .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
-            Devices::<T, I>::insert(device_id, (account_name.clone(), device));
-
-            // Emit events
             Self::deposit_event(
                 Event::<T, I>::Claimed {
                     account_name: account_name.clone(),
                 }
                 .into(),
             );
-            Self::deposit_event(
-                Event::<T, I>::AddedDevice {
-                    account_name,
-                    device_id,
-                }
-                .into(),
-            );
+
+            let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
+            let device_id = authentication_method
+                .get_device_id(device.to_vec())
+                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
+
+            Self::do_authenticate(&authentication_method, &device, &challenge_response)?;
+            Self::do_add_device(&account_name, device_id, device)?;
 
             Ok(())
         }
@@ -321,11 +282,10 @@ pub mod pallet {
             account_name: AccountName<T, I>,
             authentication_method: T::AuthenticationMethod,
             device_id: DeviceId,
-            authentication_proof: Vec<u8>,
-            new_session_key: AccountIdOf<T>,
-            maybe_duration: Option<BlockNumberFor<T>>,
+            challenge_response: Vec<u8>,
+            duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
-            let _who = ensure_signed(origin)?;
+            let who = ensure_signed(origin)?;
 
             // Check account name exist
             ensure!(
@@ -333,44 +293,16 @@ pub mod pallet {
                 Error::<T, I>::AccountNotFound
             );
 
-            let block_number = frame_system::Pallet::<T>::block_number();
-            // Get the device from storage
-            let (ac_name_from_dev_id, dev_descript_from_dev_id) =
-                Devices::<T, I>::get(&device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
+            let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
+            let (device_account_name, device) =
+                Devices::<T, I>::get(device_id.clone()).ok_or(Error::<T, I>::DeviceNotFound)?;
+
             ensure!(
-                ac_name_from_dev_id == account_name,
+                account_name == device_account_name,
                 Error::<T, I>::AccountNotFound
             );
-
-            authentication_method
-                .into()
-                .authenticate(
-                    dev_descript_from_dev_id.to_vec(),
-                    T::Randomness::random(&Encode::encode(&T::PalletId::get()))
-                        .0
-                        .as_ref(),
-                    &authentication_proof,
-                )
-                .map_err(|_| Error::<T, I>::ChallengeFailed)?;
-
-            // Create the new session
-            let session_duration = maybe_duration
-                .unwrap_or(T::MaxSessionDuration::get())
-                .max(T::MaxSessionDuration::get());
-
-            Sessions::<T, I>::insert(
-                new_session_key.clone(),
-                (account_name, block_number + session_duration),
-            );
-
-            // Event
-            Self::deposit_event(
-                Event::<T, I>::SessionCreated {
-                    session_key: new_session_key.clone(),
-                    until: session_duration.clone(),
-                }
-                .into(),
-            );
+            Self::do_authenticate(&authentication_method, &device, &challenge_response)?;
+            Self::do_add_session(&who, &account_name, duration);
 
             // Finish
             Ok(())
@@ -383,36 +315,22 @@ pub mod pallet {
             origin: OriginFor<T>,
             account_name: AccountName<T, I>,
             authentication_method: T::AuthenticationMethod,
-            device_id: DeviceId,
-            authentication_proof: Vec<u8>,
+            device: DeviceDescriptor<T, I>,
+            challenge_response: Vec<u8>,
         ) -> DispatchResult {
-            // Ensures that the function is called by a signed origin
-            let _who = ensure_signed(origin)?;
-
-            // Check account name exist
+            let session_account_name = Self::ensure_signer_is_valid_session(origin)?;
             ensure!(
-                Accounts::<T, I>::contains_key(account_name.clone()),
-                Error::<T, I>::AccountNotFound
+                account_name == session_account_name,
+                Error::<T, I>::AccountNotFound,
             );
 
-            // <Validate device>
-            let auth_method: Box<dyn AuthenticationMethod> = authentication_method.into();
+            let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
+            let device_id = authentication_method
+                .get_device_id(device.clone().to_vec())
+                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
 
-            // Verify signature of device
-            auth_method
-                .authenticate(
-                    device_id.to_vec(),
-                    T::Randomness::random(&Encode::encode(&T::PalletId::get()))
-                        .0
-                        .as_ref(),
-                    &authentication_proof[..],
-                )
-                .map_err(|_| Error::<T, I>::ChallengeFailed)?;
-
-            // <Add device>
-            AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
-                .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
-            // </Add device>
+            Self::do_authenticate(&authentication_method, &device, &challenge_response)?;
+            Self::do_add_device(&account_name, device_id, device)?;
 
             Ok(())
         }
@@ -421,37 +339,51 @@ pub mod pallet {
         pub fn dispatch(
             origin: OriginFor<T>,
             call: Box<RuntimeCallFor<T>>,
-            maybe_authentication: Option<(AccountName<T, I>, T::AuthenticationMethod, DeviceId)>,
-            _maybe_next_session_key: Option<AccountIdOf<T>>,
+            maybe_authentication: Option<(
+                AccountName<T, I>,
+                T::AuthenticationMethod,
+                DeviceId,
+                Vec<u8>,
+            )>,
+            maybe_next_session_key: Option<AccountIdOf<T>>,
         ) -> DispatchResult {
-            let who = ensure_signed(origin)?;
+            let account_name =
+                if let Some((account_name, authentication_method, device_id, payload_challenge)) =
+                    maybe_authentication
+                {
+                    let (device_account_name, device) =
+                        Devices::<T, I>::get(device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
+                    ensure!(
+                        device_account_name == account_name,
+                        Error::<T, I>::AccountNotFound
+                    );
 
-            // Authentication logic (if provided)
-            if let Some((_account_name, authenticator, _device_id)) = maybe_authentication {
-                // Commented while add_device is not implemented.
-                // let (_, device) = Devices::<T, I>::get(device_id)
-                //     .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
-                let device = DeviceDescriptor::<T, I>::default();
+                    let authentication_method: Box<dyn AuthenticationMethod> =
+                        authentication_method.into();
 
-                let authenticator = Box::new(authenticator.into());
+                    Self::do_authenticate(&authentication_method, &device, &payload_challenge)?;
+                    account_name
+                } else {
+                    Self::ensure_signer_is_valid_session(origin)?
+                };
 
-                // This has to be rethought, what would a real challenge look like? Do we pass a challenge instead?
-                let challenge = T::Randomness::random(&Encode::encode(&T::PalletId::get()))
-                    .0
-                    .as_ref()
-                    .to_vec();
+            let Account { account_id, status } = Accounts::<T, I>::get(account_name.clone())
+                .ok_or(Error::<T, I>::AccountNotFound)?;
+            ensure!(
+                status == AccountStatus::Active,
+                Error::<T, I>::Uninitialized
+            );
 
-                // Same as above, what would a real payload look like?
-                let payload = challenge.clone();
-
-                authenticator
-                    .authenticate(device.to_vec(), &challenge, &payload)
-                    .map_err(|_| Error::<T, I>::ChallengeFailed)?;
+            if let Some(next_session_key) = maybe_next_session_key {
+                Self::do_add_session(
+                    &next_session_key,
+                    &account_name,
+                    Some(T::MaxSessionDuration::get()),
+                );
             }
 
             // Re-dispatch the call on behalf of the caller.
-            let res = call.dispatch(RawOrigin::Signed(who).into());
-
+            let res = call.dispatch(RawOrigin::Signed(account_id).into());
             // Turn the result from the `dispatch` into our expected `DispatchResult` type.
             res.map(|_| ()).map_err(|e| e.error)
         }
@@ -501,5 +433,80 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         )?;
 
         Ok(())
+    }
+
+    pub(crate) fn ensure_signer_is_valid_session(
+        origin: OriginFor<T>,
+    ) -> Result<AccountName<T, I>, DispatchError> {
+        let who = ensure_signed(origin)?;
+
+        let (account_name, until) =
+            Sessions::<T, I>::get(&who).ok_or(Error::<T, I>::SessionNotFound)?;
+        if frame_system::Pallet::<T>::block_number() > until {
+            // Clean the expired session logic here
+            // Error… just because
+            return Err(Error::<T, I>::ExpiredSession.into());
+        }
+
+        Ok(account_name)
+    }
+
+    pub(crate) fn do_authenticate(
+        authentication_method: &Box<dyn AuthenticationMethod>,
+        device: &DeviceDescriptor<T, I>,
+        challenge_response: &Vec<u8>,
+    ) -> DispatchResult {
+        authentication_method
+            .authenticate(
+                device.clone().to_vec(),
+                T::Randomness::random(&Encode::encode(&T::PalletId::get()))
+                    .0
+                    .as_ref(),
+                challenge_response,
+            )
+            .map_err(|e| match e {
+                AuthenticateError::ChallengeFailed => Error::<T, I>::ChallengeFailed.into(),
+            })
+    }
+
+    pub(crate) fn do_add_device(
+        account_name: &AccountName<T, I>,
+        device_id: DeviceId,
+        device: DeviceDescriptor<T, I>,
+    ) -> DispatchResult {
+        AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
+            .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
+        Devices::<T, I>::insert(device_id, (account_name.clone(), device));
+
+        Self::deposit_event(
+            Event::<T, I>::AddedDevice {
+                account_name: account_name.clone(),
+                device_id,
+            }
+            .into(),
+        );
+        Ok(())
+    }
+
+    pub(crate) fn do_add_session(
+        session_key: &AccountIdOf<T>,
+        account_name: &AccountName<T, I>,
+        duration: Option<BlockNumberFor<T>>,
+    ) {
+        let block_number = frame_system::Pallet::<T>::block_number();
+        let session_duration = duration
+            .unwrap_or(T::MaxSessionDuration::get())
+            .max(T::MaxSessionDuration::get());
+        let until = block_number + session_duration;
+
+        Sessions::<T, I>::insert(session_key.clone(), (account_name.clone(), until));
+
+        Self::deposit_event(
+            Event::<T, I>::SessionCreated {
+                session_key: session_key.clone(),
+                until,
+            }
+            .into(),
+        );
     }
 }
