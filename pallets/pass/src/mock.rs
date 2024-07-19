@@ -269,7 +269,6 @@ impl Config for Test {
     type MaxDevicesPerAccount = ConstU32<5>;
     type MaxSessionDuration = ConstU64<10>;
     type ModForBlockNumber = ConstU32<10800>;
-    // type MaxDuration = ConstU64<10>;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

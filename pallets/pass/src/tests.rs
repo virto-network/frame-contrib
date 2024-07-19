@@ -6,6 +6,8 @@ use frame_support::{assert_noop, assert_ok, parameter_types, traits::Randomness,
 use sp_core::ConstU32;
 
 const SIGNER: AccountId = AccountId::new([0u8; 32]);
+const OTHER: AccountId = AccountId::new([1u8; 32]);
+
 const THE_DEVICE: fc_traits_authn::DeviceId = [1u8; 32];
 
 parameter_types! {
@@ -250,37 +252,35 @@ mod authenticate {
     #[test]
     fn it_works() {
         new_test_ext().execute_with(|| {
-            let account_id = Pass::account_id_for(&AccountName::get());
-            let session_key: AccountId = AccountId::new([3u8; 32]);
-            let current_block = frame_system::Pallet::<Test>::block_number();
-            let current_block_vec = current_block.encode();
-            let maybe_duration = Some(10);
+            let challenge_response =
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
+                    .0
+                    .as_bytes()
+                    .to_vec();
+            let block_number = System::block_number();
+            let duration = 10;
 
-            let _ = Pass::register(
+            assert_ok!(Pass::register(
                 RuntimeOrigin::signed(SIGNER),
                 AccountName::get(),
                 MockAuthenticationMethods::DummyAuthenticationMethod,
                 BoundedVec::new(),
-                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                    .0
-                    .as_bytes()
-                    .to_vec(),
-            );
+                challenge_response.clone(),
+            ));
 
             assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(SIGNER),
+                RuntimeOrigin::signed(OTHER),
                 AccountName::get(),
                 MockAuthenticationMethods::DummyAuthenticationMethod,
                 THE_DEVICE,
-                current_block_vec,
-                session_key,
-                maybe_duration,
+                challenge_response,
+                Some(duration),
             ));
 
             System::assert_has_event(
                 Event::<Test>::SessionCreated {
-                    session_key: account_id.clone(),
-                    until: maybe_duration.unwrap().clone(),
+                    session_key: OTHER,
+                    until: block_number + duration,
                 }
                 .into(),
             );
