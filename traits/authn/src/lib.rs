@@ -20,13 +20,13 @@ pub enum AuthenticateError {
     ChallengeFailed,
 }
 
-pub trait Authenticator {
+pub trait AuthenticationMethod {
     fn get_device_id(&self, device: Vec<u8>) -> Option<DeviceId>;
     fn authenticate(
         &self,
-        device: Vec<u8>,
+        device: Vec<u8>, // Johan note: change to BoundedVec
         challenge: &[u8],
-        payload: &[u8],
+        payload: &[u8], // Johan note: replace this for signature, right? Payload and challenge is the same, we need to get a way to veryfy challenge was signed properly
     ) -> Result<(), AuthenticateError>;
 }
 

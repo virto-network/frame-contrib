@@ -6,6 +6,7 @@ use frame_support::{assert_noop, assert_ok, parameter_types, traits::Randomness,
 use sp_core::ConstU32;
 
 const SIGNER: AccountId = AccountId::new([0u8; 32]);
+const THE_DEVICE: fc_traits_authn::DeviceId = [1u8; 32];
 
 parameter_types! {
     pub AccountName: BoundedVec<u8, ConstU32<64>> =
@@ -27,7 +28,7 @@ mod register {
                 Pass::register(
                     RuntimeOrigin::signed(SIGNER),
                     AccountName::get(),
-                    MockAuthenticators::DummyAuthenticator,
+                    MockAuthenticationMethods::DummyAuthenticationMethod,
                     BoundedVec::new(),
                     (*b"challeng").to_vec()
                 ),
@@ -43,11 +44,11 @@ mod register {
                 Pass::register(
                     RuntimeOrigin::signed(SIGNER),
                     AccountName::get(),
-                    MockAuthenticators::InvalidAuthenticator,
+                    MockAuthenticationMethods::InvalidAuthenticationMethod,
                     BoundedVec::new(),
                     (*b"challeng").to_vec()
                 ),
-                Error::<Test>::InvalidDeviceForAuthenticator
+                Error::<Test>::InvalidDeviceForAuthenticationMethod
             );
         });
     }
@@ -67,7 +68,7 @@ mod register {
                 Pass::register(
                     RuntimeOrigin::signed(SIGNER),
                     AccountName::get(),
-                    MockAuthenticators::DummyAuthenticator,
+                    MockAuthenticationMethods::DummyAuthenticationMethod,
                     BoundedVec::new(),
                     challenge_response,
                 ),
@@ -84,7 +85,7 @@ mod register {
             assert_ok!(Pass::register(
                 RuntimeOrigin::signed(SIGNER),
                 AccountName::get(),
-                MockAuthenticators::DummyAuthenticator,
+                MockAuthenticationMethods::DummyAuthenticationMethod,
                 BoundedVec::new(),
                 RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                     .0
@@ -117,7 +118,7 @@ mod register {
             assert_ok!(Pass::register(
                 RuntimeOrigin::signed(SIGNER),
                 AccountName::get(),
-                MockAuthenticators::DummyAuthenticator,
+                MockAuthenticationMethods::DummyAuthenticationMethod,
                 BoundedVec::new(),
                 RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                     .0
@@ -142,7 +143,7 @@ mod register {
             assert_ok!(Pass::register(
                 RuntimeOrigin::signed(SIGNER),
                 AccountName::get(),
-                MockAuthenticators::DummyAuthenticator,
+                MockAuthenticationMethods::DummyAuthenticationMethod,
                 BoundedVec::new(),
                 RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                     .0
@@ -180,14 +181,14 @@ mod claim {
         new_test_ext().execute_with(|| {
             // Setup: Register and prepare an account for claiming
             let account_name = AccountName::get();
-            // Device ID given by DummyAuthenticator
+            // Device ID given by DummyAuthenticationMethod
             let device_id = [1u8; 32];
 
             // Attempt to claim the account
             assert_ok!(Pass::claim(
                 RuntimeOrigin::signed(SIGNER),
                 account_name.clone(),
-                MockAuthenticators::DummyAuthenticator,
+                MockAuthenticationMethods::DummyAuthenticationMethod,
                 BoundedVec::new(),
                 RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                     .0
@@ -230,7 +231,7 @@ mod claim {
                 Pass::claim(
                     RuntimeOrigin::signed(BADSIGNER),
                     AccountName::get(),
-                    MockAuthenticators::DummyAuthenticator,
+                    MockAuthenticationMethods::DummyAuthenticationMethod,
                     BoundedVec::new(),
                     RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
                         .0
@@ -238,6 +239,124 @@ mod claim {
                         .to_vec()
                 ),
                 Error::<Test>::CannotClaim
+            );
+        });
+    }
+}
+
+mod authenticate {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        new_test_ext().execute_with(|| {
+            let session_key: AccountId = AccountId::new([3u8; 32]);
+            let maybe_duration = Some(10);
+
+            let _ = Pass::register(
+                RuntimeOrigin::signed(SIGNER),
+                AccountName::get(),
+                MockAuthenticationMethods::DummyAuthenticationMethod,
+                BoundedVec::new(),
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
+                    .0
+                    .as_bytes()
+                    .to_vec(),
+            );
+
+            assert_ok!(Pass::authenticate(
+                RuntimeOrigin::signed(SIGNER),
+                AccountName::get(),
+                MockAuthenticationMethods::DummyAuthenticationMethod,
+                THE_DEVICE,
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
+                    .0
+                    .as_bytes()
+                    .to_vec(),
+                session_key.clone(),
+                maybe_duration,
+            ));
+
+            System::assert_has_event(
+                Event::<Test>::SessionCreated {
+                    session_key: session_key,
+                    until: maybe_duration.unwrap().clone(),
+                }
+                .into(),
+            );
+        });
+    }
+}
+
+mod add_device {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        new_test_ext().execute_with(|| {
+            let account_id = Pass::account_id_for(&AccountName::get());
+
+            assert_ok!(Pass::register(
+                RuntimeOrigin::signed(SIGNER),
+                AccountName::get(),
+                MockAuthenticationMethods::DummyAuthenticationMethod,
+                BoundedVec::new(),
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
+                    .0
+                    .as_bytes()
+                    .to_vec()
+            ));
+
+            System::assert_has_event(
+                Event::<Test>::Registered {
+                    account_name: AccountName::get(),
+                    account_id,
+                }
+                .into(),
+            );
+            System::assert_has_event(
+                Event::<Test>::AddedDevice {
+                    account_name: AccountName::get(),
+                    device_id: [1u8; 32],
+                }
+                .into(),
+            );
+        });
+    }
+}
+
+mod dispatch {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        new_test_ext().execute_with(|| {
+            let account_id = Pass::account_id_for(&AccountName::get());
+
+            assert_ok!(Pass::register(
+                RuntimeOrigin::signed(SIGNER),
+                AccountName::get(),
+                MockAuthenticationMethods::DummyAuthenticationMethod,
+                BoundedVec::new(),
+                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
+                    .0
+                    .as_bytes()
+                    .to_vec()
+            ));
+
+            System::assert_has_event(
+                Event::<Test>::Registered {
+                    account_name: AccountName::get(),
+                    account_id,
+                }
+                .into(),
+            );
+            System::assert_has_event(
+                Event::<Test>::AddedDevice {
+                    account_name: AccountName::get(),
+                    device_id: [1u8; 32],
+                }
+                .into(),
             );
         });
     }

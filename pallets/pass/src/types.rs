@@ -21,7 +21,7 @@ impl<AccountId> Account<AccountId> {
         Self { account_id, status }
     }
 
-    pub fn is_unitialized(&self) -> bool {
+    pub fn is_uninitialized(&self) -> bool {
         matches!(self.status, AccountStatus::Uninitialized)
     }
 }
