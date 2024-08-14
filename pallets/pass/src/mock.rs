@@ -5,7 +5,7 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use fc_traits_authn::RegistrarError;
 use frame_support::{
     derive_impl, ensure, parameter_types,
-    traits::{ConstU16, ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize},
+    traits::{ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize},
     weights::Weight,
     PalletId,
 };
@@ -14,7 +14,7 @@ use scale_info::TypeInfo;
 use sp_core::{blake2_256, H256};
 use sp_io::TestExternalities;
 use sp_runtime::{
-    traits::{BlakeTwo256, IdentifyAccount, IdentityLookup, Verify},
+    traits::{IdentifyAccount, IdentityLookup, Verify},
     MultiSignature,
 };
 
@@ -111,10 +111,11 @@ impl fc_traits_authn::AuthenticationMethod for InvalidAuthenticationMethod {
 
 pub struct DummyAuthenticationMethod;
 impl fc_traits_authn::AuthenticationMethod for DummyAuthenticationMethod {
-    fn get_device_id(&self, _device: Vec<u8>) -> Option<pallet_pass::DeviceId> {
-        Some([1u8; 32])
+    fn get_device_id(&self, device: Vec<u8>) -> Option<pallet_pass::DeviceId> {
+        let len = device.len();
+        Some([(len as u8) + 1; 32])
     }
-
+    
     fn authenticate(
         &self,
         _device: Vec<u8>,

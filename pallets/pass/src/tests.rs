@@ -114,7 +114,6 @@ mod register {
 
     #[test]
     fn unreserving_if_uninitialized_works() {
-        env_logger::init();
         // Test for uninitialized account that unreserves if not activated after timeout
         new_test_ext().execute_with(|| {
             assert_ok!(Pass::register(
@@ -246,41 +245,69 @@ mod claim {
     }
 }
 
+const DURATION: u64 = 10;
+parameter_types! {
+    pub ChallengeResponse: Vec<u8> =
+            RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
+                .0
+                .as_bytes()
+                .to_vec();
+}
+
+fn prepare() -> sp_io::TestExternalities {
+    let mut t = new_test_ext();
+    t.execute_with(|| {
+        assert_ok!(Pass::register(
+            RuntimeOrigin::signed(SIGNER),
+            AccountName::get(),
+            MockAuthenticationMethods::DummyAuthenticationMethod,
+            BoundedVec::new(),
+            ChallengeResponse::get(),
+        ));
+    });
+    t
+}
+
 mod authenticate {
     use super::*;
 
     #[test]
-    fn it_works() {
-        new_test_ext().execute_with(|| {
-            let challenge_response =
-                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                    .0
-                    .as_bytes()
-                    .to_vec();
-            let block_number = System::block_number();
-            let duration = 10;
+    fn fails_if_cannot_resolve_device() {
+        prepare().execute_with(|| {
+            let device = [2u8; 32];
 
-            assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                BoundedVec::new(),
-                challenge_response.clone(),
-            ));
+            assert_noop!(
+                Pass::authenticate(
+                    RuntimeOrigin::signed(OTHER),
+                    AccountName::get(),
+                    MockAuthenticationMethods::DummyAuthenticationMethod,
+                    device,
+                    ChallengeResponse::get(),
+                    Some(DURATION),
+                ),
+                Error::<Test>::DeviceNotFound
+            );
+        });
+    }
+
+    #[test]
+    fn it_works() {
+        prepare().execute_with(|| {
+            let block_number = System::block_number();
 
             assert_ok!(Pass::authenticate(
                 RuntimeOrigin::signed(OTHER),
                 AccountName::get(),
                 MockAuthenticationMethods::DummyAuthenticationMethod,
                 THE_DEVICE,
-                challenge_response,
-                Some(duration),
+                ChallengeResponse::get(),
+                Some(DURATION),
             ));
 
             System::assert_has_event(
                 Event::<Test>::SessionCreated {
                     session_key: OTHER,
-                    until: block_number + duration,
+                    until: block_number + DURATION,
                 }
                 .into(),
             );
@@ -290,34 +317,48 @@ mod authenticate {
 
 mod add_device {
     use super::*;
+    const NEW_DEVICE_ID: fc_traits_authn::DeviceId = [2u8; 32];
+
+    #[test]
+    fn fails_if_not_signed_by_session_key() {
+        prepare().execute_with(|| {
+            assert_noop!(
+                Pass::add_device(
+                    RuntimeOrigin::signed(OTHER),
+                    AccountName::get(),
+                    MockAuthenticationMethods::DummyAuthenticationMethod,
+                    BoundedVec::truncate_from(vec![1u8]),
+                    ChallengeResponse::get()
+                ),
+                Error::<Test>::SessionNotFound
+            );
+        });
+    }
 
     #[test]
     fn it_works() {
-        new_test_ext().execute_with(|| {
-            let account_id = Pass::account_id_for(&AccountName::get());
-
-            assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
+        prepare().execute_with(|| {
+            assert_ok!(Pass::authenticate(
+                RuntimeOrigin::signed(OTHER),
                 AccountName::get(),
                 MockAuthenticationMethods::DummyAuthenticationMethod,
-                BoundedVec::new(),
-                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                    .0
-                    .as_bytes()
-                    .to_vec()
+                THE_DEVICE,
+                ChallengeResponse::get(),
+                Some(DURATION),
+            ));
+
+            assert_ok!(Pass::add_device(
+                RuntimeOrigin::signed(OTHER),
+                AccountName::get(),
+                MockAuthenticationMethods::DummyAuthenticationMethod,
+                BoundedVec::truncate_from(vec![1u8]),
+                ChallengeResponse::get()
             ));
 
             System::assert_has_event(
-                Event::<Test>::Registered {
-                    account_name: AccountName::get(),
-                    account_id,
-                }
-                .into(),
-            );
-            System::assert_has_event(
                 Event::<Test>::AddedDevice {
                     account_name: AccountName::get(),
-                    device_id: [1u8; 32],
+                    device_id: NEW_DEVICE_ID,
                 }
                 .into(),
             );
