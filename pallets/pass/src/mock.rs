@@ -115,7 +115,7 @@ impl fc_traits_authn::AuthenticationMethod for DummyAuthenticationMethod {
         let len = device.len();
         Some([(len as u8) + 1; 32])
     }
-    
+
     fn authenticate(
         &self,
         _device: Vec<u8>,
@@ -269,6 +269,7 @@ pub fn run_to(n: u64) {
 }
 
 pub fn next_block() {
+    System::reset_events();
     System::set_block_number(System::block_number() + 1);
     log::info!("Starting block {:?}", System::block_number());
     Scheduler::on_initialize(System::block_number());

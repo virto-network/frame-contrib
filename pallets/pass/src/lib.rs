@@ -457,8 +457,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let (account_name, until) =
             Sessions::<T, I>::get(&who).ok_or(Error::<T, I>::SessionNotFound)?;
         if frame_system::Pallet::<T>::block_number() > until {
-            // Clean the expired session logic here
-            // Error… just because
+            Sessions::<T, I>::remove(who);
             return Err(Error::<T, I>::ExpiredSession.into());
         }
 
@@ -510,7 +509,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let block_number = frame_system::Pallet::<T>::block_number();
         let session_duration = duration
             .unwrap_or(T::MaxSessionDuration::get())
-            .max(T::MaxSessionDuration::get());
+            .min(T::MaxSessionDuration::get());
         let until = block_number + session_duration;
 
         Sessions::<T, I>::insert(session_key.clone(), (account_name.clone(), until));

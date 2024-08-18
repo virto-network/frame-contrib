@@ -191,10 +191,7 @@ mod claim {
                 account_name.clone(),
                 MockAuthenticationMethods::DummyAuthenticationMethod,
                 BoundedVec::new(),
-                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                    .0
-                    .as_bytes()
-                    .to_vec()
+                ChallengeResponse::get(),
             ));
 
             // Verify the account status is now Active
@@ -234,10 +231,7 @@ mod claim {
                     AccountName::get(),
                     MockAuthenticationMethods::DummyAuthenticationMethod,
                     BoundedVec::new(),
-                    RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                        .0
-                        .as_bytes()
-                        .to_vec()
+                    ChallengeResponse::get(),
                 ),
                 Error::<Test>::CannotClaim
             );
@@ -464,8 +458,6 @@ mod dispatch {
 
     #[test]
     fn dispatching_signed_with_a_session_key_works() {
-        let account_id = Pass::account_id_for(&AccountName::get());
-
         prepare().execute_with(|| {
             assert_ok!(Pass::authenticate(
                 RuntimeOrigin::signed(OTHER),
@@ -485,14 +477,82 @@ mod dispatch {
                 None
             ));
 
-            let hash = <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world");
-
             System::assert_has_event(
                 frame_system::Event::Remarked {
-                    sender: account_id,
-                    hash,
+                    sender: Pass::account_id_for(&AccountName::get()),
+                    hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
                 }
                 .into(),
+            );
+        });
+    }
+
+    #[test]
+    fn dispatching_creates_new_session_key() {
+        prepare().execute_with(|| {
+            assert_ok!(Pass::authenticate(
+                RuntimeOrigin::signed(OTHER),
+                AccountName::get(),
+                MockAuthenticationMethods::DummyAuthenticationMethod,
+                THE_DEVICE,
+                ChallengeResponse::get(),
+                None,
+            ));
+
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(OTHER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                None,
+                Some(SIGNER)
+            ));
+
+            System::assert_has_event(
+                Event::<Test>::SessionCreated {
+                    session_key: SIGNER,
+                    until: 11,
+                }
+                .into(),
+            );
+
+            next_block();
+
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(SIGNER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                None,
+                None,
+            ));
+        });
+    }
+
+    #[test]
+    fn dispatching_signed_with_a_session_key_fails_on_expired_session() {
+        prepare().execute_with(|| {
+            assert_ok!(Pass::authenticate(
+                RuntimeOrigin::signed(OTHER),
+                AccountName::get(),
+                MockAuthenticationMethods::DummyAuthenticationMethod,
+                THE_DEVICE,
+                ChallengeResponse::get(),
+                Some(2),
+            ));
+
+            run_to(4);
+
+            assert_noop!(
+                Pass::dispatch(
+                    RuntimeOrigin::signed(OTHER),
+                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                        remark: b"Hello, world".to_vec()
+                    })),
+                    None,
+                    None
+                ),
+                Error::<Test>::ExpiredSession
             );
         });
     }
