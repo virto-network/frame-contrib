@@ -271,6 +271,32 @@ fn prepare() -> sp_io::TestExternalities {
 mod authenticate {
     use super::*;
 
+    fn prepare() -> sp_io::TestExternalities {
+        let mut t = super::prepare();
+        t.execute_with(|| {
+            // Simulate device initialization
+            System::inc_providers(&Pass::account_id_for(&AccountName::get()));
+        });
+        t
+    }
+
+    #[test]
+    fn fails_if_account_is_uninitialized() {
+        super::prepare().execute_with(|| {
+            assert_noop!(
+                Pass::authenticate(
+                    RuntimeOrigin::signed(OTHER),
+                    AccountName::get(),
+                    MockAuthenticationMethods::DummyAuthenticationMethod,
+                    THE_DEVICE,
+                    ChallengeResponse::get(),
+                    Some(DURATION),
+                ),
+                Error::<Test>::Uninitialized
+            );
+        });
+    }
+
     #[test]
     fn fails_if_cannot_resolve_device() {
         prepare().execute_with(|| {
@@ -319,13 +345,21 @@ mod add_device {
     use super::*;
     const NEW_DEVICE_ID: fc_traits_authn::DeviceId = [2u8; 32];
 
+    fn prepare() -> sp_io::TestExternalities {
+        let mut t = super::prepare();
+        t.execute_with(|| {
+            // Simulate device initialization
+            System::inc_providers(&Pass::account_id_for(&AccountName::get()));
+        });
+        t
+    }
+
     #[test]
     fn fails_if_not_signed_by_session_key() {
         prepare().execute_with(|| {
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(OTHER),
-                    AccountName::get(),
                     MockAuthenticationMethods::DummyAuthenticationMethod,
                     BoundedVec::truncate_from(vec![1u8]),
                     ChallengeResponse::get()
@@ -349,7 +383,6 @@ mod add_device {
 
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(OTHER),
-                AccountName::get(),
                 MockAuthenticationMethods::DummyAuthenticationMethod,
                 BoundedVec::truncate_from(vec![1u8]),
                 ChallengeResponse::get()
@@ -368,34 +401,96 @@ mod add_device {
 
 mod dispatch {
     use super::*;
+    use sp_runtime::traits::Hash;
+
+    fn prepare() -> sp_io::TestExternalities {
+        let mut t = super::prepare();
+        t.execute_with(|| {
+            // Emulate provisioning of account
+
+            System::inc_providers(&Pass::account_id_for(&AccountName::get()));
+        });
+        t
+    }
 
     #[test]
-    fn it_works() {
-        new_test_ext().execute_with(|| {
-            let account_id = Pass::account_id_for(&AccountName::get());
+    fn fails_if_account_is_uninitialized() {
+        super::prepare().execute_with(|| {
+            assert_noop!(
+                Pass::dispatch(
+                    RuntimeOrigin::signed(OTHER),
+                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                        remark: b"Hello, world".to_vec()
+                    })),
+                    Some((
+                        AccountName::get(),
+                        MockAuthenticationMethods::DummyAuthenticationMethod,
+                        THE_DEVICE,
+                        ChallengeResponse::get(),
+                    )),
+                    None
+                ),
+                Error::<Test>::Uninitialized
+            );
+        });
+    }
 
-            assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                BoundedVec::new(),
-                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                    .0
-                    .as_bytes()
-                    .to_vec()
+    #[test]
+    fn dispatching_with_explicit_authentication_works() {
+        prepare().execute_with(|| {
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(OTHER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                Some((
+                    AccountName::get(),
+                    MockAuthenticationMethods::DummyAuthenticationMethod,
+                    THE_DEVICE,
+                    ChallengeResponse::get(),
+                )),
+                None
             ));
 
             System::assert_has_event(
-                Event::<Test>::Registered {
-                    account_name: AccountName::get(),
-                    account_id,
+                frame_system::Event::Remarked {
+                    sender: Pass::account_id_for(&AccountName::get()),
+                    hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
                 }
                 .into(),
             );
+        });
+    }
+
+    #[test]
+    fn dispatching_signed_with_a_session_key_works() {
+        let account_id = Pass::account_id_for(&AccountName::get());
+
+        prepare().execute_with(|| {
+            assert_ok!(Pass::authenticate(
+                RuntimeOrigin::signed(OTHER),
+                AccountName::get(),
+                MockAuthenticationMethods::DummyAuthenticationMethod,
+                THE_DEVICE,
+                ChallengeResponse::get(),
+                None,
+            ));
+
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(OTHER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                None,
+                None
+            ));
+
+            let hash = <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world");
+
             System::assert_has_event(
-                Event::<Test>::AddedDevice {
-                    account_name: AccountName::get(),
-                    device_id: [1u8; 32],
+                frame_system::Event::Remarked {
+                    sender: account_id,
+                    hash,
                 }
                 .into(),
             );

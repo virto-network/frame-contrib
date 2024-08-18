@@ -150,6 +150,7 @@ pub mod pallet {
         ChallengeFailed,
         ExceedsMaxDevices,
         AccountNotFound,
+        MismatchedDevice,
         SessionNotFound,
         ExpiredSession,
         Uninitialized,
@@ -174,20 +175,11 @@ pub mod pallet {
                 !Accounts::<T, I>::contains_key(account_name.clone()),
                 Error::<T, I>::AlreadyRegistered
             );
-            let account = Account::new(
-                account_id.clone(),
-                if frame_system::Pallet::<T>::account_exists(&account_id) {
-                    AccountStatus::Active
-                } else {
-                    AccountStatus::Uninitialized
-                },
-            );
 
-            if account.is_uninitialized() {
+            let account = Self::try_initialize_account(&account_name)?;
+            if !account.is_active() {
                 Self::schedule_unreserve(&account_name)?;
             }
-
-            Accounts::<T, I>::insert(account_name.clone(), account.clone());
 
             Self::deposit_event(
                 Event::<T, I>::Registered {
@@ -285,13 +277,8 @@ pub mod pallet {
             challenge_response: Vec<u8>,
             duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
+            Self::ensure_initialized_account(&account_name)?;
             let who = ensure_signed(origin)?;
-
-            // Check account name exist
-            ensure!(
-                Accounts::<T, I>::contains_key(account_name.clone()),
-                Error::<T, I>::AccountNotFound
-            );
 
             let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
             let (device_account_name, device) =
@@ -299,7 +286,7 @@ pub mod pallet {
 
             ensure!(
                 account_name == device_account_name,
-                Error::<T, I>::AccountNotFound
+                Error::<T, I>::MismatchedDevice
             );
             Self::do_authenticate(&authentication_method, &device, &challenge_response)?;
             Self::do_add_session(&who, &account_name, duration);
@@ -308,21 +295,17 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Call to claim an Account
+        /// Call to claim an Account: It assumes the account is initialized
+        /// (because an active account is required to authenticate first of all).
         #[pallet::call_index(4)]
         // #[pallet::feeless_if()]
         pub fn add_device(
             origin: OriginFor<T>,
-            account_name: AccountName<T, I>,
             authentication_method: T::AuthenticationMethod,
             device: DeviceDescriptor<T, I>,
             challenge_response: Vec<u8>,
         ) -> DispatchResult {
-            let session_account_name = Self::ensure_signer_is_valid_session(origin)?;
-            ensure!(
-                account_name == session_account_name,
-                Error::<T, I>::AccountNotFound,
-            );
+            let account_name = Self::ensure_signer_is_valid_session(origin)?;
 
             let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
             let device_id = authentication_method
@@ -355,7 +338,7 @@ pub mod pallet {
                         Devices::<T, I>::get(device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
                     ensure!(
                         device_account_name == account_name,
-                        Error::<T, I>::AccountNotFound
+                        Error::<T, I>::MismatchedDevice
                     );
 
                     let authentication_method: Box<dyn AuthenticationMethod> =
@@ -367,13 +350,7 @@ pub mod pallet {
                     Self::ensure_signer_is_valid_session(origin)?
                 };
 
-            let Account { account_id, status } = Accounts::<T, I>::get(account_name.clone())
-                .ok_or(Error::<T, I>::AccountNotFound)?;
-            ensure!(
-                status == AccountStatus::Active,
-                Error::<T, I>::Uninitialized
-            );
-
+            let Account { account_id, .. } = Self::ensure_initialized_account(&account_name)?;
             if let Some(next_session_key) = maybe_next_session_key {
                 Self::do_add_session(
                     &next_session_key,
@@ -395,6 +372,31 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let hashed = <T as frame_system::Config>::Hashing::hash(&account_name);
         Decode::decode(&mut TrailingZeroInput::new(hashed.as_ref()))
             .expect("All byte sequences are valid `AccountIds`; qed")
+    }
+
+    pub(crate) fn try_initialize_account(
+        account_name: &AccountName<T, I>,
+    ) -> Result<AccountOf<T>, DispatchError> {
+        Accounts::<T, I>::try_mutate(account_name, |maybe_account| {
+            if let Some(ref account) = maybe_account {
+                if account.status == AccountStatus::Active {
+                    return Ok(account.clone());
+                }
+            }
+
+            let account_id = Self::account_id_for(account_name);
+            let account = Account::new(
+                account_id.clone(),
+                if frame_system::Pallet::<T>::account_exists(&account_id) {
+                    AccountStatus::Active
+                } else {
+                    AccountStatus::Uninitialized
+                },
+            );
+
+            *maybe_account = Some(account.clone());
+            Ok(account)
+        })
     }
 
     pub(crate) fn create_account(account_name: &AccountName<T, I>) -> DispatchResult {
@@ -433,6 +435,18 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         )?;
 
         Ok(())
+    }
+
+    pub(crate) fn ensure_initialized_account(
+        account_name: &AccountName<T, I>,
+    ) -> Result<AccountOf<T>, DispatchError> {
+        ensure!(
+            Accounts::<T, I>::contains_key(account_name),
+            Error::<T, I>::AccountNotFound,
+        );
+        let account = Self::try_initialize_account(account_name)?;
+        ensure!(account.is_active(), Error::<T, I>::Uninitialized);
+        Ok(account)
     }
 
     pub(crate) fn ensure_signer_is_valid_session(
