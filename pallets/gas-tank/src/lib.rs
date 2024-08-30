@@ -30,7 +30,7 @@ pub mod pallet {
         /// The overarching runtime event type
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// A method for gas handling
-        type GasHandler: PrepaidGasHandler<AccountId = Self::AccountId>;
+        type GasHandler: GasBurner<AccountId = Self::AccountId, Gas = Weight>;
     }
 
     #[pallet::pallet]
@@ -39,6 +39,9 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        GasBurned { who: T::AccountId, weight: Weight },
+        GasBurned {
+            who: T::AccountId,
+            remaining: Weight,
+        },
     }
 }
