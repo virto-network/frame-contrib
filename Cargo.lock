@@ -1134,7 +1134,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fc-gas-tank"
+name = "fc-pallet-gas-burn"
 version = "1.0.0"
 dependencies = [
  "env_logger",

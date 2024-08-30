@@ -34,7 +34,7 @@ pallet-transaction-payment = {git = "https://github.com/virto-network/polkadot-s
 
 [workspace]
 members = [
-  "pallets/gas-tank",
+  "pallets/gas-burn",
   "pallets/referenda-tracks",
   "pallets/template",
   "traits/memberships",

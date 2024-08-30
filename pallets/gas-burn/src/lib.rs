@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-//! # Pallet Gas Tank
+//! # Pallet Gas Burn
 //!
 //! This pallet exposes a mechanism to allow transactions payment using a prepaid fees mechanism.
 

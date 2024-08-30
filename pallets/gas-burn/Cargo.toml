@@ -3,7 +3,7 @@ authors.workspace = true
 description = "Allows transactions payment via a prepaid gas method."
 edition.workspace = true
 license.workspace = true
-name = "fc-gas-tank"
+name = "fc-pallet-gas-burn"
 repository.workspace = true
 version = "1.0.0"
 
