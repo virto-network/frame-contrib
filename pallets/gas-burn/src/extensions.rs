@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use frame_support::{
     dispatch::{DispatchInfo, Pays, PostDispatchInfo},
     pallet_prelude::{TransactionValidityError, ValidTransaction},
+    weights::Weight,
 };
 use scale_info::{StaticTypeInfo, TypeInfo};
 use sp_runtime::traits::{DispatchInfoOf, Dispatchable, SignedExtension};
@@ -37,6 +38,26 @@ impl<T, S> ChargeTxBurningGas<T, S> {
     }
 }
 
+#[derive(PartialEq)]
+pub enum Pre<S: SignedExtension + Encode> {
+    Burner(Weight),
+    Inner(S::Pre),
+}
+
+impl<S: SignedExtension + Encode> core::fmt::Debug for Pre<S> {
+    #[cfg(feature = "std")]
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        match self {
+            Pre::Burner(gas) => write!(f, "Pre::Burner({:?})", gas),
+            Pre::Inner(_) => write!(f, "Pre::Inner(<inner>)"),
+        }
+    }
+    #[cfg(not(feature = "std"))]
+    fn fmt(&self, _: &mut core::fmt::Formatter) -> core::fmt::Result {
+        Ok(())
+    }
+}
+
 impl<T, S> SignedExtension for ChargeTxBurningGas<T, S>
 where
     T: Config + Send + Sync,
@@ -48,7 +69,7 @@ where
     type AccountId = AccountIdOf<T>;
     type Call = S::Call;
     type AdditionalSigned = S::AdditionalSigned;
-    type Pre = (AccountIdOf<T>, Option<S::Pre>);
+    type Pre = (AccountIdOf<T>, Pre<S>);
 
     fn additional_signed(&self) -> Result<Self::AdditionalSigned, TransactionValidityError> {
         self.0.additional_signed()
@@ -61,10 +82,10 @@ where
         info: &DispatchInfoOf<Self::Call>,
         len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
-        let pre = if let Some(_) = T::GasBurner::check_available_gas(who, &Some(info.weight)) {
-            None
+        let pre = if let Some(leftover) = T::GasBurner::check_available_gas(who, &info.weight) {
+            Pre::Burner(leftover)
         } else {
-            Some(self.0.pre_dispatch(who, call, info, len)?)
+            Pre::Inner(self.0.pre_dispatch(who, call, info, len)?)
         };
 
         Ok((who.clone(), pre))
@@ -77,7 +98,7 @@ where
         info: &DispatchInfoOf<Self::Call>,
         len: usize,
     ) -> frame_support::pallet_prelude::TransactionValidity {
-        if let Some(_) = T::GasBurner::check_available_gas(who, &Some(info.weight)) {
+        if let Some(_) = T::GasBurner::check_available_gas(who, &info.weight) {
             Ok(ValidTransaction::default())
         } else {
             self.0.validate(who, call, info, len)
@@ -91,16 +112,24 @@ where
         len: usize,
         result: &sp_runtime::DispatchResult,
     ) -> Result<(), frame_support::pallet_prelude::TransactionValidityError> {
-        if let Some((who, maybe_inner_pre)) = pre {
-            if let Some(pre) = maybe_inner_pre {
-                S::post_dispatch(Some(pre), &info.clone().into(), post_info, len, result)?;
-            } else {
-                let actual_weight = post_info.actual_weight.unwrap_or(info.weight);
-                let should_burn_gas = post_info.pays_fee == Pays::Yes;
+        if let Some((who, pre)) = pre {
+            match pre {
+                Pre::Inner(inner_pre) => S::post_dispatch(
+                    Some(inner_pre),
+                    &info.clone().into(),
+                    post_info,
+                    len,
+                    result,
+                )?,
+                Pre::Burner(expected_remaining) => {
+                    let used_gas = post_info.actual_weight.unwrap_or(info.weight);
+                    let should_burn_gas = post_info.pays_fee == Pays::Yes;
 
-                if should_burn_gas {
-                    let remaining = T::GasBurner::burn_gas(&who, &actual_weight);
-                    Pallet::<T>::deposit_event(Event::GasBurned { who, remaining });
+                    if should_burn_gas {
+                        let remaining =
+                            T::GasBurner::burn_gas(&who, &expected_remaining, &used_gas);
+                        Pallet::<T>::deposit_event(Event::GasBurned { who, remaining });
+                    }
                 }
             }
         }
