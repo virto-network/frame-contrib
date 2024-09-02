@@ -61,7 +61,7 @@ where
         info: &DispatchInfoOf<Self::Call>,
         len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
-        let pre = if let Some(_) = T::GasHandler::check_available_gas(who, &Some(info.weight)) {
+        let pre = if let Some(_) = T::GasBurner::check_available_gas(who, &Some(info.weight)) {
             None
         } else {
             Some(self.0.pre_dispatch(who, call, info, len)?)
@@ -77,7 +77,7 @@ where
         info: &DispatchInfoOf<Self::Call>,
         len: usize,
     ) -> frame_support::pallet_prelude::TransactionValidity {
-        if let Some(_) = T::GasHandler::check_available_gas(who, &Some(info.weight)) {
+        if let Some(_) = T::GasBurner::check_available_gas(who, &Some(info.weight)) {
             Ok(ValidTransaction::default())
         } else {
             self.0.validate(who, call, info, len)
@@ -99,7 +99,7 @@ where
                 let should_burn_gas = post_info.pays_fee == Pays::Yes;
 
                 if should_burn_gas {
-                    let remaining = T::GasHandler::burn_gas(&who, &actual_weight);
+                    let remaining = T::GasBurner::burn_gas(&who, &actual_weight);
                     Pallet::<T>::deposit_event(Event::GasBurned { who, remaining });
                 }
             }

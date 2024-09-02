@@ -30,7 +30,7 @@ pub mod pallet {
         /// The overarching runtime event type
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// A method for gas handling
-        type GasHandler: GasBurner<AccountId = Self::AccountId, Gas = Weight>;
+        type GasBurner: GasBurner<AccountId = Self::AccountId, Gas = Weight>;
     }
 
     #[pallet::pallet]
