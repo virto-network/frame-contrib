@@ -3,7 +3,7 @@ authors.workspace = true
 description = "Allows transactions payment via a prepaid gas method."
 edition.workspace = true
 license.workspace = true
-name = "fc-pallet-gas-burn"
+name = "fc-pallet-gas-transaction-payment"
 repository.workspace = true
 version = "1.0.0"
 
@@ -20,6 +20,7 @@ sp-runtime = {workspace = true}
 [dev-dependencies]
 pallet-balances = {workspace = true}
 pallet-transaction-payment = {workspace = true}
+pallet-utility = {workspace = true}
 sp-io = {workspace = true}
 
 [features]
@@ -30,6 +31,7 @@ std = [
   "frame-system/std",
   "pallet-balances/std",
   "pallet-transaction-payment/std",
+  "pallet-utility/std",
   "scale-info/std",
   "sp-io/std",
   "sp-runtime/std",
@@ -39,5 +41,6 @@ try-runtime = [
   "frame-system/try-runtime",
   "pallet-balances/try-runtime",
   "pallet-transaction-payment/try-runtime",
+  "pallet-utility/try-runtime",
   "sp-runtime/try-runtime",
 ]

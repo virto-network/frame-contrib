@@ -8,20 +8,20 @@ use frame_support::{
 use scale_info::{StaticTypeInfo, TypeInfo};
 use sp_runtime::traits::{DispatchInfoOf, Dispatchable, SignedExtension};
 
-use crate::{traits::GasBurner, AccountIdOf, Config, Event, Pallet};
+use crate::{traits::GasBurner, Config, Event, Pallet};
 
 #[derive(Encode, Decode, Clone, Eq, PartialEq)]
-pub struct ChargeTxBurningGas<T, S>(pub S, PhantomData<T>);
+pub struct ChargeTransactionPayment<T, S: SignedExtension>(pub S, PhantomData<T>);
 
 // Make this extension "invisible" from the outside (ie metadata type information)
-impl<T, S: StaticTypeInfo> TypeInfo for ChargeTxBurningGas<T, S> {
+impl<T, S: SignedExtension + StaticTypeInfo> TypeInfo for ChargeTransactionPayment<T, S> {
     type Identity = S;
     fn type_info() -> scale_info::Type {
         S::type_info()
     }
 }
 
-impl<T, S: Encode> core::fmt::Debug for ChargeTxBurningGas<T, S> {
+impl<T, S: SignedExtension + Encode> core::fmt::Debug for ChargeTransactionPayment<T, S> {
     #[cfg(feature = "std")]
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "ChargeTxBurningGas<{:?}>", self.0.encode())
@@ -32,7 +32,7 @@ impl<T, S: Encode> core::fmt::Debug for ChargeTxBurningGas<T, S> {
     }
 }
 
-impl<T, S> ChargeTxBurningGas<T, S> {
+impl<T, S: SignedExtension> ChargeTransactionPayment<T, S> {
     pub fn new(s: S) -> Self {
         Self(s, PhantomData)
     }
@@ -58,18 +58,18 @@ impl<S: SignedExtension + Encode> core::fmt::Debug for Pre<S> {
     }
 }
 
-impl<T, S> SignedExtension for ChargeTxBurningGas<T, S>
+impl<T, S> SignedExtension for ChargeTransactionPayment<T, S>
 where
     T: Config + Send + Sync,
     T::RuntimeCall: Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>,
-    S: SignedExtension<AccountId = T::AccountId>,
+    S: SignedExtension<AccountId = T::AccountId, Call = T::RuntimeCall>,
     S::Call: Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>,
 {
     const IDENTIFIER: &'static str = S::IDENTIFIER;
-    type AccountId = AccountIdOf<T>;
+    type AccountId = S::AccountId;
     type Call = S::Call;
     type AdditionalSigned = S::AdditionalSigned;
-    type Pre = (AccountIdOf<T>, Pre<S>);
+    type Pre = (Self::AccountId, Pre<S>);
 
     fn additional_signed(&self) -> Result<Self::AdditionalSigned, TransactionValidityError> {
         self.0.additional_signed()

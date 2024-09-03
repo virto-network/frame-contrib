@@ -1056,13 +1056,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "fc-pallet-gas-burn"
+name = "fc-pallet-gas-transaction-payment"
 version = "1.0.0"
 dependencies = [
  "frame-support",
  "frame-system",
  "pallet-balances",
  "pallet-transaction-payment",
+ "pallet-utility",
  "parity-scale-codec",
  "scale-info",
  "sp-io",
@@ -2106,6 +2107,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-utility"
+version = "28.0.0"
+source = "git+https://github.com/virto-network/polkadot-sdk?branch=release-virto-v1.13.0#b788ee63a311984787af4d37d37c14dcff1c18c3"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std 14.0.0 (git+https://github.com/virto-network/polkadot-sdk?branch=release-virto-v1.13.0)",
+]
+
+[[package]]
 name = "parity-bip39"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2968,7 +2985,7 @@ dependencies = [
 [[package]]
 name = "sp-crypto-ec-utils"
 version = "0.10.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#f7504cec1689850f2c93176fe81667d650217e1c"
+source = "git+https://github.com/paritytech/polkadot-sdk#da6541030f72da5a8c5a60c2ab2dd2c2c136b471"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -3021,7 +3038,7 @@ dependencies = [
 [[package]]
 name = "sp-debug-derive"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#f7504cec1689850f2c93176fe81667d650217e1c"
+source = "git+https://github.com/paritytech/polkadot-sdk#da6541030f72da5a8c5a60c2ab2dd2c2c136b471"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3041,7 +3058,7 @@ dependencies = [
 [[package]]
 name = "sp-externalities"
 version = "0.25.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#f7504cec1689850f2c93176fe81667d650217e1c"
+source = "git+https://github.com/paritytech/polkadot-sdk#da6541030f72da5a8c5a60c2ab2dd2c2c136b471"
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -3177,7 +3194,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface"
 version = "24.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#f7504cec1689850f2c93176fe81667d650217e1c"
+source = "git+https://github.com/paritytech/polkadot-sdk#da6541030f72da5a8c5a60c2ab2dd2c2c136b471"
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -3209,7 +3226,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface-proc-macro"
 version = "17.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#f7504cec1689850f2c93176fe81667d650217e1c"
+source = "git+https://github.com/paritytech/polkadot-sdk#da6541030f72da5a8c5a60c2ab2dd2c2c136b471"
 dependencies = [
  "Inflector",
  "expander",
@@ -3260,7 +3277,7 @@ source = "git+https://github.com/virto-network/polkadot-sdk?branch=release-virto
 [[package]]
 name = "sp-std"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#f7504cec1689850f2c93176fe81667d650217e1c"
+source = "git+https://github.com/paritytech/polkadot-sdk#da6541030f72da5a8c5a60c2ab2dd2c2c136b471"
 
 [[package]]
 name = "sp-storage"
@@ -3277,7 +3294,7 @@ dependencies = [
 [[package]]
 name = "sp-storage"
 version = "19.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#f7504cec1689850f2c93176fe81667d650217e1c"
+source = "git+https://github.com/paritytech/polkadot-sdk#da6541030f72da5a8c5a60c2ab2dd2c2c136b471"
 dependencies = [
  "impl-serde",
  "parity-scale-codec",
@@ -3300,7 +3317,7 @@ dependencies = [
 [[package]]
 name = "sp-tracing"
 version = "16.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#f7504cec1689850f2c93176fe81667d650217e1c"
+source = "git+https://github.com/paritytech/polkadot-sdk#da6541030f72da5a8c5a60c2ab2dd2c2c136b471"
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -3372,7 +3389,7 @@ dependencies = [
 [[package]]
 name = "sp-wasm-interface"
 version = "20.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#f7504cec1689850f2c93176fe81667d650217e1c"
+source = "git+https://github.com/paritytech/polkadot-sdk#da6541030f72da5a8c5a60c2ab2dd2c2c136b471"
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",

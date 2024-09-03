@@ -19,8 +19,6 @@ pub use traits::*;
 
 pub use pallet::*;
 
-type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
-
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;

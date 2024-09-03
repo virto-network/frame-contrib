@@ -30,10 +30,11 @@ pallet-preimage = {git = "https://github.com/virto-network/polkadot-sdk", branch
 pallet-referenda = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
 pallet-scheduler = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
 pallet-transaction-payment = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
+pallet-utility = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
 
 [workspace]
 members = [
-  "pallets/gas-burn",
+  "pallets/gas-transaction-payment",
   "pallets/referenda-tracks",
   "pallets/template",
   "traits/memberships",
