@@ -4,6 +4,7 @@
 //!
 //! This pallet exposes a mechanism to allow transactions payment using a prepaid fees mechanism.
 
+use fc_traits_gas_tank::GasBurner;
 use frame_support::pallet_prelude::*;
 
 #[cfg(test)]
@@ -13,9 +14,6 @@ mod tests;
 
 mod extensions;
 pub use extensions::*;
-
-mod traits;
-pub use traits::*;
 
 pub use pallet::*;
 

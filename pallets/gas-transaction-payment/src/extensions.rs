@@ -1,5 +1,6 @@
 use codec::{Decode, Encode};
 use core::marker::PhantomData;
+use fc_traits_gas_tank::GasBurner;
 use frame_support::{
     dispatch::{DispatchInfo, Pays, PostDispatchInfo},
     pallet_prelude::{TransactionValidityError, ValidTransaction},
@@ -8,7 +9,7 @@ use frame_support::{
 use scale_info::{StaticTypeInfo, TypeInfo};
 use sp_runtime::traits::{DispatchInfoOf, Dispatchable, SignedExtension};
 
-use crate::{traits::GasBurner, Config, Event, Pallet};
+use crate::{Config, Event, Pallet};
 
 #[derive(Encode, Decode, Clone, Eq, PartialEq)]
 pub struct ChargeTransactionPayment<T, S: SignedExtension>(pub S, PhantomData<T>);

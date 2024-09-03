@@ -1,7 +1,7 @@
 //! Test environment for pallet-gas-burn
 
-pub use crate as fc_pallet_gas_transaction_payment;
-use crate::{Config, GasBurner};
+pub use crate::{self as fc_pallet_gas_transaction_payment, Config};
+use fc_traits_gas_tank::GasBurner;
 use frame_support::{
     derive_impl, parameter_types, storage_alias,
     weights::{FixedFee, Weight},

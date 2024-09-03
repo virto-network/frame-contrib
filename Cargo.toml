@@ -13,6 +13,7 @@ scale-info = {version = "2.11.3", default-features = false, features = [
 ]}
 serde = {version = "1.0.203"}
 
+fc-traits-gas-tank = {path = "./traits/gas-tank", default-features = false}
 fc-traits-tracks = {path = "./traits/tracks", default-features = false}
 
 frame-benchmarking = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
@@ -37,6 +38,7 @@ members = [
   "pallets/gas-transaction-payment",
   "pallets/referenda-tracks",
   "pallets/template",
+  "traits/gas-tank",
   "traits/memberships",
   "traits/tracks",
 ]

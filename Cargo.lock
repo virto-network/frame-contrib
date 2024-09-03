@@ -1059,6 +1059,7 @@ dependencies = [
 name = "fc-pallet-gas-transaction-payment"
 version = "1.0.0"
 dependencies = [
+ "fc-traits-gas-tank",
  "frame-support",
  "frame-system",
  "pallet-balances",
@@ -1106,6 +1107,13 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-std 14.0.0 (git+https://github.com/virto-network/polkadot-sdk?branch=release-virto-v1.13.0)",
+]
+
+[[package]]
+name = "fc-traits-gas-tank"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
 ]
 
 [[package]]
