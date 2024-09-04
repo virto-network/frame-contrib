@@ -1,0 +1,16 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "fc-traits-gas-tank"
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+frame-support = {workspace = true}
+
+[features]
+default = ["std"]
+std = [
+  "frame-support/std",
+]
