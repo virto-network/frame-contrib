@@ -17,6 +17,7 @@ scale-info = {version = "2.11.3", default-features = false, features = [
 serde = {version = "1.0.203"}
 
 fc-traits-authn = {path = "./traits/authn", default-features = false}
+fc-traits-gas-tank = {path = "./traits/gas-tank", default-features = false}
 fc-traits-tracks = {path = "./traits/tracks", default-features = false}
 
 frame-benchmarking = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
@@ -35,14 +36,17 @@ pallet-preimage = {git = "https://github.com/virto-network/polkadot-sdk", branch
 pallet-referenda = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
 pallet-scheduler = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
 pallet-timestamp = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
+pallet-transaction-payment = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
+pallet-utility = {git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false}
 
 [workspace]
 members = [
-  "pallets/pass",
+  "pallets/gas-transaction-payment",
   "pallets/referenda-tracks",
   "pallets/template",
+  "pallets/pass",
   "traits/authn",
+  "traits/gas-tank",
   "traits/memberships",
   "traits/tracks",
 ]
-resolver = "2"
