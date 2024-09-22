@@ -1,8 +1,7 @@
 //! Test environment for pallet pass.
 
-use crate::{self as pallet_pass, AccountName, Config};
+use crate::{self as pallet_pass, Config};
 use codec::{Decode, Encode, MaxEncodedLen};
-use fc_traits_authn::RegistrarError;
 use frame_support::{
     derive_impl, ensure, parameter_types,
     traits::{ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize},
@@ -17,8 +16,6 @@ use sp_runtime::{
     traits::{IdentifyAccount, IdentityLookup, Verify},
     MultiSignature,
 };
-
-use core::marker::PhantomData;
 
 pub type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -149,89 +146,6 @@ impl Into<Box<dyn fc_traits_authn::AuthenticationMethod>> for MockAuthentication
     }
 }
 
-pub struct DummyRegistrar<AccountId, AccountName>(PhantomData<(AccountId, AccountName)>);
-
-impl<AccountId, AccountName: Into<frame_support::BoundedVec<u8, ConstU32<64>>>>
-    fc_traits_authn::Registrar<AccountId, AccountName> for DummyRegistrar<AccountId, AccountName>
-{
-    fn is_claimable(_account_name: &AccountName, _claimer: &AccountId) -> bool {
-        false
-    }
-
-    fn claimer_pays_fees(_account_name: &AccountName, _claimer: &AccountId) -> bool {
-        true
-    }
-
-    fn register_claim(
-        _account_name: &AccountName,
-        _claimer: &AccountId,
-    ) -> Result<(), fc_traits_authn::RegistrarError> {
-        Err(RegistrarError::CannotClaim)
-    }
-
-    fn initialize_account(
-        _account_name: &AccountName,
-    ) -> Result<(), fc_traits_authn::RegistrarError> {
-        Err(RegistrarError::CannotInitialize)
-    }
-}
-
-pub struct EvenOddRegistrar<AccountId, AccountName>(PhantomData<(AccountId, AccountName)>);
-
-impl<AccountId: AsRef<[u8]>, AccountName> EvenOddRegistrar<AccountId, AccountName>
-where
-    AccountName: Clone,
-    frame_support::BoundedVec<u8, ConstU32<64>>: From<AccountName>,
-{
-    fn is_even_account_id(account_id: &AccountId) -> bool {
-        let bytes = account_id.as_ref();
-        if let Some(last_byte) = bytes.last() {
-            last_byte % 2 == 0
-        } else {
-            false
-        }
-    }
-}
-
-impl<AccountId: AsRef<[u8]>, AccountName> fc_traits_authn::Registrar<AccountId, AccountName>
-    for EvenOddRegistrar<AccountId, AccountName>
-where
-    AccountName: Clone,
-    frame_support::BoundedVec<u8, ConstU32<64>>: From<AccountName>,
-{
-    fn is_claimable(_account_name: &AccountName, claimer: &AccountId) -> bool {
-        Self::is_even_account_id(claimer)
-    }
-
-    fn claimer_pays_fees(_account_name: &AccountName, claimer: &AccountId) -> bool {
-        !Self::is_even_account_id(claimer)
-    }
-
-    fn register_claim(
-        _account_name: &AccountName,
-        claimer: &AccountId,
-    ) -> Result<(), fc_traits_authn::RegistrarError> {
-        if !Self::is_even_account_id(claimer) {
-            return Err(RegistrarError::CannotClaim);
-        }
-
-        Ok(())
-    }
-
-    fn initialize_account(
-        account_name: &AccountName,
-    ) -> Result<(), fc_traits_authn::RegistrarError> {
-        let account_id = Pass::account_id_for(&account_name.clone().into());
-        System::inc_providers(&account_id);
-        Ok(())
-    }
-}
-
-pub type MockRegistrars = (
-    DummyRegistrar<AccountId, AccountName<Test, ()>>,
-    EvenOddRegistrar<AccountId, AccountName<Test, ()>>,
-);
-
 parameter_types! {
     pub PassPalletId: PalletId = PalletId(*b"py/pass_");
 }
@@ -241,7 +155,6 @@ impl Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type AuthenticationMethod = MockAuthenticationMethods;
     type Randomness = RandomnessFromBlockNumber;
-    type Registrar = MockRegistrars;
     type RuntimeCall = RuntimeCall;
     type Scheduler = Scheduler;
     type PalletId = PassPalletId;

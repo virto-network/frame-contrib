@@ -57,8 +57,6 @@ pub mod pallet {
 
         type AuthenticationMethod: Parameter + Into<Box<dyn AuthenticationMethod>>;
 
-        type Registrar: fc_traits_authn::Registrar<AccountIdOf<Self>, AccountName<Self, I>>;
-
         type Randomness: Randomness<<Self as frame_system::Config>::Hash, BlockNumberFor<Self>>;
 
         type Scheduler: Named<
@@ -185,45 +183,6 @@ pub mod pallet {
                 Event::<T, I>::Registered {
                     account_name: account_name.clone(),
                     account_id: account_id.clone(),
-                }
-                .into(),
-            );
-
-            let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
-            let device_id = authentication_method
-                .get_device_id(device.to_vec())
-                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
-
-            Self::do_authenticate(&authentication_method, &device, &challenge_response)?;
-            Self::do_add_device(&account_name, device_id, device)?;
-
-            Ok(())
-        }
-
-        /// Call to claim an Account
-        #[pallet::call_index(1)]
-        // #[pallet::feeless_if()]
-        pub fn claim(
-            origin: OriginFor<T>,
-            account_name: AccountName<T, I>,
-            authentication_method: T::AuthenticationMethod,
-            device: DeviceDescriptor<T, I>,
-            challenge_response: Vec<u8>,
-        ) -> DispatchResult {
-            // Ensures that the function is called by a signed origin
-            let who = ensure_signed(origin)?;
-
-            // Attempt to claim the account with the provided name and caller as the claimer
-            T::Registrar::claim(&account_name, &who).map_err(|e| match e {
-                RegistrarError::CannotClaim => Error::<T, I>::CannotClaim,
-                RegistrarError::CannotInitialize => Error::<T, I>::RegistrarCannotInitialize,
-                RegistrarError::AlreadyRegistered => Error::<T, I>::AlreadyRegistered,
-            })?;
-            Self::create_account(&account_name.clone().into())?;
-
-            Self::deposit_event(
-                Event::<T, I>::Claimed {
-                    account_name: account_name.clone(),
                 }
                 .into(),
             );
