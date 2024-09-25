@@ -1,85 +1,75 @@
-use codec::{Decode, Encode, MaxEncodedLen};
-use frame_support::traits::PalletError;
-use impl_trait_for_tuples::impl_for_tuples;
+use codec::{FullCodec, MaxEncodedLen};
+use frame_support::Parameter;
 use scale_info::TypeInfo;
 
+// A reasonabily sized secure challenge
+const CHALLENGE_SIZE: usize = 32;
+pub type Challenge = [u8; CHALLENGE_SIZE];
+type CxOf<C> = <C as Challenger>::Context;
+
 pub type DeviceId = [u8; 32];
+pub type AuthorityId = [u8; 32];
+pub type HashedUserId = [u8; 32];
 
-#[derive(Encode, Decode, MaxEncodedLen, TypeInfo)]
-pub enum RegistrarError {
-    CannotClaim,
-    CannotInitialize,
-    AlreadyRegistered,
-}
+/// Given some context it deterministically generates a "challenge" used by authenticators
+pub trait Challenger {
+    type Context;
 
-impl PalletError for RegistrarError {
-    const MAX_ENCODED_SIZE: usize = 1;
-}
+    fn generate(cx: &Self::Context) -> Challenge;
 
-pub enum AuthenticateError {
-    ChallengeFailed,
-}
-
-pub trait AuthenticationMethod {
-    fn get_device_id(&self, device: Vec<u8>) -> Option<DeviceId>;
-    fn authenticate(
-        &self,
-        device: Vec<u8>, // Johan note: change to BoundedVec
-        challenge: &[u8],
-        payload: &[u8], // Johan note: replace this for signature, right? Payload and challenge is the same, we need to get a way to veryfy challenge was signed properly
-    ) -> Result<(), AuthenticateError>;
-}
-
-pub trait Registrar<AccountId, AccountName> {
-    fn is_claimable(account_name: &AccountName, claimer: &AccountId) -> bool;
-    fn claimer_pays_fees(account_name: &AccountName, claimer: &AccountId) -> bool;
-
-    fn register_claim(
-        account_name: &AccountName,
-        claimer: &AccountId,
-    ) -> Result<(), RegistrarError>;
-    fn initialize_account(account_name: &AccountName) -> Result<(), RegistrarError>;
-
-    fn claim(account_name: &AccountName, claimer: &AccountId) -> Result<(), RegistrarError> {
-        if !Self::is_claimable(account_name, claimer) {
-            return Err(RegistrarError::CannotClaim);
-        }
-
-        Self::register_claim(account_name, claimer)?;
-        Self::initialize_account(account_name)?;
-        Ok(())
+    /// Ensure that given the context produces the same challenge
+    fn check_challenge(cx: &Self::Context, challenge: &[u8]) -> Option<()> {
+        Self::generate(cx).eq(challenge).then_some(())
     }
 }
 
-#[impl_for_tuples(64)]
-impl<AccountId, AccountName> Registrar<AccountId, AccountName> for Tuple {
-    fn is_claimable(_: &AccountName, _: &AccountId) -> bool {
-        false
+/// Authenticator is used to verify authentication devices that in turn are used to verify users
+pub trait Authenticator {
+    const AUTHORITY: AuthorityId;
+    type Challenger: Challenger;
+    type DeviceAttestation: DeviceChallengeResponse<CxOf<Self::Challenger>>;
+    type Device: UserAuthenticator<Challenger = Self::Challenger>;
+
+    fn verify_device(attestation: &Self::DeviceAttestation) -> Option<Self::Device> {
+        attestation.authority().eq(&Self::AUTHORITY).then_some(())?;
+        let (cx, challenge) = attestation.used_challenge();
+        Self::Challenger::check_challenge(&cx, &challenge)?;
+        attestation.is_valid().then_some(())?;
+        Some(Self::unpack_device(attestation))
     }
 
-    fn claimer_pays_fees(account_name: &AccountName, claimer: &AccountId) -> bool {
-        true
+    /// Extract device information from the verification payload
+    fn unpack_device(verification: &Self::DeviceAttestation) -> Self::Device;
+}
+
+/// A device capable of verifying a user provided credential
+pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
+    const AUTHORITY: AuthorityId;
+    type Challenger: Challenger;
+    type Credential: UserChallengeResponse<CxOf<Self::Challenger>>;
+
+    fn verify_user(&self, credential: &Self::Credential) -> Option<()> {
+        credential.authority().eq(&Self::AUTHORITY).then_some(())?;
+        let (cx, challenge) = credential.used_challenge();
+        Self::Challenger::check_challenge(&cx, &challenge)?;
+        credential.is_valid().then_some(())
     }
 
-    fn register_claim(
-        account_name: &AccountName,
-        claimer: &AccountId,
-    ) -> Result<(), RegistrarError> {
-        Err(RegistrarError::CannotClaim)
-    }
+    fn device_id(&self) -> DeviceId;
+}
 
-    fn initialize_account(account_name: &AccountName) -> Result<(), RegistrarError> {
-        Err(RegistrarError::CannotInitialize)
-    }
+pub trait ChallengeResponse<Cx>: Parameter {
+    fn is_valid(&self) -> bool;
+    fn used_challenge(&self) -> (Cx, Challenge);
+    fn authority(&self) -> AuthorityId;
+}
 
-    fn claim(account_name: &AccountName, claimer: &AccountId) -> Result<(), RegistrarError> {
-        for_tuples!(#(
-            match Tuple::claim(account_name, claimer) {
-                Ok(_) => return Ok(()),
-                Err(RegistrarError::CannotClaim) => (),
-                Err(e) => return Err(e),
-            }
-        )*);
-        Err(RegistrarError::CannotClaim)
-    }
+/// A response to a challenge for creating a new authentication device
+pub trait DeviceChallengeResponse<Cx>: ChallengeResponse<Cx> {
+    fn device_id(&self) -> DeviceId;
+}
+
+/// A response to a challenge for identifying a user
+pub trait UserChallengeResponse<Cx>: ChallengeResponse<Cx> {
+    fn user_id(&self) -> HashedUserId;
 }

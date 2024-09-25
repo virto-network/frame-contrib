@@ -4,16 +4,13 @@
 //!
 //! > TODO: Update with [spec](https://hackmd.io/@pandres95/pallet-pass) document once complete
 
-use frame_support::{
-    pallet_prelude::*,
-    traits::{
-        schedule::{v3::Named, DispatchTime},
-        Randomness,
-    },
-};
+use fc_traits_authn::{DeviceId, HashedUserId, UserAuthenticator, UserChallengeResponse};
+use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
-use sp_core::blake2_256;
-use sp_runtime::traits::{Dispatchable, Hash, TrailingZeroInput};
+use sp_runtime::{
+    traits::{Dispatchable, StaticLookup},
+    DispatchResult,
+};
 use sp_std::fmt::Debug;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -23,24 +20,19 @@ pub mod benchmarking;
 mod mock;
 #[cfg(test)]
 mod tests;
-
-use fc_traits_authn::{AuthenticateError, AuthenticationMethod, Registrar, RegistrarError};
-
 mod types;
-pub use types::*;
 
 pub mod weights;
-pub use weights::*;
-
 pub use pallet::*;
+pub use types::*;
+pub use weights::*;
 
 #[frame_support::pallet]
 pub mod pallet {
-    use fc_traits_authn::DeviceId;
-    use frame_support::PalletId;
-    use frame_system::RawOrigin;
-
     use super::*;
+    use fc_traits_authn::{Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId};
+    use frame_support::{traits::EnsureOriginWithArg, PalletId};
+    use frame_system::RawOrigin;
 
     #[pallet::config]
     pub trait Config<I: 'static = ()>: frame_system::Config {
@@ -55,46 +47,18 @@ pub mod pallet {
 
         type WeightInfo: WeightInfo;
 
-        type AuthenticationMethod: Parameter + Into<Box<dyn AuthenticationMethod>>;
-
-        type Randomness: Randomness<<Self as frame_system::Config>::Hash, BlockNumberFor<Self>>;
-
-        type Scheduler: Named<
-            BlockNumberFor<Self>,
-            <Self as Config<I>>::RuntimeCall,
-            Self::PalletsOrigin,
-        >;
+        type Authenticator: Authenticator;
 
         type PalletsOrigin: From<frame_system::Origin<Self>>;
 
         #[pallet::constant]
         type PalletId: Get<PalletId>;
 
-        /// The maximum lenght for an account name
-        #[pallet::constant]
-        type MaxAccountNameLen: Get<u32>;
-
-        /// The maximum size a device descriptor can contain
-        #[pallet::constant]
-        type MaxDeviceDescriptorLen: Get<u32>;
-
-        /// The maximum amount of devices per account
-        #[pallet::constant]
-        type MaxDevicesPerAccount: Get<u32>;
-
         /// The maximum duration of a session
         #[pallet::constant]
         type MaxSessionDuration: Get<BlockNumberFor<Self>>;
 
-        /// The maximum duration after an uninitialized account is unreserved
-        #[pallet::constant]
-        type UninitializedTimeout: Get<BlockNumberFor<Self>>;
-
-        // /// Constant maximum number of blocks allowed to keep alive a session
-        // #[pallet::constant]
-        // type MaxDuration: Get<BlockNumberFor<Self>>;
-        #[pallet::constant]
-        type ModForBlockNumber: Get<u32>;
+        type RegisterOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, HashedUserId>;
     }
 
     #[pallet::pallet]
@@ -102,57 +66,44 @@ pub mod pallet {
 
     // Storage
     #[pallet::storage]
-    pub type Accounts<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, AccountName<T, I>, AccountOf<T>>;
-    #[pallet::storage]
-    pub type Devices<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, DeviceId, (AccountName<T, I>, DeviceDescriptor<T, I>)>;
-    #[pallet::storage]
-    pub type AccountDevices<T: Config<I>, I: 'static = ()> = StorageMap<
+    pub type Devices<T: Config<I>, I: 'static = ()> = StorageDoubleMap<
         _,
         Blake2_128Concat,
-        AccountName<T, I>,
-        BoundedVec<DeviceId, T::MaxDevicesPerAccount>,
-        ValueQuery,
+        T::AccountId,
+        Blake2_128Concat,
+        DeviceId,
+        DeviceOf<T, I>,
     >;
+
     #[pallet::storage]
     pub type Sessions<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, AccountIdOf<T>, (AccountName<T, I>, BlockNumberFor<T>)>; // Maybe could be a good idea modifying AccountIdOf to have extra padding so no other account can match with this
+        StorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T>)>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config<I>, I: 'static = ()> {
         Registered {
-            account_name: AccountName<T, I>,
-            account_id: AccountIdOf<T>,
+            who: T::AccountId,
         },
         AddedDevice {
-            account_name: AccountName<T, I>,
+            who: T::AccountId,
             device_id: DeviceId,
         },
-        Claimed {
-            account_name: AccountName<T, I>,
-        },
         SessionCreated {
-            session_key: AccountIdOf<T>,
+            session_key: T::AccountId,
             until: BlockNumberFor<T>,
         },
     }
 
     #[pallet::error]
     pub enum Error<T, I = ()> {
-        AlreadyRegistered,
-        CannotClaim,
-        RegistrarCannotInitialize,
-        InvalidDeviceForAuthenticationMethod,
-        ChallengeFailed,
-        ExceedsMaxDevices,
+        AccountAlreadyRegistered,
         AccountNotFound,
-        MismatchedDevice,
-        SessionNotFound,
-        ExpiredSession,
-        Uninitialized,
+        CredentialInvalid,
+        DeviceAttestationInvalid,
         DeviceNotFound,
+        SessionExpired,
+        SessionNotFound,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -161,96 +112,50 @@ pub mod pallet {
         #[pallet::call_index(0)]
         pub fn register(
             origin: OriginFor<T>,
-            account_name: AccountName<T, I>,
-            authentication_method: T::AuthenticationMethod,
-            device: DeviceDescriptor<T, I>,
-            challenge_response: Vec<u8>,
+            user: HashedUserId,
+            attestation: DeviceAttestationOf<T, I>,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
-            let account_id = Self::account_id_for(&account_name);
-
+            T::RegisterOrigin::ensure_origin(origin, &user)?;
+            let account_id = Self::account_id_for(user)?;
             ensure!(
-                !Accounts::<T, I>::contains_key(account_name.clone()),
-                Error::<T, I>::AlreadyRegistered
+                Self::account_exists(&account_id),
+                Error::<T, I>::AccountAlreadyRegistered
             );
 
-            let account = Self::try_initialize_account(&account_name)?;
-            if !account.is_active() {
-                Self::schedule_unreserve(&account_name)?;
-            }
+            let device = T::Authenticator::verify_device(&attestation)
+                .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
 
-            Self::deposit_event(
-                Event::<T, I>::Registered {
-                    account_name: account_name.clone(),
-                    account_id: account_id.clone(),
-                }
-                .into(),
-            );
+            Self::create_account(&account_id)?;
+            Self::deposit_event(Event::<T, I>::Registered {
+                who: account_id.clone(),
+            });
 
-            let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
-            let device_id = authentication_method
-                .get_device_id(device.to_vec())
-                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
-
-            Self::do_authenticate(&authentication_method, &device, &challenge_response)?;
-            Self::do_add_device(&account_name, device_id, device)?;
+            let device_id = device.device_id();
+            Devices::<T, I>::insert(&account_id, device_id, device);
+            Self::deposit_event(Event::<T, I>::AddedDevice {
+                who: account_id,
+                device_id,
+            });
 
             Ok(())
-        }
-
-        #[pallet::call_index(2)]
-        pub fn unreserve_uninitialized_account(
-            origin: OriginFor<T>,
-            account_name: AccountName<T, I>,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            Accounts::<T, I>::try_mutate(account_name.clone(), |maybe_account| {
-                log::trace!("Maybe Account for {account_name:?}? {maybe_account:?}");
-                if let Some(Account { account_id, status }) = maybe_account {
-                    if frame_system::Pallet::<T>::account_exists(account_id) {
-                        log::trace!("Removing exists, not removing account");
-                        *status = AccountStatus::Active;
-                        return Ok(());
-                    }
-
-                    log::trace!("Removing account");
-                    for device_id in AccountDevices::<T, I>::get(account_name.clone()) {
-                        Devices::<T, I>::remove(device_id);
-                    }
-                    AccountDevices::<T, I>::remove(account_name.clone());
-                    *maybe_account = None;
-
-                    return Ok(());
-                }
-
-                Ok(())
-            })
         }
 
         #[pallet::call_index(3)]
         pub fn authenticate(
             origin: OriginFor<T>,
-            account_name: AccountName<T, I>,
-            authentication_method: T::AuthenticationMethod,
             device_id: DeviceId,
-            challenge_response: Vec<u8>,
+            credential: CredentialOf<T, I>,
             duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
-            Self::ensure_initialized_account(&account_name)?;
             let who = ensure_signed(origin)?;
+            let account_id = T::Lookup::lookup(credential.user_id());
+            Self::account_exists(&account_id)?;
 
-            let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
-            let (device_account_name, device) =
-                Devices::<T, I>::get(device_id.clone()).ok_or(Error::<T, I>::DeviceNotFound)?;
+            let device = Devices::<T, I>::get(&account_id, &device_id)
+                .ok_or(Error::<T, I>::DeviceNotFound)?;
+            device.verify_user(&credential).then_some(()).ok_or();
 
-            ensure!(
-                account_name == device_account_name,
-                Error::<T, I>::MismatchedDevice
-            );
-            Self::do_authenticate(&authentication_method, &device, &challenge_response)?;
-            Self::do_add_session(&who, &account_name, duration);
-
-            // Finish
+            Self::do_add_session(&who, &account_id, duration);
             Ok(())
         }
 
@@ -260,19 +165,15 @@ pub mod pallet {
         // #[pallet::feeless_if()]
         pub fn add_device(
             origin: OriginFor<T>,
-            authentication_method: T::AuthenticationMethod,
-            device: DeviceDescriptor<T, I>,
-            challenge_response: Vec<u8>,
+            attestation: DeviceAttestationOf<T, I>,
         ) -> DispatchResult {
-            let account_name = Self::ensure_signer_is_valid_session(origin)?;
+            let who = Self::ensure_signer_is_valid_session(origin)?;
 
-            let authentication_method: Box<dyn AuthenticationMethod> = authentication_method.into();
-            let device_id = authentication_method
-                .get_device_id(device.clone().to_vec())
-                .ok_or(Error::<T, I>::InvalidDeviceForAuthenticationMethod)?;
+            let device_id = attestation.device_id();
+            let device = T::Authenticator::verify_device(&attestation).ok_or(())?;
 
-            Self::do_authenticate(&authentication_method, &device, &challenge_response)?;
-            Self::do_add_device(&account_name, device_id, device)?;
+            Devices::<T, I>::insert(who, device_id, device);
+            Self::deposit_event(Event::<T, I>::AddedDevice { who, device_id }.into());
 
             Ok(())
         }
@@ -281,39 +182,21 @@ pub mod pallet {
         pub fn dispatch(
             origin: OriginFor<T>,
             call: Box<RuntimeCallFor<T>>,
-            maybe_authentication: Option<(
-                AccountName<T, I>,
-                T::AuthenticationMethod,
-                DeviceId,
-                Vec<u8>,
-            )>,
-            maybe_next_session_key: Option<AccountIdOf<T>>,
+            maybe_credential: Option<(DeviceId, CredentialOf<T, I>)>,
+            maybe_next_session_key: Option<T::AccountId>,
         ) -> DispatchResult {
-            let account_name =
-                if let Some((account_name, authentication_method, device_id, payload_challenge)) =
-                    maybe_authentication
-                {
-                    let (device_account_name, device) =
-                        Devices::<T, I>::get(device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
-                    ensure!(
-                        device_account_name == account_name,
-                        Error::<T, I>::MismatchedDevice
-                    );
+            let account_id = if let Some((device_id, credential)) = maybe_credential {
+                let account_id = Self::account_id_for(credential.user_id())?;
+                Self::do_authenticate(credential, device_id)?;
+                account_id
+            } else {
+                Self::ensure_signer_is_valid_session(origin)?
+            };
 
-                    let authentication_method: Box<dyn AuthenticationMethod> =
-                        authentication_method.into();
-
-                    Self::do_authenticate(&authentication_method, &device, &payload_challenge)?;
-                    account_name
-                } else {
-                    Self::ensure_signer_is_valid_session(origin)?
-                };
-
-            let Account { account_id, .. } = Self::ensure_initialized_account(&account_name)?;
             if let Some(next_session_key) = maybe_next_session_key {
                 Self::do_add_session(
                     &next_session_key,
-                    &account_name,
+                    &account_id,
                     Some(T::MaxSessionDuration::get()),
                 );
             }
@@ -327,142 +210,60 @@ pub mod pallet {
 }
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
-    pub fn account_id_for(account_name: &AccountName<T, I>) -> AccountIdOf<T> {
-        let hashed = <T as frame_system::Config>::Hashing::hash(&account_name);
-        Decode::decode(&mut TrailingZeroInput::new(hashed.as_ref()))
-            .expect("All byte sequences are valid `AccountIds`; qed")
+    pub fn account_id_for(user: HashedUserId) -> Result<T::AccountId, DispatchError> {
+        // TODO it will be nice if we can use the lookup sytem to convert
+        // to accept hashes or other types of data that fit the MultiAddress
+        let pass = T::Lookup::lookup(user)?;
+        Ok(pass)
     }
 
-    pub(crate) fn try_initialize_account(
-        account_name: &AccountName<T, I>,
-    ) -> Result<AccountOf<T>, DispatchError> {
-        Accounts::<T, I>::try_mutate(account_name, |maybe_account| {
-            if let Some(ref account) = maybe_account {
-                if account.status == AccountStatus::Active {
-                    return Ok(account.clone());
-                }
-            }
-
-            let account_id = Self::account_id_for(account_name);
-            let account = Account::new(
-                account_id.clone(),
-                if frame_system::Pallet::<T>::account_exists(&account_id) {
-                    AccountStatus::Active
-                } else {
-                    AccountStatus::Uninitialized
-                },
-            );
-
-            *maybe_account = Some(account.clone());
-            Ok(account)
-        })
+    pub(crate) fn account_exists(who: &T::AccountId) -> bool {
+        frame_system::Pallet::<T>::account_exists(who)
     }
 
-    pub(crate) fn create_account(account_name: &AccountName<T, I>) -> DispatchResult {
-        Accounts::<T, I>::try_mutate(account_name.clone(), |maybe_account| {
-            if maybe_account.is_none() {
-                *maybe_account = Some(Account {
-                    account_id: Self::account_id_for(account_name),
-                    status: AccountStatus::Active,
-                });
-                Ok(())
-            } else {
-                Err(Error::<T, I>::AlreadyRegistered.into())
-            }
-        })
-    }
-
-    pub(crate) fn schedule_name_from_account_id(account_name: &AccountName<T, I>) -> [u8; 32] {
-        blake2_256(&account_name.to_vec())
-    }
-
-    pub(crate) fn schedule_unreserve(account_name: &AccountName<T, I>) -> DispatchResult {
-        T::Scheduler::schedule_named(
-            Self::schedule_name_from_account_id(account_name),
-            DispatchTime::After(T::UninitializedTimeout::get()),
-            None,
-            0u8,
-            frame_system::Origin::<T>::Root.into(),
-            frame_support::traits::Bounded::Inline(BoundedVec::truncate_from(
-                <T as Config<I>>::RuntimeCall::from(
-                    Call::<T, I>::unreserve_uninitialized_account {
-                        account_name: account_name.clone(),
-                    },
-                )
-                .encode(),
-            )),
-        )?;
-
-        Ok(())
-    }
-
-    pub(crate) fn ensure_initialized_account(
-        account_name: &AccountName<T, I>,
-    ) -> Result<AccountOf<T>, DispatchError> {
+    pub(crate) fn create_account(who: &T::AccountId) -> DispatchResult {
         ensure!(
-            Accounts::<T, I>::contains_key(account_name),
-            Error::<T, I>::AccountNotFound,
+            frame_system::Pallet::<T>::inc_providers(who) == frame_system::IncRefStatus::Created,
+            Error::<T, I>::AccountAlreadyRegistered
         );
-        let account = Self::try_initialize_account(account_name)?;
-        ensure!(account.is_active(), Error::<T, I>::Uninitialized);
-        Ok(account)
+        Ok(())
     }
 
     pub(crate) fn ensure_signer_is_valid_session(
         origin: OriginFor<T>,
-    ) -> Result<AccountName<T, I>, DispatchError> {
+    ) -> Result<T::AccountId, DispatchError> {
         let who = ensure_signed(origin)?;
 
-        let (account_name, until) =
+        let (account_id, until) =
             Sessions::<T, I>::get(&who).ok_or(Error::<T, I>::SessionNotFound)?;
         if frame_system::Pallet::<T>::block_number() > until {
             Sessions::<T, I>::remove(who);
-            return Err(Error::<T, I>::ExpiredSession.into());
+            return Err(Error::<T, I>::SessionExpired.into());
         }
 
-        Ok(account_name)
+        Ok(account_id)
     }
 
     pub(crate) fn do_authenticate(
-        authentication_method: &Box<dyn AuthenticationMethod>,
-        device: &DeviceDescriptor<T, I>,
-        challenge_response: &Vec<u8>,
-    ) -> DispatchResult {
-        authentication_method
-            .authenticate(
-                device.clone().to_vec(),
-                T::Randomness::random(&Encode::encode(&T::PalletId::get()))
-                    .0
-                    .as_ref(),
-                challenge_response,
-            )
-            .map_err(|e| match e {
-                AuthenticateError::ChallengeFailed => Error::<T, I>::ChallengeFailed.into(),
-            })
-    }
-
-    pub(crate) fn do_add_device(
-        account_name: &AccountName<T, I>,
+        credential: CredentialOf<T, I>,
         device_id: DeviceId,
-        device: DeviceDescriptor<T, I>,
-    ) -> DispatchResult {
-        AccountDevices::<T, I>::try_append(account_name.clone(), device_id)
-            .map_err(|_| Error::<T, I>::ExceedsMaxDevices)?;
-        Devices::<T, I>::insert(device_id, (account_name.clone(), device));
-
-        Self::deposit_event(
-            Event::<T, I>::AddedDevice {
-                account_name: account_name.clone(),
-                device_id,
-            }
-            .into(),
+    ) -> Result<T::AccountId, DispatchError> {
+        let account_id = Self::account_id_for(credential.user_id())?;
+        ensure!(
+            Self::account_exists(&account_id),
+            Error::<T, I>::AccountNotFound
         );
-        Ok(())
+        let device =
+            Devices::<T, I>::get(&account_id, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
+        device
+            .verify_user(&credential)
+            .ok_or(Error::<T, I>::CredentialInvalid)?;
+        Ok(account_id)
     }
 
     pub(crate) fn do_add_session(
-        session_key: &AccountIdOf<T>,
-        account_name: &AccountName<T, I>,
+        session_key: &T::AccountId,
+        account_id: &T::AccountId,
         duration: Option<BlockNumberFor<T>>,
     ) {
         let block_number = frame_system::Pallet::<T>::block_number();
@@ -471,7 +272,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             .min(T::MaxSessionDuration::get());
         let until = block_number + session_duration;
 
-        Sessions::<T, I>::insert(session_key.clone(), (account_name.clone(), until));
+        Sessions::<T, I>::insert(session_key.clone(), (account_id.clone(), until));
 
         Self::deposit_event(
             Event::<T, I>::SessionCreated {
