@@ -2,17 +2,19 @@
 
 use crate::{self as pallet_pass, Config};
 use codec::{Decode, Encode, MaxEncodedLen};
+use fc_traits_authn::Challenger;
 use frame_support::{
-    derive_impl, ensure, parameter_types,
-    traits::{ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize},
+    derive_impl, parameter_types,
+    traits::{ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize, Randomness},
     weights::Weight,
-    PalletId,
+    DebugNoBound, EqNoBound, PalletId,
 };
-use frame_system::EnsureRoot;
+use frame_system::{EnsureRoot, EnsureSigned};
 use scale_info::TypeInfo;
 use sp_core::{blake2_256, H256};
 use sp_io::TestExternalities;
 use sp_runtime::{
+    str_array as s,
     traits::{IdentifyAccount, IdentityLookup, Verify},
     MultiSignature,
 };
@@ -90,41 +92,103 @@ impl frame_support::traits::Randomness<H256, u64> for RandomnessFromBlockNumber 
     }
 }
 
-pub struct InvalidAuthenticationMethod;
-impl fc_traits_authn::AuthenticationMethod for InvalidAuthenticationMethod {
-    fn get_device_id(&self, _device: Vec<u8>) -> Option<pallet_pass::DeviceId> {
-        None
+#[derive(TypeInfo, MaxEncodedLen, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode)]
+pub struct MockDeviceAttestation {
+    pub(crate) context: (),
+    pub(crate) user_id: fc_traits_authn::HashedUserId,
+    pub(crate) challenge: fc_traits_authn::Challenge,
+    pub(crate) device_id: fc_traits_authn::DeviceId,
+}
+
+impl fc_traits_authn::ChallengeResponse<()> for MockDeviceAttestation {
+    fn is_valid(&self) -> bool {
+        self.challenge == MockChallenger::generate(&self.context)
     }
 
-    fn authenticate(
-        &self,
-        _device: Vec<u8>,
-        _challenge: &[u8],
-        _payload: &[u8],
-    ) -> Result<(), fc_traits_authn::AuthenticateError> {
-        Err(fc_traits_authn::AuthenticateError::ChallengeFailed)
+    fn used_challenge(&self) -> ((), fc_traits_authn::Challenge) {
+        ((), MockChallenger::generate(&self.context))
+    }
+
+    fn authority(&self) -> fc_traits_authn::AuthorityId {
+        s("DummyAuthenticator")
     }
 }
 
-pub struct DummyAuthenticationMethod;
-impl fc_traits_authn::AuthenticationMethod for DummyAuthenticationMethod {
-    fn get_device_id(&self, device: Vec<u8>) -> Option<pallet_pass::DeviceId> {
-        let len = device.len();
-        Some([(len as u8) + 1; 32])
+impl fc_traits_authn::UserAuthenticator for MockDeviceAttestation {
+    const AUTHORITY: fc_traits_authn::AuthorityId = s("MockDevice");
+    type Challenger = MockChallenger;
+    type Credential = Self;
+
+    fn device_id(&self) -> fc_traits_authn::DeviceId {
+        todo!()
+    }
+}
+
+impl fc_traits_authn::DeviceChallengeResponse<()> for MockDeviceAttestation {
+    fn device_id(&self) -> fc_traits_authn::DeviceId {
+        self.device_id
+    }
+}
+
+impl fc_traits_authn::UserChallengeResponse<()> for MockDeviceAttestation {
+    fn user_id(&self) -> fc_traits_authn::HashedUserId {
+        self.user_id
+    }
+}
+
+pub struct MockChallenger;
+impl fc_traits_authn::Challenger for MockChallenger {
+    type Context = ();
+
+    fn generate(_: &Self::Context) -> fc_traits_authn::Challenge {
+        let (hash, _) = RandomnessFromBlockNumber::random_seed();
+        hash.0
+    }
+}
+
+pub struct InvalidAuthenticator;
+impl fc_traits_authn::Authenticator for InvalidAuthenticator {
+    const AUTHORITY: fc_traits_authn::AuthorityId = s("InvalidAuthenticator");
+    type Challenger = MockChallenger;
+    type DeviceAttestation = MockDeviceAttestation;
+    type Device = MockDevice;
+
+    fn verify_device(&self, _: &Self::DeviceAttestation) -> Option<Self::Device> {
+        None
     }
 
-    fn authenticate(
-        &self,
-        _device: Vec<u8>,
-        challenge: &[u8],
-        payload: &[u8],
-    ) -> Result<(), fc_traits_authn::AuthenticateError> {
-        ensure!(
-            challenge == payload,
-            fc_traits_authn::AuthenticateError::ChallengeFailed
-        );
-        Ok(())
+    fn unpack_device(&self, _: &Self::DeviceAttestation) -> Self::Device {
+        ()
     }
+}
+
+pub struct DummyAuthenticator;
+impl fc_traits_authn::Authenticator for DummyAuthenticator {
+    const AUTHORITY: fc_traits_authn::AuthorityId = s("DummyAuthenticator");
+    type Challenger = MockChallenger;
+    type DeviceAttestation = MockDeviceAttestation;
+    type Device = MockDeviceAttestation;
+
+    fn unpack_device(&self, verification: &Self::DeviceAttestation) -> Self::Device {
+        todo!()
+    }
+    // fn get_device_id(&self, device: Vec<u8>) -> Option<pallet_pass::DeviceId> {
+    //     let len = device.len();
+    //     Some([(len as u8) + 1; 32])
+    // }
+
+    // fn authenticate(
+    //     &self,
+    //     _device: Vec<u8>,
+    //     challenge: &[u8],
+    //     payload: &[u8],
+    // ) -> Result<(), fc_traits_authn::AuthenticateError> {
+    //     ensure!(
+    //         challenge == payload,
+    //         fc_traits_authn::AuthenticateError::ChallengeFailed
+    //     );
+    //     Ok(())
+    // }
 }
 
 #[derive(Encode, Decode, MaxEncodedLen, TypeInfo, Debug, Clone, Eq, PartialEq)]
@@ -133,15 +197,13 @@ pub enum MockAuthenticationMethods {
     DummyAuthenticationMethod,
 }
 
-impl Into<Box<dyn fc_traits_authn::AuthenticationMethod>> for MockAuthenticationMethods {
-    fn into(self) -> Box<dyn fc_traits_authn::AuthenticationMethod> {
+impl Into<Box<dyn fc_traits_authn::Authenticator>> for MockAuthenticationMethods {
+    fn into(self) -> Box<dyn fc_traits_authn::Authenticator> {
         match self {
             MockAuthenticationMethods::InvalidAuthenticationMethod => {
-                Box::new(InvalidAuthenticationMethod)
+                Box::new(InvalidAuthenticator)
             }
-            MockAuthenticationMethods::DummyAuthenticationMethod => {
-                Box::new(DummyAuthenticationMethod)
-            }
+            MockAuthenticationMethods::DummyAuthenticationMethod => Box::new(DummyAuthenticator),
         }
     }
 }
@@ -153,18 +215,12 @@ parameter_types! {
 impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
-    type AuthenticationMethod = MockAuthenticationMethods;
-    type Randomness = RandomnessFromBlockNumber;
+    type Authenticator = MockAuthenticationMethods;
+    type RegisterOrigin = EnsureSigned<Self::AccountId>;
     type RuntimeCall = RuntimeCall;
-    type Scheduler = Scheduler;
     type PalletId = PassPalletId;
     type PalletsOrigin = OriginCaller;
-    type UninitializedTimeout = ConstU64<10>;
-    type MaxAccountNameLen = ConstU32<64>;
-    type MaxDeviceDescriptorLen = ConstU32<65535>;
-    type MaxDevicesPerAccount = ConstU32<5>;
     type MaxSessionDuration = ConstU64<10>;
-    type ModForBlockNumber = ConstU32<10800>;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

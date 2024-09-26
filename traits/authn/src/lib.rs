@@ -30,16 +30,16 @@ pub trait Authenticator {
     type DeviceAttestation: DeviceChallengeResponse<CxOf<Self::Challenger>>;
     type Device: UserAuthenticator<Challenger = Self::Challenger>;
 
-    fn verify_device(attestation: &Self::DeviceAttestation) -> Option<Self::Device> {
+    fn verify_device(&self, attestation: &Self::DeviceAttestation) -> Option<Self::Device> {
         attestation.authority().eq(&Self::AUTHORITY).then_some(())?;
         let (cx, challenge) = attestation.used_challenge();
         Self::Challenger::check_challenge(&cx, &challenge)?;
         attestation.is_valid().then_some(())?;
-        Some(Self::unpack_device(attestation))
+        Some(self.unpack_device(attestation))
     }
 
     /// Extract device information from the verification payload
-    fn unpack_device(verification: &Self::DeviceAttestation) -> Self::Device;
+    fn unpack_device(&self, verification: &Self::DeviceAttestation) -> Self::Device;
 }
 
 /// A device capable of verifying a user provided credential
