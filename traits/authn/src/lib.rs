@@ -1,6 +1,8 @@
 use codec::{FullCodec, MaxEncodedLen};
-use frame_support::Parameter;
+use frame_support::{traits::Get, Parameter};
 use scale_info::TypeInfo;
+
+pub mod util;
 
 // A reasonabily sized secure challenge
 const CHALLENGE_SIZE: usize = 32;
@@ -25,51 +27,57 @@ pub trait Challenger {
 
 /// Authenticator is used to verify authentication devices that in turn are used to verify users
 pub trait Authenticator {
-    const AUTHORITY: AuthorityId;
+    type Authority: Get<AuthorityId>;
     type Challenger: Challenger;
     type DeviceAttestation: DeviceChallengeResponse<CxOf<Self::Challenger>>;
     type Device: UserAuthenticator<Challenger = Self::Challenger>;
 
-    fn verify_device(&self, attestation: &Self::DeviceAttestation) -> Option<Self::Device> {
-        attestation.authority().eq(&Self::AUTHORITY).then_some(())?;
+    fn verify_device(attestation: Self::DeviceAttestation) -> Option<Self::Device> {
+        attestation
+            .authority()
+            .eq(&Self::Authority::get())
+            .then_some(())?;
         let (cx, challenge) = attestation.used_challenge();
         Self::Challenger::check_challenge(&cx, &challenge)?;
         attestation.is_valid().then_some(())?;
-        Some(self.unpack_device(attestation))
+        Some(Self::unpack_device(attestation))
     }
 
-    /// Extract device information from the verification payload
-    fn unpack_device(&self, verification: &Self::DeviceAttestation) -> Self::Device;
+    /// Extract device information from the attestation payload
+    fn unpack_device(attestation: Self::DeviceAttestation) -> Self::Device;
 }
 
 /// A device capable of verifying a user provided credential
 pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
-    const AUTHORITY: AuthorityId;
+    type Authority: Get<AuthorityId>;
     type Challenger: Challenger;
     type Credential: UserChallengeResponse<CxOf<Self::Challenger>>;
 
     fn verify_user(&self, credential: &Self::Credential) -> Option<()> {
-        credential.authority().eq(&Self::AUTHORITY).then_some(())?;
+        credential
+            .authority()
+            .eq(&Self::Authority::get())
+            .then_some(())?;
         let (cx, challenge) = credential.used_challenge();
         Self::Challenger::check_challenge(&cx, &challenge)?;
         credential.is_valid().then_some(())
     }
 
-    fn device_id(&self) -> DeviceId;
-}
-
-pub trait ChallengeResponse<Cx>: Parameter {
-    fn is_valid(&self) -> bool;
-    fn used_challenge(&self) -> (Cx, Challenge);
-    fn authority(&self) -> AuthorityId;
+    fn device_id(&self) -> &DeviceId;
 }
 
 /// A response to a challenge for creating a new authentication device
-pub trait DeviceChallengeResponse<Cx>: ChallengeResponse<Cx> {
-    fn device_id(&self) -> DeviceId;
+pub trait DeviceChallengeResponse<Cx>: Parameter {
+    fn is_valid(&self) -> bool;
+    fn used_challenge(&self) -> (Cx, Challenge);
+    fn authority(&self) -> AuthorityId;
+    fn device_id(&self) -> &DeviceId;
 }
 
 /// A response to a challenge for identifying a user
-pub trait UserChallengeResponse<Cx>: ChallengeResponse<Cx> {
+pub trait UserChallengeResponse<Cx>: Parameter {
+    fn is_valid(&self) -> bool;
+    fn used_challenge(&self) -> (Cx, Challenge);
+    fn authority(&self) -> AuthorityId;
     fn user_id(&self) -> HashedUserId;
 }

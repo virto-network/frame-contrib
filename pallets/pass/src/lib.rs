@@ -47,7 +47,7 @@ pub mod pallet {
 
         type WeightInfo: WeightInfo;
 
-        type Authenticator: Authenticator;
+        type Authenticator: Authenticator<Authority = Self::PalletId>;
 
         type PalletsOrigin: From<frame_system::Origin<Self>>;
 
