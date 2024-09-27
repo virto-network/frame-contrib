@@ -1,80 +1,64 @@
 //! Tests for pass pallet.
-use super::{Account, AccountStatus, Accounts, Error, Event};
+use super::{Error, Event};
 use crate::mock::*;
-use codec::Encode;
-use frame_support::{assert_noop, assert_ok, parameter_types, traits::Randomness, BoundedVec};
-use sp_core::ConstU32;
+
+use fc_traits_authn::{Challenger, HashedUserId};
+use frame_support::{assert_noop, assert_ok, parameter_types};
+use sp_core::Hasher;
 
 const SIGNER: AccountId = AccountId::new([0u8; 32]);
 const OTHER: AccountId = AccountId::new([1u8; 32]);
 
-const THE_DEVICE: fc_traits_authn::DeviceId = [1u8; 32];
+const THE_DEVICE: fc_traits_authn::DeviceId = [0u8; 32];
+const OTHER_DEVICE: fc_traits_authn::DeviceId = [1u8; 32];
 
 parameter_types! {
-    pub AccountName: BoundedVec<u8, ConstU32<64>> =
-        BoundedVec::truncate_from((*b"@account:example.org").to_vec());
+    pub AccountNameA: HashedUserId = <Test as frame_system::Config>::Hashing::hash(
+        &*b"@account.a:example.org"
+    ).0;
+    pub AccountNameB: HashedUserId = <Test as frame_system::Config>::Hashing::hash(
+        &*b"@account.b:example.org"
+    ).0;
 }
 
 mod register {
+
     use super::*;
 
     #[test]
-    fn fails_if_already_registered() {
+    fn fail_if_already_registered() {
         new_test_ext().execute_with(|| {
-            Accounts::<Test>::insert(
-                AccountName::get(),
-                Account::new(AccountId::new([0u8; 32]), crate::AccountStatus::Active),
-            );
+            let account_id =
+                Pass::account_id_for(AccountNameA::get()).expect("account exists; qed");
+            assert_ok!(Pass::create_account(&account_id));
 
             assert_noop!(
                 Pass::register(
                     RuntimeOrigin::signed(SIGNER),
-                    AccountName::get(),
-                    MockAuthenticationMethods::DummyAuthenticationMethod,
-                    BoundedVec::new(),
-                    (*b"challeng").to_vec()
+                    AccountNameA::get(),
+                    PassDeviceAttestation::AuthenticatorA(authenticator_a::DeviceAttestation {
+                        device_id: THE_DEVICE,
+                        challenge: AuthenticatorA::generate(&()),
+                    }),
                 ),
-                Error::<Test>::AlreadyRegistered
-            );
-        });
-    }
-
-    #[test]
-    fn fails_if_cannot_resolve_device() {
-        new_test_ext().execute_with(|| {
-            assert_noop!(
-                Pass::register(
-                    RuntimeOrigin::signed(SIGNER),
-                    AccountName::get(),
-                    MockAuthenticationMethods::InvalidAuthenticationMethod,
-                    BoundedVec::new(),
-                    (*b"challeng").to_vec()
-                ),
-                Error::<Test>::InvalidDeviceForAuthenticationMethod
+                Error::<Test>::AccountAlreadyRegistered
             );
         });
     }
 
     #[test]
-    fn fails_if_cannot_fulfill_challenge() {
+    fn fail_if_attestation_is_invalid() {
         new_test_ext().execute_with(|| {
-            let challenge_response =
-                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                    .0
-                    .as_bytes()
-                    .to_vec();
-
-            System::set_block_number(2);
-
             assert_noop!(
                 Pass::register(
                     RuntimeOrigin::signed(SIGNER),
-                    AccountName::get(),
-                    MockAuthenticationMethods::DummyAuthenticationMethod,
-                    BoundedVec::new(),
-                    challenge_response,
+                    AccountNameB::get(),
+                    PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                        device_id: THE_DEVICE,
+                        challenge: AuthenticatorB::generate(&OTHER_DEVICE),
+                    }),
                 ),
-                Error::<Test>::ChallengeFailed
+                Error::<Test>::DeviceAttestationInvalid
             );
         });
     }
@@ -82,162 +66,84 @@ mod register {
     #[test]
     fn it_works() {
         new_test_ext().execute_with(|| {
-            let account_id = Pass::account_id_for(&AccountName::get());
+            let account_id =
+                Pass::account_id_for(AccountNameA::get()).expect("account exists; qed");
 
             assert_ok!(Pass::register(
                 RuntimeOrigin::signed(SIGNER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                BoundedVec::new(),
-                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                    .0
-                    .as_bytes()
-                    .to_vec()
+                AccountNameA::get(),
+                PassDeviceAttestation::AuthenticatorA(authenticator_a::DeviceAttestation {
+                    device_id: THE_DEVICE,
+                    challenge: AuthenticatorA::generate(&()),
+                }),
             ));
 
             System::assert_has_event(
                 Event::<Test>::Registered {
-                    account_name: AccountName::get(),
-                    account_id,
+                    who: account_id.clone(),
                 }
                 .into(),
             );
             System::assert_has_event(
                 Event::<Test>::AddedDevice {
-                    account_name: AccountName::get(),
-                    device_id: [1u8; 32],
+                    who: account_id,
+                    device_id: THE_DEVICE,
                 }
                 .into(),
             );
         });
     }
-
-    #[test]
-    fn unreserving_if_uninitialized_works() {
-        // Test for uninitialized account that unreserves if not activated after timeout
-        new_test_ext().execute_with(|| {
-            assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                BoundedVec::new(),
-                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                    .0
-                    .as_bytes()
-                    .to_vec()
-            ));
-
-            assert_eq!(
-                Accounts::<Test>::get(AccountName::get()),
-                Some(Account::new(
-                    Pass::account_id_for(&AccountName::get()),
-                    AccountStatus::Uninitialized
-                ))
-            );
-
-            run_to(12);
-            assert_eq!(Accounts::<Test>::get(AccountName::get()), None);
-        });
-
-        // Test for uninitialized account that is initialized before timeout
-        new_test_ext().execute_with(|| {
-            assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                BoundedVec::new(),
-                RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                    .0
-                    .as_bytes()
-                    .to_vec()
-            ));
-
-            let account_id = Pass::account_id_for(&AccountName::get());
-
-            assert_eq!(
-                Accounts::<Test>::get(AccountName::get()),
-                Some(Account::new(
-                    account_id.clone(),
-                    AccountStatus::Uninitialized
-                ))
-            );
-
-            run_to(11);
-            System::inc_providers(&account_id);
-
-            run_to(12);
-            assert_eq!(
-                Accounts::<Test>::get(AccountName::get()),
-                Some(Account::new(account_id.clone(), AccountStatus::Active))
-            );
-        });
-    }
 }
 
-const DURATION: u64 = 10;
-parameter_types! {
-    pub ChallengeResponse: Vec<u8> =
-            RandomnessFromBlockNumber::random(&Encode::encode(&PassPalletId::get()))
-                .0
-                .as_bytes()
-                .to_vec();
-}
-
-fn prepare() -> sp_io::TestExternalities {
+fn prepare(user_id: HashedUserId) -> sp_io::TestExternalities {
     let mut t = new_test_ext();
     t.execute_with(|| {
         assert_ok!(Pass::register(
             RuntimeOrigin::signed(SIGNER),
-            AccountName::get(),
-            MockAuthenticationMethods::DummyAuthenticationMethod,
-            BoundedVec::new(),
-            ChallengeResponse::get(),
+            user_id,
+            PassDeviceAttestation::AuthenticatorA(authenticator_a::DeviceAttestation {
+                device_id: THE_DEVICE,
+                challenge: AuthenticatorA::generate(&()),
+            }),
         ));
     });
     t
 }
 
+const DURATION: u64 = 10;
+
 mod authenticate {
     use super::*;
 
-    fn prepare() -> sp_io::TestExternalities {
-        let mut t = super::prepare();
-        t.execute_with(|| {
-            // Simulate device initialization
-            System::inc_providers(&Pass::account_id_for(&AccountName::get()));
-        });
-        t
-    }
-
     #[test]
-    fn fails_if_account_is_uninitialized() {
-        super::prepare().execute_with(|| {
+    fn fail_if_cannot_find_account() {
+        prepare(AccountNameA::get()).execute_with(|| {
             assert_noop!(
                 Pass::authenticate(
                     RuntimeOrigin::signed(OTHER),
-                    AccountName::get(),
-                    MockAuthenticationMethods::DummyAuthenticationMethod,
                     THE_DEVICE,
-                    ChallengeResponse::get(),
+                    PassCredential::AuthenticatorA(authenticator_a::Credential {
+                        user_id: AccountNameB::get(),
+                        challenge: AuthenticatorA::generate(&()),
+                    }),
                     Some(DURATION),
                 ),
-                Error::<Test>::Uninitialized
+                Error::<Test>::AccountNotFound
             );
         });
     }
 
     #[test]
-    fn fails_if_cannot_resolve_device() {
-        prepare().execute_with(|| {
-            let device = [2u8; 32];
-
+    fn fail_if_cannot_find_device() {
+        prepare(AccountNameA::get()).execute_with(|| {
             assert_noop!(
                 Pass::authenticate(
                     RuntimeOrigin::signed(OTHER),
-                    AccountName::get(),
-                    MockAuthenticationMethods::DummyAuthenticationMethod,
-                    device,
-                    ChallengeResponse::get(),
+                    OTHER_DEVICE,
+                    PassCredential::AuthenticatorA(authenticator_a::Credential {
+                        user_id: AccountNameA::get(),
+                        challenge: AuthenticatorA::generate(&()),
+                    }),
                     Some(DURATION),
                 ),
                 Error::<Test>::DeviceNotFound
@@ -246,16 +152,45 @@ mod authenticate {
     }
 
     #[test]
+    fn fail_if_attestation_is_invalid() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(Pass::register(
+                RuntimeOrigin::signed(SIGNER),
+                AccountNameA::get(),
+                PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                    device_id: THE_DEVICE,
+                    challenge: AuthenticatorB::generate(&THE_DEVICE),
+                }),
+            ));
+
+            assert_noop!(
+                Pass::authenticate(
+                    RuntimeOrigin::signed(OTHER),
+                    THE_DEVICE,
+                    PassCredential::AuthenticatorB(authenticator_b::Credential {
+                        user_id: AccountNameA::get(),
+                        device_id: THE_DEVICE,
+                        challenge: AuthenticatorB::generate(&OTHER_DEVICE),
+                    }),
+                    Some(DURATION),
+                ),
+                Error::<Test>::CredentialInvalid
+            );
+        });
+    }
+
+    #[test]
     fn it_works() {
-        prepare().execute_with(|| {
+        prepare(AccountNameA::get()).execute_with(|| {
             let block_number = System::block_number();
 
             assert_ok!(Pass::authenticate(
                 RuntimeOrigin::signed(OTHER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
                 THE_DEVICE,
-                ChallengeResponse::get(),
+                PassCredential::AuthenticatorA(authenticator_a::Credential {
+                    user_id: AccountNameA::get(),
+                    challenge: AuthenticatorA::generate(&()),
+                }),
                 Some(DURATION),
             ));
 
@@ -272,26 +207,33 @@ mod authenticate {
 
 mod add_device {
     use super::*;
-    const NEW_DEVICE_ID: fc_traits_authn::DeviceId = [2u8; 32];
 
     fn prepare() -> sp_io::TestExternalities {
-        let mut t = super::prepare();
+        let mut t = super::prepare(AccountNameA::get());
         t.execute_with(|| {
-            // Simulate device initialization
-            System::inc_providers(&Pass::account_id_for(&AccountName::get()));
+            assert_ok!(Pass::authenticate(
+                RuntimeOrigin::signed(SIGNER),
+                THE_DEVICE,
+                PassCredential::AuthenticatorA(authenticator_a::Credential {
+                    user_id: AccountNameA::get(),
+                    challenge: AuthenticatorA::generate(&()),
+                }),
+                Some(DURATION),
+            ));
         });
         t
     }
 
     #[test]
-    fn fails_if_not_signed_by_session_key() {
+    fn fail_if_not_signed_by_session_key() {
         prepare().execute_with(|| {
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(OTHER),
-                    MockAuthenticationMethods::DummyAuthenticationMethod,
-                    BoundedVec::truncate_from(vec![1u8]),
-                    ChallengeResponse::get()
+                    PassDeviceAttestation::AuthenticatorA(authenticator_a::DeviceAttestation {
+                        device_id: OTHER_DEVICE,
+                        challenge: AuthenticatorA::generate(&()),
+                    }),
                 ),
                 Error::<Test>::SessionNotFound
             );
@@ -301,26 +243,20 @@ mod add_device {
     #[test]
     fn it_works() {
         prepare().execute_with(|| {
-            assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(OTHER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                THE_DEVICE,
-                ChallengeResponse::get(),
-                Some(DURATION),
-            ));
+            let who = Pass::account_id_for(AccountNameA::get()).expect("account exists; qed");
 
             assert_ok!(Pass::add_device(
-                RuntimeOrigin::signed(OTHER),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                BoundedVec::truncate_from(vec![1u8]),
-                ChallengeResponse::get()
-            ));
+                RuntimeOrigin::signed(SIGNER),
+                PassDeviceAttestation::AuthenticatorA(authenticator_a::DeviceAttestation {
+                    device_id: OTHER_DEVICE,
+                    challenge: AuthenticatorA::generate(&()),
+                }),
+            ),);
 
             System::assert_has_event(
                 Event::<Test>::AddedDevice {
-                    account_name: AccountName::get(),
-                    device_id: NEW_DEVICE_ID,
+                    who,
+                    device_id: OTHER_DEVICE,
                 }
                 .into(),
             );
@@ -330,154 +266,26 @@ mod add_device {
 
 mod dispatch {
     use super::*;
-    use sp_runtime::traits::Hash;
 
     fn prepare() -> sp_io::TestExternalities {
-        let mut t = super::prepare();
+        let mut t = super::prepare(AccountNameA::get());
         t.execute_with(|| {
-            // Emulate provisioning of account
-
-            System::inc_providers(&Pass::account_id_for(&AccountName::get()));
+            assert_ok!(Pass::authenticate(
+                RuntimeOrigin::signed(SIGNER),
+                THE_DEVICE,
+                PassCredential::AuthenticatorA(authenticator_a::Credential {
+                    user_id: AccountNameA::get(),
+                    challenge: AuthenticatorA::generate(&()),
+                }),
+                Some(DURATION),
+            ));
         });
         t
     }
 
     #[test]
-    fn fails_if_account_is_uninitialized() {
-        super::prepare().execute_with(|| {
-            assert_noop!(
-                Pass::dispatch(
-                    RuntimeOrigin::signed(OTHER),
-                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                        remark: b"Hello, world".to_vec()
-                    })),
-                    Some((
-                        AccountName::get(),
-                        MockAuthenticationMethods::DummyAuthenticationMethod,
-                        THE_DEVICE,
-                        ChallengeResponse::get(),
-                    )),
-                    None
-                ),
-                Error::<Test>::Uninitialized
-            );
-        });
-    }
-
-    #[test]
-    fn dispatching_with_explicit_authentication_works() {
+    fn fail_without_credentials_if_not_signed_by_session_key() {
         prepare().execute_with(|| {
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(OTHER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
-                Some((
-                    AccountName::get(),
-                    MockAuthenticationMethods::DummyAuthenticationMethod,
-                    THE_DEVICE,
-                    ChallengeResponse::get(),
-                )),
-                None
-            ));
-
-            System::assert_has_event(
-                frame_system::Event::Remarked {
-                    sender: Pass::account_id_for(&AccountName::get()),
-                    hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
-                }
-                .into(),
-            );
-        });
-    }
-
-    #[test]
-    fn dispatching_signed_with_a_session_key_works() {
-        prepare().execute_with(|| {
-            assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(OTHER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                THE_DEVICE,
-                ChallengeResponse::get(),
-                None,
-            ));
-
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(OTHER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
-                None,
-                None
-            ));
-
-            System::assert_has_event(
-                frame_system::Event::Remarked {
-                    sender: Pass::account_id_for(&AccountName::get()),
-                    hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
-                }
-                .into(),
-            );
-        });
-    }
-
-    #[test]
-    fn dispatching_creates_new_session_key() {
-        prepare().execute_with(|| {
-            assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(OTHER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                THE_DEVICE,
-                ChallengeResponse::get(),
-                None,
-            ));
-
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(OTHER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
-                None,
-                Some(SIGNER)
-            ));
-
-            System::assert_has_event(
-                Event::<Test>::SessionCreated {
-                    session_key: SIGNER,
-                    until: 11,
-                }
-                .into(),
-            );
-
-            next_block();
-
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(SIGNER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
-                None,
-                None,
-            ));
-        });
-    }
-
-    #[test]
-    fn dispatching_signed_with_a_session_key_fails_on_expired_session() {
-        prepare().execute_with(|| {
-            assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(OTHER),
-                AccountName::get(),
-                MockAuthenticationMethods::DummyAuthenticationMethod,
-                THE_DEVICE,
-                ChallengeResponse::get(),
-                Some(2),
-            ));
-
-            run_to(4);
-
             assert_noop!(
                 Pass::dispatch(
                     RuntimeOrigin::signed(OTHER),
@@ -487,7 +295,195 @@ mod dispatch {
                     None,
                     None
                 ),
-                Error::<Test>::ExpiredSession
+                Error::<Test>::SessionNotFound
+            );
+        });
+    }
+
+    #[test]
+    fn without_credentials_it_works() {
+        prepare().execute_with(|| {
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(SIGNER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                None,
+                None
+            ));
+
+            System::assert_has_event(
+                frame_system::Event::Remarked {
+                    sender: Pass::account_id_for(AccountNameA::get()).expect("account exists; qed"),
+                    hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
+                }
+                .into(),
+            );
+        });
+    }
+
+    #[test]
+    fn fail_with_credentials_if_account_not_found() {
+        prepare().execute_with(|| {
+            assert_noop!(
+                Pass::dispatch(
+                    RuntimeOrigin::signed(OTHER),
+                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                        remark: b"Hello, world".to_vec()
+                    })),
+                    Some((
+                        OTHER_DEVICE,
+                        PassCredential::AuthenticatorA(authenticator_a::Credential {
+                            user_id: AccountNameB::get(),
+                            challenge: AuthenticatorA::generate(&())
+                        })
+                    )),
+                    None
+                ),
+                Error::<Test>::AccountNotFound
+            );
+        });
+    }
+
+    #[test]
+    fn fail_with_credentials_if_device_not_found() {
+        prepare().execute_with(|| {
+            assert_noop!(
+                Pass::dispatch(
+                    RuntimeOrigin::signed(OTHER),
+                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                        remark: b"Hello, world".to_vec()
+                    })),
+                    Some((
+                        OTHER_DEVICE,
+                        PassCredential::AuthenticatorA(authenticator_a::Credential {
+                            user_id: AccountNameA::get(),
+                            challenge: AuthenticatorA::generate(&())
+                        })
+                    )),
+                    None
+                ),
+                Error::<Test>::DeviceNotFound
+            );
+        });
+    }
+
+    #[test]
+    fn with_credentials_it_works() {
+        prepare().execute_with(|| {
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(OTHER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                Some((
+                    THE_DEVICE,
+                    PassCredential::AuthenticatorA(authenticator_a::Credential {
+                        user_id: AccountNameA::get(),
+                        challenge: AuthenticatorA::generate(&())
+                    })
+                )),
+                None
+            ));
+
+            System::assert_has_event(
+                frame_system::Event::Remarked {
+                    sender: Pass::account_id_for(AccountNameA::get()).expect("account exists; qed"),
+                    hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
+                }
+                .into(),
+            );
+        });
+    }
+
+    #[test]
+    fn with_new_session_key_it_creates_a_session() {
+        prepare().execute_with(|| {
+            let block_number = System::block_number();
+
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(OTHER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                Some((
+                    THE_DEVICE,
+                    PassCredential::AuthenticatorA(authenticator_a::Credential {
+                        user_id: AccountNameA::get(),
+                        challenge: AuthenticatorA::generate(&())
+                    })
+                )),
+                Some(OTHER)
+            ));
+
+            System::assert_has_event(
+                Event::SessionCreated {
+                    session_key: OTHER,
+                    until: block_number + DURATION,
+                }
+                .into(),
+            );
+        });
+    }
+
+    #[test]
+    fn session_duration_is_met() {
+        prepare().execute_with(|| {
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(SIGNER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                None,
+                None,
+            ));
+
+            run_to(9);
+
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(SIGNER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                None,
+                Some(OTHER),
+            ));
+
+            run_to(12);
+
+            assert_noop!(
+                Pass::dispatch(
+                    RuntimeOrigin::signed(SIGNER),
+                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                        remark: b"Hello, world".to_vec()
+                    })),
+                    None,
+                    None,
+                ),
+                Error::<Test>::SessionExpired
+            );
+
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(OTHER),
+                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                    remark: b"Hello, world".to_vec()
+                })),
+                None,
+                None,
+            ));
+
+            run_to(20);
+
+            assert_noop!(
+                Pass::dispatch(
+                    RuntimeOrigin::signed(OTHER),
+                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+                        remark: b"Hello, world".to_vec()
+                    })),
+                    None,
+                    None,
+                ),
+                Error::<Test>::SessionExpired
             );
         });
     }
