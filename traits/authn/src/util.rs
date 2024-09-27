@@ -5,12 +5,20 @@ use frame_support::traits::Get;
 use scale_info::TypeInfo;
 
 use crate::{
-    Authenticator, AuthorityId, Challenger, DeviceChallengeResponse, DeviceId, UserAuthenticator,
-    UserChallengeResponse,
+    Authenticator, AuthorityId, Challenger, CxOf, DeviceChallengeResponse, DeviceId,
+    UserAuthenticator, UserChallengeResponse,
 };
 
 type ChallengerOf<Dev> = <Dev as UserAuthenticator>::Challenger;
-type CxOf<C> = <C as Challenger>::Context;
+
+pub struct AuthorityFromPalletId<Id>(PhantomData<Id>);
+
+impl<Id: Get<PalletId>> Get<AuthorityId> for AuthorityFromPalletId<Id> {
+    fn get() -> AuthorityId {
+        Decode::decode(&mut TrailingZeroInput::new(&Id::get().0))
+            .expect("Size of PalletId is less than 32 bytes; qed")
+    }
+}
 
 /// Convenient auto-implemtator of the Authenticator trait
 pub struct Auth<Dev, Att>(PhantomData<(Dev, Att)>);
