@@ -1226,10 +1226,20 @@ dependencies = [
 name = "fc-traits-authn"
 version = "0.1.0"
 dependencies = [
+ "fc-traits-authn-proc",
  "frame-support",
  "impl-trait-for-tuples",
  "parity-scale-codec",
+ "paste",
  "scale-info",
+]
+
+[[package]]
+name = "fc-traits-authn-proc"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 2.0.77",
 ]
 
 [[package]]

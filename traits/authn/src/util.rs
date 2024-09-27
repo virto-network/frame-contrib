@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use codec::{Decode, Encode, FullCodec, MaxEncodedLen};
-use frame_support::traits::Get;
+use frame_support::{sp_runtime::traits::TrailingZeroInput, traits::Get, PalletId};
 use scale_info::TypeInfo;
 
 use crate::{

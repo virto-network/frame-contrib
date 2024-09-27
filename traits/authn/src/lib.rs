@@ -4,6 +4,8 @@ use scale_info::TypeInfo;
 
 pub mod util;
 
+pub use fc_traits_authn_proc::composite_authenticators;
+
 // A reasonabily sized secure challenge
 const CHALLENGE_SIZE: usize = 32;
 pub type Challenge = [u8; CHALLENGE_SIZE];
