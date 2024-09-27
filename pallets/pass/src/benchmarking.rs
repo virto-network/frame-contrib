@@ -3,24 +3,56 @@
 use super::*;
 use crate::Pallet;
 use frame_benchmarking::v2::*;
+use sp_runtime::traits::Hash;
 
-fn assert_last_event<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>::RuntimeEvent) {
-    frame_system::Pallet::<T>::assert_last_event(generic_event.into());
+type RuntimeEventFor<T, I> = <T as Config<I>>::RuntimeEvent;
+
+fn assert_has_event<T: Config<I>, I: 'static>(generic_event: RuntimeEventFor<T, I>) {
+    frame_system::Pallet::<T>::assert_has_event(generic_event.into());
 }
 
-#[benchmarks]
+fn setup_signers<T: frame_system::Config>() -> (T::AccountId, T::AccountId) {
+    (
+        frame_benchmarking::account("signer", 0, 0),
+        frame_benchmarking::account("signer", 1, 0),
+    )
+}
+
+fn hash<T: frame_system::Config>(b: &[u8]) -> HashedUserId
+where
+    T::Hash: Into<HashedUserId>,
+{
+    T::Hashing::hash(b).into()
+}
+
+#[instance_benchmarks(
+where
+    T: frame_system::Config + crate::Config<I>,
+    T::Hash: Into<HashedUserId>,
+    RuntimeEventFor<T, I>: From<frame_system::Event<T>>,
+)]
 mod benchmarks {
     use super::*;
 
     #[benchmark]
-    pub fn register() {
+    pub fn register() -> Result<(), BenchmarkError> {
         // Setup code
+        let (one, _) = setup_signers::<T>();
+        let user_id = hash::<T>(&*b"my-account");
+        let account_id = Pallet::<T, I>::account_id_for(user_id)?;
+        let device_id = [0u8; 32];
 
         #[extrinsic_call]
-        _(RawOrigin::Root);
+        _(
+            RawOrigin::Signed(one),
+            user_id,
+            T::BenchmarkHelper::device_attestation(device_id),
+        );
 
         // Verification code
-        assert_last_event::<T>(Event::Success.into());
+        assert_has_event::<T, I>(Event::Registered { who: account_id }.into());
+
+        Ok(())
     }
 
     impl_benchmark_test_suite!(Pallet, crate::mock::new_test_ext(), crate::mock::Test);

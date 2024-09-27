@@ -1,6 +1,6 @@
 //! Test environment for pallet pass.
 
-use crate::{self as pallet_pass, Config};
+use crate::{self as pallet_pass, Config, CredentialOf, DeviceAttestationOf};
 pub use authenticators::*;
 use codec::{Decode, Encode, MaxEncodedLen};
 use fc_traits_authn::{composite_authenticators, util::AuthorityFromPalletId, Challenger};
@@ -100,6 +100,28 @@ impl Config for Test {
     type PalletId = PassPalletId;
     type PalletsOrigin = OriginCaller;
     type MaxSessionDuration = ConstU64<10>;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = BenchmarkHelper;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+pub struct BenchmarkHelper;
+
+#[cfg(feature = "runtime-benchmarks")]
+impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
+    fn device_attestation(device_id: DeviceId) -> DeviceAttestationOf<Test, ()> {
+        PassDeviceAttestation::AuthenticatorA(authenticator_a::DeviceAttestation {
+            device_id,
+            challenge: AuthenticatorA::generate(&()),
+        })
+    }
+
+    fn credential(user_id: HashedUserId) -> CredentialOf<Test, ()> {
+        PassCredential::AuthenticatorA(authenticator_a::Credential {
+            user_id,
+            challenge: AuthenticatorA::generate(&()),
+        })
+    }
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

@@ -59,6 +59,9 @@ pub mod pallet {
         type MaxSessionDuration: Get<BlockNumberFor<Self>>;
 
         type RegisterOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, HashedUserId>;
+
+        #[cfg(feature = "runtime-benchmarks")]
+        type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }
 
     #[pallet::pallet]
