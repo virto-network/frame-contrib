@@ -37,10 +37,10 @@ struct Dev<T, A, Ch, Cred>(T, PhantomData<(A, Ch, Cred)>);
 
 impl<T, A, Ch, Cred> UserAuthenticator for Dev<T, A, Ch, Cred>
 where
-    T: AsRef<DeviceId> + FullCodec + MaxEncodedLen + TypeInfo,
-    A: Get<AuthorityId>,
-    Ch: Challenger,
-    Cred: UserChallengeResponse<Ch::Context>,
+    T: AsRef<DeviceId> + FullCodec + MaxEncodedLen + TypeInfo + 'static,
+    A: Get<AuthorityId> + 'static,
+    Ch: Challenger + 'static,
+    Cred: UserChallengeResponse<Ch::Context> + 'static,
 {
     type Authority = A;
     type Challenger = Ch;
@@ -65,7 +65,9 @@ mod pass_key {
     use super::{Auth, Dev};
     use crate::{DeviceChallengeResponse, DeviceId, UserChallengeResponse};
 
+    #[allow(dead_code)]
     pub type PassKey<A> = Dev<(), A, (), PassKeyAssertion>;
+    #[allow(dead_code)]
     pub type PassKeyManager<A> = Auth<PassKey<A>, PassKeyAttestation>;
 
     #[derive(Clone, Debug, Decode, Encode, TypeInfo, PartialEq, Eq)]
@@ -139,7 +141,9 @@ mod dummy {
         }
     }
 
+    #[allow(dead_code)]
     pub type DummyDev = Dev<DeviceId, DummyAttestation, DummyChallenger, DummyCredential>;
+    #[allow(dead_code)]
     pub type Dummy = Auth<DummyDev, DummyAttestation>;
 
     impl DeviceChallengeResponse<DummyCx> for DummyAttestation {
