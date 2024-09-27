@@ -4,11 +4,14 @@
 //!
 //! > TODO: Update with [spec](https://hackmd.io/@pandres95/pallet-pass) document once complete
 
-use fc_traits_authn::{DeviceId, HashedUserId, UserAuthenticator, UserChallengeResponse};
-use frame_support::pallet_prelude::*;
-use frame_system::pallet_prelude::*;
+use fc_traits_authn::{
+    util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId,
+    UserAuthenticator, UserChallengeResponse,
+};
+use frame_support::{pallet_prelude::*, traits::EnsureOriginWithArg, PalletId};
+use frame_system::{pallet_prelude::*, RawOrigin};
 use sp_runtime::{
-    traits::{Dispatchable, StaticLookup},
+    traits::{Dispatchable, TrailingZeroInput},
     DispatchResult,
 };
 use sp_std::fmt::Debug;
@@ -30,9 +33,6 @@ pub use weights::*;
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use fc_traits_authn::{Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId};
-    use frame_support::{traits::EnsureOriginWithArg, PalletId};
-    use frame_system::RawOrigin;
 
     #[pallet::config]
     pub trait Config<I: 'static = ()>: frame_system::Config {
@@ -47,7 +47,7 @@ pub mod pallet {
 
         type WeightInfo: WeightInfo;
 
-        type Authenticator: Authenticator<Authority = Self::PalletId>;
+        type Authenticator: Authenticator<Authority = AuthorityFromPalletId<Self::PalletId>>;
 
         type PalletsOrigin: From<frame_system::Origin<Self>>;
 
@@ -117,30 +117,23 @@ pub mod pallet {
         ) -> DispatchResult {
             T::RegisterOrigin::ensure_origin(origin, &user)?;
             let account_id = Self::account_id_for(user)?;
-            ensure!(
-                Self::account_exists(&account_id),
-                Error::<T, I>::AccountAlreadyRegistered
-            );
-
-            let device = T::Authenticator::verify_device(&attestation)
-                .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
+            // ensure!(
+            //     Self::account_exists(&account_id),
+            //     Error::<T, I>::AccountAlreadyRegistered
+            // );
 
             Self::create_account(&account_id)?;
             Self::deposit_event(Event::<T, I>::Registered {
                 who: account_id.clone(),
             });
 
-            let device_id = device.device_id();
-            Devices::<T, I>::insert(&account_id, device_id, device);
-            Self::deposit_event(Event::<T, I>::AddedDevice {
-                who: account_id,
-                device_id,
-            });
-
-            Ok(())
+            Self::do_add_device(&account_id, attestation)
         }
 
         #[pallet::call_index(3)]
+        // #[pallet::feeless_if(
+        //     |_: &OriginFor<T>, _: &DeviceId, _: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| true
+        // )]
         pub fn authenticate(
             origin: OriginFor<T>,
             device_id: DeviceId,
@@ -148,12 +141,17 @@ pub mod pallet {
             duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            let account_id = T::Lookup::lookup(credential.user_id());
-            Self::account_exists(&account_id)?;
+            let account_id = Self::account_id_for(credential.user_id())?;
+            ensure!(
+                Self::account_exists(&account_id),
+                Error::<T, I>::AccountNotFound
+            );
 
             let device = Devices::<T, I>::get(&account_id, &device_id)
                 .ok_or(Error::<T, I>::DeviceNotFound)?;
-            device.verify_user(&credential).then_some(()).ok_or();
+            device
+                .verify_user(&credential)
+                .ok_or(Error::<T, I>::CredentialInvalid)?;
 
             Self::do_add_session(&who, &account_id, duration);
             Ok(())
@@ -162,20 +160,12 @@ pub mod pallet {
         /// Call to claim an Account: It assumes the account is initialized
         /// (because an active account is required to authenticate first of all).
         #[pallet::call_index(4)]
-        // #[pallet::feeless_if()]
         pub fn add_device(
             origin: OriginFor<T>,
             attestation: DeviceAttestationOf<T, I>,
         ) -> DispatchResult {
             let who = Self::ensure_signer_is_valid_session(origin)?;
-
-            let device_id = attestation.device_id();
-            let device = T::Authenticator::verify_device(&attestation).ok_or(())?;
-
-            Devices::<T, I>::insert(who, device_id, device);
-            Self::deposit_event(Event::<T, I>::AddedDevice { who, device_id }.into());
-
-            Ok(())
+            Self::do_add_device(&who, attestation)
         }
 
         #[pallet::call_index(5)]
@@ -211,10 +201,9 @@ pub mod pallet {
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub fn account_id_for(user: HashedUserId) -> Result<T::AccountId, DispatchError> {
-        // TODO it will be nice if we can use the lookup sytem to convert
-        // to accept hashes or other types of data that fit the MultiAddress
-        let pass = T::Lookup::lookup(user)?;
-        Ok(pass)
+        let account_id: T::AccountId = T::AccountId::decode(&mut TrailingZeroInput::new(&user))
+            .map_err(|_| Error::<T, I>::AccountNotFound)?;
+        Ok(account_id)
     }
 
     pub(crate) fn account_exists(who: &T::AccountId) -> bool {
@@ -226,6 +215,26 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             frame_system::Pallet::<T>::inc_providers(who) == frame_system::IncRefStatus::Created,
             Error::<T, I>::AccountAlreadyRegistered
         );
+        Ok(())
+    }
+
+    pub(crate) fn do_add_device(
+        who: &T::AccountId,
+        attestation: DeviceAttestationOf<T, I>,
+    ) -> DispatchResult {
+        let device_id = attestation.device_id();
+        let device = T::Authenticator::verify_device(attestation.clone())
+            .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
+
+        Devices::<T, I>::insert(who, device_id, device);
+        Self::deposit_event(
+            Event::<T, I>::AddedDevice {
+                who: who.clone(),
+                device_id: device_id.clone(),
+            }
+            .into(),
+        );
+
         Ok(())
     }
 
