@@ -85,8 +85,8 @@ parameter_types! {
 }
 
 composite_authenticators! {
-    pub Pass = {
-        AuthenticatorA,
+    pub Pass<AuthorityFromPalletId<PassPalletId>> {
+        authenticator_a::Authenticator,
         AuthenticatorB,
     };
 }
@@ -94,7 +94,7 @@ composite_authenticators! {
 impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
-    type Authenticator = PassAuthenticator<AuthorityFromPalletId<Self::PalletId>>;
+    type Authenticator = PassAuthenticator;
     type RegisterOrigin = EnsureSigned<Self::AccountId>;
     type RuntimeCall = RuntimeCall;
     type PalletId = PassPalletId;
@@ -110,16 +110,16 @@ pub struct BenchmarkHelper;
 #[cfg(feature = "runtime-benchmarks")]
 impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
     fn device_attestation(device_id: DeviceId) -> DeviceAttestationOf<Test, ()> {
-        PassDeviceAttestation::AuthenticatorA(authenticator_a::DeviceAttestation {
+        PassDeviceAttestation::AuthenticatorAAuthenticator(authenticator_a::DeviceAttestation {
             device_id,
-            challenge: AuthenticatorA::generate(&()),
+            challenge: authenticator_a::Authenticator::generate(&()),
         })
     }
 
     fn credential(user_id: HashedUserId) -> CredentialOf<Test, ()> {
-        PassCredential::AuthenticatorA(authenticator_a::Credential {
+        PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
             user_id,
-            challenge: AuthenticatorA::generate(&()),
+            challenge: authenticator_a::Authenticator::generate(&()),
         })
     }
 }
