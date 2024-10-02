@@ -41,7 +41,7 @@ where
 /// Convenient auto-implemtator of the UserAuthenticator trait
 #[derive(Encode, Decode, TypeInfo)]
 #[scale_info(skip_type_params(A, Ch, Cred))]
-struct Dev<T, A, Ch, Cred>(T, PhantomData<(A, Ch, Cred)>);
+pub struct Dev<T, A, Ch, Cred>(T, PhantomData<(A, Ch, Cred)>);
 
 impl<T, A, Ch, Cred> UserAuthenticator for Dev<T, A, Ch, Cred>
 where

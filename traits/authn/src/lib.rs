@@ -4,7 +4,34 @@ use scale_info::TypeInfo;
 
 pub mod util;
 
-pub use fc_traits_authn_proc::composite_authenticators;
+pub use fc_traits_authn_proc::composite_authenticator;
+
+pub mod composite_prelude {
+    pub use crate::{
+        Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
+        HashedUserId, UserAuthenticator, UserChallengeResponse,
+    };
+    pub use frame_support::traits::Get;
+}
+
+#[macro_export]
+macro_rules! composite_authenticators {
+    // Match a single composite authenticator with the format:
+    // pub CompositePassA<AuthorityA> { AuthA, AuthB };
+    ($(
+        pub $name:path {
+            $($auth:path),* $(,)?
+        };
+    )*) => {
+        $(
+            $crate::composite_authenticator!(
+                pub $name {
+                    $($auth),*
+                }
+            );
+        )*
+    }
+}
 
 // A reasonabily sized secure challenge
 const CHALLENGE_SIZE: usize = 32;

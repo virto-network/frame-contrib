@@ -1,42 +1,106 @@
-use proc_macro::TokenStream;
+use proc_macro::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
-use syn::{braced, parse_macro_input, Ident, Result, Token, Visibility};
+use syn::spanned::Spanned;
+use syn::{
+    braced, parse_macro_input, AngleBracketedGenericArguments, Error, GenericArgument, Ident, Path,
+    Result, Token, Type, TypePath, Visibility,
+};
 
 struct AuthMacroInput {
     vis: Visibility,
     name: Ident,
-    authenticators: Vec<Ident>,
+    authority: Path,
+    authenticators: Vec<(Ident, Path)>,
 }
 
 impl Parse for AuthMacroInput {
     fn parse(input: ParseStream) -> Result<Self> {
         let vis = input.parse()?;
-        let name = input.parse()?;
-        let _: Token![=] = input.parse()?;
+        let name: Path = input.parse()?;
+
+        if name.leading_colon.is_some() || name.segments.len() != 1 {
+            return Err(Error::new(name.span(), "Expected a name, not a path"));
+        }
+
+        let iden = &name.segments[0].ident;
+        let (name, authority) =
+            match &name.segments[0].arguments {
+                syn::PathArguments::AngleBracketed(AngleBracketedGenericArguments {
+                    args, ..
+                }) if args.len() == 1 => match &args[0] {
+                    GenericArgument::Type(Type::Path(TypePath { path, .. })) => {
+                        (iden.clone(), path.clone())
+                    }
+                    _ => {
+                        return Err(Error::new(
+                            name.span(),
+                            "Expected the authority type to be a well-defined path.",
+                        ))
+                    }
+                },
+                _ => {
+                    return Err(Error::new(
+                        name.span(),
+                        "A single parameter for the authority type is expected",
+                    ))
+                }
+            };
 
         let content;
         braced!(content in input);
-        let authenticators = content
-            .parse_terminated(Ident::parse, Token![,])?
-            .into_iter()
-            .collect();
+        let mut authenticators: Vec<_> = vec![];
 
-        let _: Token![;] = input.parse()?;
+        fn capitalize_first_letter(s: &str) -> String {
+            let mut c = s.chars();
+            match c.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        }
+
+        for p in content
+            .parse_terminated(Path::parse, Token![,])?
+            .into_iter()
+        {
+            let id = p
+                .clone()
+                .segments
+                .into_iter()
+                .map(|s| {
+                    s.ident
+                        .to_string()
+                        .split("_")
+                        .map(capitalize_first_letter)
+                        .collect::<Vec<_>>()
+                        .concat()
+                })
+                .collect::<Vec<_>>()
+                .concat();
+            let id = Ident::new(&id, Span::call_site().into());
+
+            authenticators.push((id.clone(), p));
+        }
+
+        if input.peek(Token![;]) {
+            let _: Token![;] = input.parse()?;
+        }
 
         Ok(AuthMacroInput {
             vis,
             name,
+            authority,
             authenticators,
         })
     }
 }
 
 #[proc_macro]
-pub fn composite_authenticators(input: TokenStream) -> TokenStream {
+pub fn composite_authenticator(input: TokenStream) -> TokenStream {
     let AuthMacroInput {
         vis,
         name,
+        authority,
         authenticators,
     } = parse_macro_input!(input as AuthMacroInput);
 
@@ -50,10 +114,9 @@ pub fn composite_authenticators(input: TokenStream) -> TokenStream {
     let auth_variants = authenticators
         .clone()
         .into_iter()
-        .map(|auth| {
-            let variant_name = format_ident!("{}", auth);
+        .map(|(id, path)| {
             quote! {
-                #variant_name(<#variant_name as Authenticator>::DeviceAttestation)
+                #id(<#path as Authenticator>::DeviceAttestation)
             }
         })
         .collect::<Vec<_>>();
@@ -61,39 +124,72 @@ pub fn composite_authenticators(input: TokenStream) -> TokenStream {
     let device_variants = authenticators
         .clone()
         .into_iter()
-        .map(|auth| {
-            let variant_name = format_ident!("{}", auth);
+        .map(|(id, path)| {
             quote! {
-                #variant_name(<#variant_name as Authenticator>::Device)
+                #id(<#path as Authenticator>::Device)
             }
         })
         .collect::<Vec<_>>();
 
-    let credential_variants = authenticators.clone().into_iter().map(|auth| {
-        let variant_name = format_ident!("{}", auth);
+    let credential_variants = authenticators
+        .clone()
+        .into_iter()
+        .map(|(id, path)| {
+            quote! {
+                #id(<<#path as Authenticator>::Device as UserAuthenticator>::Credential)
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let match_attestations = authenticators.clone().into_iter().map(|(id, p)| {
         quote! {
-            #variant_name(<<#variant_name as Authenticator>::Device as UserAuthenticator>::Credential)
+            #device_attestation::#id(attestation) => {
+                #device::#id(#p::verify_device(attestation)?)
+            }
         }
-    }).collect::<Vec<_>>();
+    });
+
+    let match_device_id_from_attestation = authenticators.clone().into_iter().map(|(id, _)| {
+        quote! {
+            #device_attestation::#id(attestation) => attestation.device_id()
+        }
+    });
+
+    let match_device_id_from_device = authenticators.clone().into_iter().map(|(id, _)| {
+        quote! {
+            #device::#id(device) => device.device_id()
+        }
+    });
+
+    let match_credentials = authenticators.clone().into_iter().map(|(id, _)| {
+        quote! {
+            (
+                #device::#id(device),
+                #credential::#id(credential),
+            ) => device.verify_user(credential)
+        }
+    });
+    let match_user_id = authenticators.clone().into_iter().map(|(id, _)| {
+        quote! {
+            #credential::#id(credential) => credential.user_id()
+        }
+    });
 
     // Generate the full struct and impl code
     let expanded = quote! {
-        use fc_traits_authn::*;
-        use frame_support::pallet_prelude::Get;
+        use fc_traits_authn::composite_prelude::*;
 
-        #vis struct #auth_struct<A>(core::marker::PhantomData<A>);
+        #vis struct #auth_struct;
 
-        impl<Authority: Get<AuthorityId> + 'static> Authenticator for #auth_struct<Authority> {
-            type Authority = Authority;
+        impl Authenticator for #auth_struct {
+            type Authority = #authority;
             type Challenger = Self;
             type DeviceAttestation = #device_attestation;
-            type Device = #device<Authority>;
+            type Device = #device;
 
             fn verify_device(attestation: Self::DeviceAttestation) -> Option<Self::Device> {
                 Some(match attestation {
-                    #(#device_attestation::#authenticators(attestation) => {
-                        #device::#authenticators(#authenticators::verify_device(attestation)?)
-                    }),*
+                    #(#match_attestations),*
                 })
             }
 
@@ -102,7 +198,7 @@ pub fn composite_authenticators(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl<Authority> Challenger for #auth_struct<Authority> {
+        impl Challenger for #auth_struct {
             type Context = ();
 
             fn generate(_: &Self::Context) -> Challenge {
@@ -138,43 +234,32 @@ pub fn composite_authenticators(input: TokenStream) -> TokenStream {
 
             fn device_id(&self) -> &DeviceId {
                 match self {
-                    #(#device_attestation::#authenticators(attestation) => attestation.device_id()),*
+                    #(#match_device_id_from_attestation),*
                 }
             }
         }
 
 
         #[derive(TypeInfo, Encode, Decode, MaxEncodedLen)]
-        #[scale_info(skip_type_params(Authority))]
-        pub enum #device<Authority> {
-            #[allow(non_camel_case_types)]
-            __phantom(std::marker::PhantomData<Authority>),
+        pub enum #device {
             #(#device_variants),*
         }
 
-        impl<Authority: Get<AuthorityId> + 'static> UserAuthenticator for #device<Authority> {
-            type Authority = Authority;
-            type Challenger = #auth_struct<Authority>;
+        impl UserAuthenticator for #device {
+            type Authority = #authority;
+            type Challenger = #auth_struct;
             type Credential = #credential;
 
             fn verify_user(&self, credential: &Self::Credential) -> Option<()> {
                 match (self, credential) {
-                    #((
-                        #device::#authenticators(device),
-                        #credential::#authenticators(credential),
-                    ) => device.verify_user(credential)),*,
+                    #(#match_credentials),*,
                     _ => None,
-
                 }
             }
 
             fn device_id(&self) -> &DeviceId {
                 match self {
-                    #(#device::#authenticators(device) => device.device_id()),*,
-                    #device::__phantom(_) => {
-                        unimplemented!("__phantom should not be a valid device descriptor")
-                    },
-
+                    #(#match_device_id_from_device),*
                 }
             }
         }
@@ -206,7 +291,7 @@ pub fn composite_authenticators(input: TokenStream) -> TokenStream {
 
             fn user_id(&self) -> HashedUserId {
                 match self {
-                    #(#credential::#authenticators(credential) => credential.user_id()),*
+                    #(#match_user_id),*
                 }
             }
         }
