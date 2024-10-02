@@ -120,10 +120,10 @@ pub mod pallet {
         ) -> DispatchResult {
             T::RegisterOrigin::ensure_origin(origin, &user)?;
             let account_id = Self::account_id_for(user)?;
-            // ensure!(
-            //     Self::account_exists(&account_id),
-            //     Error::<T, I>::AccountAlreadyRegistered
-            // );
+            ensure!(
+                !Self::account_exists(&account_id),
+                Error::<T, I>::AccountAlreadyRegistered
+            );
 
             Self::create_account(&account_id)?;
             Self::deposit_event(Event::<T, I>::Registered {
