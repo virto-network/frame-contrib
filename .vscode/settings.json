@@ -1,0 +1,18 @@
+{
+  "rust-analyzer.lens.references.trait.enable": true,
+  "rust-analyzer.checkOnSave": true,
+  "rust-analyzer.cargo.features": [
+    "runtime-benchmarks",
+  ],
+  "rust-analyzer.showUnlinkedFileNotification": false,
+  "rust-analyzer.rustfmt.extraArgs": [
+    "+stable"
+  ],
+  "[rust]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+  },
+  "[toml]": {
+    "editor.formatOnSave": false
+  }
+}

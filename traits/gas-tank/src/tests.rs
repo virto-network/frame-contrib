@@ -3,14 +3,13 @@ use super::*;
 use frame_support::{
     assert_ok, derive_impl, parameter_types,
     traits::{ConstU128, ConstU32},
+    weights::Weight,
 };
 use frame_system::EnsureNever;
-use impl_nonfungibles::{
-    GasSizeConfigMap, GasTankSize, NonFungibleGasBurner, ATTR_MEMBER_GAS_SIZE,
-};
+use impl_nonfungibles::{MembershipWeightTank, NonFungibleGasBurner, ATTR_MEMBERSHIP_GAS};
 use sp_runtime::{
     traits::{IdentifyAccount, IdentityLookup, Verify},
-    BoundedBTreeMap, MultiSignature,
+    MultiSignature,
 };
 
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -83,35 +82,25 @@ impl pallet_nfts::Config for Test {
     type OffchainSignature = MultiSignature;
     type RuntimeEvent = RuntimeEvent;
     type StringLimit = ();
-    type ValueLimit = ConstU32<10>;
+    type ValueLimit = ConstU32<50>;
     type WeightInfo = ();
 
     #[cfg(feature = "runtime-benchmarks")]
     type Helper = ();
 }
 
-parameter_types! {
-    pub GasSizeConfigs: GasSizeConfigMap = {
-        let mut map = BoundedBTreeMap::new();
-
-        map.try_insert(GasTankSize::Small, <() as frame_system::WeightInfo>::remark(13))
-            .expect("given values are correct; qed");
-        map.try_insert(GasTankSize::Medium, <() as frame_system::WeightInfo>::remark(26))
-            .expect("given values are correct; qed");
-        map.try_insert(GasTankSize::Large, <() as frame_system::WeightInfo>::remark(39))
-            .expect("given values are correct; qed");
-
-        map
-    };
-}
-
-pub type MembershipsGas = NonFungibleGasBurner<Test, GasSizeConfigs, Memberships>;
+pub type MembershipsGas = NonFungibleGasBurner<Test, Memberships, pallet_nfts::ItemConfig>;
 
 parameter_types! {
     const CollectionOwner: AccountId = AccountId::new([0u8;32]);
+
     const SmallMember: AccountId = AccountId::new([1u8;32]);
     const MediumMember: AccountId = AccountId::new([2u8;32]);
     const LargeMember: AccountId = AccountId::new([3u8;32]);
+
+    SmallTank: Weight = <() as frame_system::WeightInfo>::remark(100);
+    MediumTank: Weight = <() as frame_system::WeightInfo>::remark(1000);
+    LargeTank: Weight = <() as frame_system::WeightInfo>::remark(10000);
 }
 
 pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
@@ -127,10 +116,31 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
             &Default::default(),
         ));
 
-        for (item, who, size) in [
-            (1, SmallMember::get(), GasTankSize::Small),
-            (2, MediumMember::get(), GasTankSize::Medium),
-            (3, LargeMember::get(), GasTankSize::Large),
+        for (item, who, tank) in [
+            (
+                1,
+                SmallMember::get(),
+                MembershipWeightTank::<Test> {
+                    max_per_period: Some(SmallTank::get()),
+                    ..Default::default()
+                },
+            ),
+            (
+                2,
+                MediumMember::get(),
+                MembershipWeightTank::<Test> {
+                    max_per_period: Some(MediumTank::get()),
+                    ..Default::default()
+                },
+            ),
+            (
+                3,
+                LargeMember::get(),
+                MembershipWeightTank::<Test> {
+                    max_per_period: Some(LargeTank::get()),
+                    ..Default::default()
+                },
+            ),
         ] {
             assert_ok!(Memberships::mint_into(
                 &collection_id,
@@ -142,8 +152,8 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
             assert_ok!(Memberships::set_typed_attribute(
                 &collection_id,
                 &item,
-                &ATTR_MEMBER_GAS_SIZE,
-                &size
+                &ATTR_MEMBERSHIP_GAS,
+                &tank
             ));
         }
     });
@@ -160,17 +170,17 @@ mod gas_burner {
         new_test_ext().execute_with(|| {
             assert!(MembershipsGas::check_available_gas(
                 &SmallMember::get(),
-                &<() as frame_system::WeightInfo>::remark(14),
+                &<() as frame_system::WeightInfo>::remark(101),
             )
             .is_none());
             assert!(MembershipsGas::check_available_gas(
                 &MediumMember::get(),
-                &<() as frame_system::WeightInfo>::remark(27),
+                &<() as frame_system::WeightInfo>::remark(1001),
             )
             .is_none());
             assert!(MembershipsGas::check_available_gas(
                 &LargeMember::get(),
-                &<() as frame_system::WeightInfo>::remark(40),
+                &<() as frame_system::WeightInfo>::remark(10001),
             )
             .is_none());
         });
@@ -179,21 +189,56 @@ mod gas_burner {
     #[test]
     fn it_works_returning_which_item_was_used_to_burn_gas() {
         new_test_ext().execute_with(|| {
-            assert!(MembershipsGas::check_available_gas(
+            // Assert "small" tank membership
+            let Some(remaining) = MembershipsGas::check_available_gas(
                 &SmallMember::get(),
-                &<() as frame_system::WeightInfo>::remark(13),
-            )
-            .is_some_and(|w| w.eq(&Weight::from_parts(1, 1))));
-            assert!(MembershipsGas::check_available_gas(
+                &<() as frame_system::WeightInfo>::remark(100),
+            ) else {
+                return assert!(false);
+            };
+
+            assert_eq!(
+                MembershipsGas::burn_gas(
+                    &SmallMember::get(),
+                    &remaining,
+                    &<() as frame_system::WeightInfo>::remark(100)
+                ),
+                Weight::zero()
+            );
+
+            // Assert "medium" tank membership
+            let Some(remaining) = MembershipsGas::check_available_gas(
                 &MediumMember::get(),
-                &<() as frame_system::WeightInfo>::remark(26),
-            )
-            .is_some_and(|w| w.eq(&Weight::from_parts(1, 2))));
-            assert!(MembershipsGas::check_available_gas(
+                &<() as frame_system::WeightInfo>::remark(100),
+            ) else {
+                return assert!(false);
+            };
+
+            assert_eq!(
+                MembershipsGas::burn_gas(
+                    &SmallMember::get(),
+                    &remaining,
+                    &<() as frame_system::WeightInfo>::remark(100)
+                ),
+                Weight::zero()
+            );
+
+            // Assert "large" tank membership
+            let Some(remaining) = MembershipsGas::check_available_gas(
                 &LargeMember::get(),
-                &<() as frame_system::WeightInfo>::remark(39),
-            )
-            .is_some_and(|w| w.eq(&Weight::from_parts(1, 3))));
+                &<() as frame_system::WeightInfo>::remark(1000),
+            ) else {
+                return assert!(false);
+            };
+
+            assert_eq!(
+                MembershipsGas::burn_gas(
+                    &SmallMember::get(),
+                    &remaining,
+                    &<() as frame_system::WeightInfo>::remark(1000)
+                ),
+                Weight::zero()
+            );
         });
     }
 }
