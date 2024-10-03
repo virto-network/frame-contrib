@@ -8,7 +8,14 @@ use fc_traits_authn::{
     util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId,
     UserAuthenticator, UserChallengeResponse,
 };
-use frame_support::{pallet_prelude::*, traits::EnsureOriginWithArg, PalletId};
+use frame_support::{
+    pallet_prelude::*,
+    traits::{
+        fungible::{Inspect, Mutate},
+        EnsureOriginWithArg,
+    },
+    PalletId,
+};
 use frame_system::{pallet_prelude::*, RawOrigin};
 use sp_runtime::{
     traits::{Dispatchable, TrailingZeroInput},
@@ -44,6 +51,8 @@ pub mod pallet {
             + Debug
             + From<Call<Self, I>>
             + From<frame_system::Call<Self>>;
+
+        type Currency: Inspect<Self::AccountId> + Mutate<Self::AccountId>;
 
         type WeightInfo: WeightInfo;
 
@@ -211,6 +220,21 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
     pub(crate) fn account_exists(who: &T::AccountId) -> bool {
         frame_system::Pallet::<T>::account_exists(who)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn charge_register_deposit(
+        who: &T::AccountId,
+        amount: BalanceOf<T, I>,
+        beneficiary: &T::AccountId,
+    ) -> DispatchResult {
+        T::Currency::transfer(
+            who,
+            beneficiary,
+            amount,
+            frame_support::traits::tokens::Preservation::Expendable,
+        )
+        .map(|_| ())
     }
 
     pub(crate) fn create_account(who: &T::AccountId) -> DispatchResult {

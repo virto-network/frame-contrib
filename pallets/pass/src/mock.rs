@@ -94,6 +94,7 @@ composite_authenticators! {
 impl Config for Test {
     type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
+    type Currency = Balances;
     type Authenticator = PassAuthenticator;
     type RegisterOrigin = EnsureSigned<Self::AccountId>;
     type RuntimeCall = RuntimeCall;
