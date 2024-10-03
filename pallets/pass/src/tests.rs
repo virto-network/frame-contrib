@@ -277,6 +277,16 @@ mod add_device {
 mod dispatch {
     use super::*;
 
+    parameter_types! {
+        pub Call: Box<RuntimeCall> = Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+            remark: b"Hello, world".to_vec()
+        }));
+        pub CallEvent: RuntimeEvent = frame_system::Event::Remarked {
+            sender: Pass::account_id_for(AccountNameA::get()).expect("account exists; qed"),
+            hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
+        }.into();
+    }
+
     fn prepare() -> sp_io::TestExternalities {
         let mut t = super::prepare(AccountNameA::get());
         t.execute_with(|| {
@@ -297,14 +307,7 @@ mod dispatch {
     fn fail_without_credentials_if_not_signed_by_session_key() {
         prepare().execute_with(|| {
             assert_noop!(
-                Pass::dispatch(
-                    RuntimeOrigin::signed(OTHER),
-                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                        remark: b"Hello, world".to_vec()
-                    })),
-                    None,
-                    None
-                ),
+                Pass::dispatch(RuntimeOrigin::signed(OTHER), Call::get(), None, None),
                 Error::<Test>::SessionNotFound
             );
         });
@@ -315,20 +318,12 @@ mod dispatch {
         prepare().execute_with(|| {
             assert_ok!(Pass::dispatch(
                 RuntimeOrigin::signed(SIGNER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
+                Call::get(),
                 None,
                 None
             ));
 
-            System::assert_has_event(
-                frame_system::Event::Remarked {
-                    sender: Pass::account_id_for(AccountNameA::get()).expect("account exists; qed"),
-                    hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
-                }
-                .into(),
-            );
+            System::assert_has_event(CallEvent::get());
         });
     }
 
@@ -338,9 +333,7 @@ mod dispatch {
             assert_noop!(
                 Pass::dispatch(
                     RuntimeOrigin::signed(OTHER),
-                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                        remark: b"Hello, world".to_vec()
-                    })),
+                    Call::get(),
                     Some((
                         OTHER_DEVICE,
                         PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
@@ -361,9 +354,7 @@ mod dispatch {
             assert_noop!(
                 Pass::dispatch(
                     RuntimeOrigin::signed(OTHER),
-                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                        remark: b"Hello, world".to_vec()
-                    })),
+                    Call::get(),
                     Some((
                         OTHER_DEVICE,
                         PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
@@ -379,13 +370,52 @@ mod dispatch {
     }
 
     #[test]
+    fn fail_with_credentials_if_credential_invalid() {
+        prepare().execute_with(|| {
+            // On block 1
+            let challenge = authenticator_a::Authenticator::generate(&());
+
+            // On block 3
+            run_to(3);
+
+            assert_noop!(
+                Pass::dispatch(
+                    RuntimeOrigin::signed(OTHER),
+                    Call::get(),
+                    Some((
+                        THE_DEVICE,
+                        PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                            user_id: AccountNameA::get(),
+                            challenge,
+                        })
+                    )),
+                    None,
+                ),
+                Error::<Test>::CredentialInvalid
+            );
+
+            let challenge = authenticator_a::Authenticator::generate(&());
+            assert_ok!(Pass::dispatch(
+                RuntimeOrigin::signed(OTHER),
+                Call::get(),
+                Some((
+                    THE_DEVICE,
+                    PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                        user_id: AccountNameA::get(),
+                        challenge,
+                    })
+                )),
+                None,
+            ));
+        });
+    }
+
+    #[test]
     fn with_credentials_it_works() {
         prepare().execute_with(|| {
             assert_ok!(Pass::dispatch(
                 RuntimeOrigin::signed(OTHER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
+                Call::get(),
                 Some((
                     THE_DEVICE,
                     PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
@@ -396,13 +426,7 @@ mod dispatch {
                 None
             ));
 
-            System::assert_has_event(
-                frame_system::Event::Remarked {
-                    sender: Pass::account_id_for(AccountNameA::get()).expect("account exists; qed"),
-                    hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
-                }
-                .into(),
-            );
+            System::assert_has_event(CallEvent::get());
         });
     }
 
@@ -413,9 +437,7 @@ mod dispatch {
 
             assert_ok!(Pass::dispatch(
                 RuntimeOrigin::signed(OTHER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
+                Call::get(),
                 Some((
                     THE_DEVICE,
                     PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
@@ -441,9 +463,7 @@ mod dispatch {
         prepare().execute_with(|| {
             assert_ok!(Pass::dispatch(
                 RuntimeOrigin::signed(SIGNER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
+                Call::get(),
                 None,
                 None,
             ));
@@ -452,9 +472,7 @@ mod dispatch {
 
             assert_ok!(Pass::dispatch(
                 RuntimeOrigin::signed(SIGNER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
+                Call::get(),
                 None,
                 Some(OTHER),
             ));
@@ -462,22 +480,13 @@ mod dispatch {
             run_to(12);
 
             assert_noop!(
-                Pass::dispatch(
-                    RuntimeOrigin::signed(SIGNER),
-                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                        remark: b"Hello, world".to_vec()
-                    })),
-                    None,
-                    None,
-                ),
+                Pass::dispatch(RuntimeOrigin::signed(SIGNER), Call::get(), None, None,),
                 Error::<Test>::SessionExpired
             );
 
             assert_ok!(Pass::dispatch(
                 RuntimeOrigin::signed(OTHER),
-                Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                    remark: b"Hello, world".to_vec()
-                })),
+                Call::get(),
                 None,
                 None,
             ));
@@ -485,14 +494,7 @@ mod dispatch {
             run_to(20);
 
             assert_noop!(
-                Pass::dispatch(
-                    RuntimeOrigin::signed(OTHER),
-                    Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
-                        remark: b"Hello, world".to_vec()
-                    })),
-                    None,
-                    None,
-                ),
+                Pass::dispatch(RuntimeOrigin::signed(OTHER), Call::get(), None, None,),
                 Error::<Test>::SessionExpired
             );
         });
