@@ -3,8 +3,9 @@ use super::{Error, Event};
 use crate::mock::*;
 
 use fc_traits_authn::{Challenger, HashedUserId};
-use frame_support::{assert_noop, assert_ok, parameter_types};
+use frame_support::{assert_noop, assert_ok, parameter_types, traits::fungible::Mutate};
 use sp_core::Hasher;
+use sp_runtime::ArithmeticError;
 
 const SIGNER: AccountId = AccountId::new([0u8; 32]);
 const OTHER: AccountId = AccountId::new([1u8; 32]);
@@ -22,7 +23,6 @@ parameter_types! {
 }
 
 mod register {
-
     use super::*;
 
     #[test]
@@ -49,8 +49,42 @@ mod register {
     }
 
     #[test]
+    fn register_deposit_logic_works() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(Pass::register(
+                RuntimeOrigin::root(),
+                AccountNameA::get(),
+                PassDeviceAttestation::AuthenticatorAAuthenticator(
+                    authenticator_a::DeviceAttestation {
+                        device_id: THE_DEVICE,
+                        challenge: authenticator_a::Authenticator::generate(&()),
+                    }
+                ),
+            ));
+        });
+
+        new_test_ext().execute_with(|| {
+            assert_noop!(
+                Pass::register(
+                    RuntimeOrigin::signed(SIGNER),
+                    AccountNameA::get(),
+                    PassDeviceAttestation::AuthenticatorAAuthenticator(
+                        authenticator_a::DeviceAttestation {
+                            device_id: THE_DEVICE,
+                            challenge: authenticator_a::Authenticator::generate(&()),
+                        }
+                    ),
+                ),
+                ArithmeticError::Underflow,
+            );
+        });
+    }
+
+    #[test]
     fn fail_if_attestation_is_invalid() {
         new_test_ext().execute_with(|| {
+            assert_ok!(Balances::mint_into(&SIGNER, 2));
+
             assert_noop!(
                 Pass::register(
                     RuntimeOrigin::signed(SIGNER),
@@ -68,6 +102,8 @@ mod register {
     #[test]
     fn it_works() {
         new_test_ext().execute_with(|| {
+            assert_ok!(Balances::mint_into(&SIGNER, 2));
+
             let account_id =
                 Pass::account_id_for(AccountNameA::get()).expect("account exists; qed");
 
@@ -102,6 +138,7 @@ mod register {
 fn prepare(user_id: HashedUserId) -> sp_io::TestExternalities {
     let mut t = new_test_ext();
     t.execute_with(|| {
+        assert_ok!(Balances::mint_into(&SIGNER, 2));
         assert_ok!(Pass::register(
             RuntimeOrigin::signed(SIGNER),
             user_id,
@@ -160,6 +197,8 @@ mod authenticate {
     #[test]
     fn fail_if_attestation_is_invalid() {
         new_test_ext().execute_with(|| {
+            assert_ok!(Balances::mint_into(&SIGNER, 2));
+
             assert_ok!(Pass::register(
                 RuntimeOrigin::signed(SIGNER),
                 AccountNameA::get(),

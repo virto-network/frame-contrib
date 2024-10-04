@@ -67,7 +67,11 @@ pub mod pallet {
         #[pallet::constant]
         type MaxSessionDuration: Get<BlockNumberFor<Self>>;
 
-        type RegisterOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, HashedUserId>;
+        type RegisterOrigin: EnsureOriginWithArg<
+            Self::RuntimeOrigin,
+            HashedUserId,
+            Success = Option<DepositInformation<Self, I>>,
+        >;
 
         #[cfg(feature = "runtime-benchmarks")]
         type BenchmarkHelper: BenchmarkHelper<Self, I>;
@@ -127,13 +131,16 @@ pub mod pallet {
             user: HashedUserId,
             attestation: DeviceAttestationOf<T, I>,
         ) -> DispatchResult {
-            T::RegisterOrigin::ensure_origin(origin, &user)?;
+            let maybe_deposit_info = T::RegisterOrigin::ensure_origin(origin, &user)?;
             let account_id = Self::account_id_for(user)?;
             ensure!(
                 !Self::account_exists(&account_id),
                 Error::<T, I>::AccountAlreadyRegistered
             );
 
+            if let Some(deposit_info) = maybe_deposit_info {
+                Self::charge_register_deposit(deposit_info)?;
+            }
             Self::create_account(&account_id)?;
             Self::deposit_event(Event::<T, I>::Registered {
                 who: account_id.clone(),
@@ -224,13 +231,11 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
     #[allow(dead_code)]
     pub(crate) fn charge_register_deposit(
-        who: &T::AccountId,
-        amount: BalanceOf<T, I>,
-        beneficiary: &T::AccountId,
+        (source, amount, dest): DepositInformation<T, I>,
     ) -> DispatchResult {
         T::Currency::transfer(
-            who,
-            beneficiary,
+            &source,
+            &dest,
             amount,
             frame_support::traits::tokens::Preservation::Expendable,
         )

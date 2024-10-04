@@ -1,16 +1,16 @@
 //! Test environment for pallet pass.
 
-use crate::{self as pallet_pass, Config, CredentialOf, DeviceAttestationOf};
+use crate::{self as pallet_pass, Config};
 pub use authenticators::*;
 use codec::{Decode, Encode, MaxEncodedLen};
 use fc_traits_authn::{composite_authenticators, util::AuthorityFromPalletId, Challenger};
 use frame_support::{
     derive_impl, parameter_types,
-    traits::{ConstU32, ConstU64, EqualPrivilegeOnly, OnInitialize},
+    traits::{ConstU32, ConstU64, EitherOf, EqualPrivilegeOnly, OnInitialize},
     weights::Weight,
     DebugNoBound, EqNoBound, PalletId,
 };
-use frame_system::{EnsureRoot, EnsureSigned};
+use frame_system::{pallet_prelude::OriginFor, EnsureRoot, EnsureRootWithSuccess};
 use scale_info::TypeInfo;
 use sp_core::{blake2_256, H256};
 use sp_io::TestExternalities;
@@ -81,7 +81,9 @@ impl pallet_scheduler::Config for Test {
 }
 
 parameter_types! {
+    pub const RootAccount: AccountId = AccountId::new([0u8; 32]);
     pub PassPalletId: PalletId = PalletId(*b"py/pass_");
+    pub RootDoesNotPay: Option<pallet_pass::DepositInformation<Test>> = None;
 }
 
 composite_authenticators! {
@@ -96,7 +98,12 @@ impl Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type Authenticator = PassAuthenticator;
-    type RegisterOrigin = EnsureSigned<Self::AccountId>;
+    type RegisterOrigin = EitherOf<
+        // Root does not pay
+        EnsureRootWithSuccess<Self::AccountId, RootDoesNotPay>,
+        // Anyone else pays
+        pallet_pass::EnsureSignedPays<Test, ConstU64<1>, RootAccount>,
+    >;
     type RuntimeCall = RuntimeCall;
     type PalletId = PassPalletId;
     type PalletsOrigin = OriginCaller;
@@ -106,10 +113,17 @@ impl Config for Test {
 }
 
 #[cfg(feature = "runtime-benchmarks")]
+use pallet_pass::{CredentialOf, DeviceAttestationOf};
+
+#[cfg(feature = "runtime-benchmarks")]
 pub struct BenchmarkHelper;
 
 #[cfg(feature = "runtime-benchmarks")]
 impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
+    fn register_origin() -> OriginFor<Test> {
+        RuntimeOrigin::root()
+    }
+
     fn device_attestation(device_id: DeviceId) -> DeviceAttestationOf<Test, ()> {
         PassDeviceAttestation::AuthenticatorAAuthenticator(authenticator_a::DeviceAttestation {
             device_id,
