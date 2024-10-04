@@ -7,10 +7,26 @@ repository.workspace = true
 version = "0.1.0"
 
 [dependencies]
-frame-support = {workspace = true}
+codec.workspace = true
+frame-support.workspace = true
+frame-system.workspace = true
+sp-runtime.workspace = true
+
+[dev-dependencies]
+pallet-balances.workspace = true
+pallet-nfts.workspace = true
+scale-info.workspace = true
+sp-io.workspace = true
 
 [features]
 default = ["std"]
 std = [
+  "codec/std",
+  "pallet-balances/std",
+  "pallet-nfts/std",
   "frame-support/std",
+  "frame-system/std",
+  "scale-info/std",
+  "sp-io/std",
+  "sp-runtime/std",
 ]
