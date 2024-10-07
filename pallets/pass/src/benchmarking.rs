@@ -1,5 +1,3 @@
-#![cfg(feature = "runtime-benchmarks")]
-
 use super::*;
 use crate::Pallet;
 use frame_benchmarking::v2::*;
@@ -29,7 +27,6 @@ where
 
 #[instance_benchmarks(
 where
-    T: frame_system::Config + crate::Config<I>,
     OriginFor<T>: From<frame_system::Origin<T>>,
     T::Hash: Into<HashedUserId>,
     RuntimeEventFor<T, I>: From<frame_system::Event<T>>,
@@ -41,7 +38,7 @@ mod benchmarks {
     pub fn register() -> Result<(), BenchmarkError> {
         // Setup code
         let origin = T::BenchmarkHelper::register_origin();
-        let user_id = hash::<T>(&*b"my-account");
+        let user_id = hash::<T>(b"my-account");
         let account_id = Pallet::<T, I>::account_id_for(user_id)?;
         let device_id = [0u8; 32];
 

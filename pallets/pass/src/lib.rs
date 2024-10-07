@@ -150,9 +150,6 @@ pub mod pallet {
         }
 
         #[pallet::call_index(3)]
-        // #[pallet::feeless_if(
-        //     |_: &OriginFor<T>, _: &DeviceId, _: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| true
-        // )]
         pub fn authenticate(
             origin: OriginFor<T>,
             device_id: DeviceId,
@@ -166,7 +163,7 @@ pub mod pallet {
                 Error::<T, I>::AccountNotFound
             );
 
-            let device = Devices::<T, I>::get(&account_id, &device_id)
+            let device = Devices::<T, I>::get(&account_id, device_id)
                 .ok_or(Error::<T, I>::DeviceNotFound)?;
             device
                 .verify_user(&credential)
@@ -259,13 +256,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
 
         Devices::<T, I>::insert(who, device_id, device);
-        Self::deposit_event(
-            Event::<T, I>::AddedDevice {
-                who: who.clone(),
-                device_id: device_id.clone(),
-            }
-            .into(),
-        );
+        Self::deposit_event(Event::<T, I>::AddedDevice {
+            who: who.clone(),
+            device_id: *device_id,
+        });
 
         Ok(())
     }
@@ -315,12 +309,9 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
         Sessions::<T, I>::insert(session_key.clone(), (account_id.clone(), until));
 
-        Self::deposit_event(
-            Event::<T, I>::SessionCreated {
-                session_key: session_key.clone(),
-                until,
-            }
-            .into(),
-        );
+        Self::deposit_event(Event::<T, I>::SessionCreated {
+            session_key: session_key.clone(),
+            until,
+        });
     }
 }

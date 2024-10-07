@@ -99,7 +99,7 @@ where
         info: &DispatchInfoOf<Self::Call>,
         len: usize,
     ) -> frame_support::pallet_prelude::TransactionValidity {
-        if let Some(_) = T::GasBurner::check_available_gas(who, &info.weight) {
+        if T::GasBurner::check_available_gas(who, &info.weight).is_some() {
             Ok(ValidTransaction::default())
         } else {
             self.0.validate(who, call, info, len)
@@ -115,13 +115,9 @@ where
     ) -> Result<(), frame_support::pallet_prelude::TransactionValidityError> {
         if let Some((who, pre)) = pre {
             match pre {
-                Pre::Inner(inner_pre) => S::post_dispatch(
-                    Some(inner_pre),
-                    &info.clone().into(),
-                    post_info,
-                    len,
-                    result,
-                )?,
+                Pre::Inner(inner_pre) => {
+                    S::post_dispatch(Some(inner_pre), info, post_info, len, result)?
+                }
                 Pre::Burner(expected_remaining) => {
                     let used_gas = post_info.actual_weight.unwrap_or(info.weight);
                     let should_burn_gas = post_info.pays_fee == Pays::Yes;

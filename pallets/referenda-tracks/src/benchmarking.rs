@@ -17,8 +17,6 @@
 
 //! Benchmarks for remarks pallet
 
-#![cfg(feature = "runtime-benchmarks")]
-
 use super::*;
 use crate::{Event, OriginToTrackId, Pallet as ReferendaTracks, Tracks, TracksIds};
 use frame_benchmarking::v2::*;
@@ -82,8 +80,8 @@ fn prepare_tracks<T: Config<I>, I: 'static>(full: bool) {
         *tracks_ids = BoundedVec::truncate_from(ids.clone());
     });
     ids.iter().for_each(|id| {
-        Tracks::<T, I>::insert(id.clone(), track.clone());
-        OriginToTrackId::<T, I>::insert(origin.clone(), id.clone());
+        Tracks::<T, I>::insert(id, track.clone());
+        OriginToTrackId::<T, I>::insert(origin.clone(), id);
     });
 
     if full {

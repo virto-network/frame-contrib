@@ -95,7 +95,7 @@ impl GenericRank {
         Self(self.0.saturating_add(n.get()).min(Self::MAX.0))
     }
     pub fn demote_by(self, n: NonZeroU8) -> Self {
-        Self(self.0.saturating_sub(n.get()).max(Self::MIN.0))
+        Self(self.0.saturating_sub(n.get()))
     }
 }
 impl From<GenericRank> for u8 {

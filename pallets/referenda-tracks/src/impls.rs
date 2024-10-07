@@ -38,7 +38,7 @@ impl<T: Config<I>, I> fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumbe
         origin: Self::RuntimeOrigin,
     ) -> DispatchResult {
         ensure!(
-            Tracks::<T, I>::get(id) == None,
+            Tracks::<T, I>::get(id).is_none(),
             Error::<T, I>::TrackIdAlreadyExisting
         );
 
@@ -93,6 +93,6 @@ impl<T: Config<I>, I> fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumbe
         })?;
 
         Self::deposit_event(Event::Removed { id });
-        Ok(().into())
+        Ok(())
     }
 }
