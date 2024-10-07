@@ -83,7 +83,7 @@ pub mod pallet {
         type TrackId: Parameter + Member + Copy + MaxEncodedLen + Ord;
 
         type MaxTracks: Get<u32>;
-        ///
+
         type WeightInfo: WeightInfo;
 
         #[cfg(feature = "runtime-benchmarks")]
