@@ -1247,6 +1247,13 @@ name = "fc-traits-gas-tank"
 version = "0.1.0"
 dependencies = [
  "frame-support",
+ "frame-system",
+ "pallet-balances",
+ "pallet-nfts",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-io",
+ "sp-runtime",
 ]
 
 [[package]]

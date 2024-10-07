@@ -1,4 +1,11 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 use frame_support::Parameter;
+
+#[cfg(test)]
+mod tests;
+
+mod impl_nonfungibles;
 
 pub trait GasTank: GasBurner + GasFueler {}
 
