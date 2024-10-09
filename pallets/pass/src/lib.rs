@@ -154,7 +154,7 @@ pub mod pallet {
 
         #[pallet::feeless_if(
             |_: &OriginFor<T>, device_id: &DeviceId, _: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
-                if let Some(account_id) = Pallet::<T, I>::account_id_for(credential.user_id()).ok() {
+                if let Ok(account_id) = Pallet::<T, I>::account_id_for(credential.user_id()) {
                     Pallet::<T, I>::account_exists(&account_id)
                 } else {
                     false
@@ -292,7 +292,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     }
 
     pub(crate) fn signer_from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
-        let (account_id, until) = Sessions::<T, I>::get(&who)?;
+        let (account_id, until) = Sessions::<T, I>::get(who)?;
         if frame_system::Pallet::<T>::block_number() <= until {
             Some(account_id)
         } else {

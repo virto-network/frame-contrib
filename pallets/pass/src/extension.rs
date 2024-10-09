@@ -74,7 +74,7 @@ where
         info: &DispatchInfoOf<Self::Call>,
         len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
-        let who = Pallet::<T, I>::signer_from_session_key(&who).unwrap_or(who.clone());
+        let who = Pallet::<T, I>::signer_from_session_key(who).unwrap_or(who.clone());
         self.0.pre_dispatch(&who, call, info, len)
     }
 
@@ -85,7 +85,7 @@ where
         info: &DispatchInfoOf<Self::Call>,
         len: usize,
     ) -> frame_support::pallet_prelude::TransactionValidity {
-        let who = Pallet::<T, I>::signer_from_session_key(&who).unwrap_or(who.clone());
+        let who = Pallet::<T, I>::signer_from_session_key(who).unwrap_or(who.clone());
         self.0.validate(&who, call, info, len)
     }
 
