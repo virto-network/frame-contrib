@@ -30,9 +30,12 @@ pub mod benchmarking;
 mod mock;
 #[cfg(test)]
 mod tests;
+
+mod extension;
 mod types;
 
 pub mod weights;
+pub use extension::*;
 pub use pallet::*;
 pub use types::*;
 pub use weights::*;
@@ -149,6 +152,15 @@ pub mod pallet {
             Self::do_add_device(&account_id, attestation)
         }
 
+        #[pallet::feeless_if(
+            |_: &OriginFor<T>, device_id: &DeviceId, _: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
+                if let Some(account_id) = Pallet::<T, I>::account_id_for(credential.user_id()).ok() {
+                    Pallet::<T, I>::account_exists(&account_id)
+                } else {
+                    false
+                }
+            }
+        )]
         #[pallet::call_index(3)]
         pub fn authenticate(
             origin: OriginFor<T>,
@@ -222,7 +234,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Ok(account_id)
     }
 
-    pub(crate) fn account_exists(who: &T::AccountId) -> bool {
+    pub fn account_exists(who: &T::AccountId) -> bool {
         frame_system::Pallet::<T>::account_exists(who)
     }
 
@@ -277,6 +289,15 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         }
 
         Ok(account_id)
+    }
+
+    pub(crate) fn signer_from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
+        let (account_id, until) = Sessions::<T, I>::get(&who)?;
+        if frame_system::Pallet::<T>::block_number() <= until {
+            Some(account_id)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn do_authenticate(
