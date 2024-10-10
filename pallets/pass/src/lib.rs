@@ -163,7 +163,7 @@ pub mod pallet {
                         let device = Devices::<T, I>::get(&account_id, device_id)
                             .ok_or::<DispatchError>(Error::<T, I>::DeviceNotFound.into())?;
                         device
-                            .verify_user(&credential)
+                            .verify_user(credential)
                             .ok_or(Error::<T, I>::CredentialInvalid.into())
                     })
                     .is_ok()
