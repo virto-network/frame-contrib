@@ -43,6 +43,7 @@ pallet-transaction-payment = { git = "https://github.com/virto-network/polkadot-
 pallet-utility = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-v1.13.0", default-features = false }
 
 [workspace]
+resolver = "2"
 members = [
   "pallets/gas-transaction-payment",
   "pallets/referenda-tracks",

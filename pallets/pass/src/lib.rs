@@ -30,9 +30,12 @@ pub mod benchmarking;
 mod mock;
 #[cfg(test)]
 mod tests;
+
+mod extension;
 mod types;
 
 pub mod weights;
+pub use extension::*;
 pub use pallet::*;
 pub use types::*;
 pub use weights::*;
@@ -95,6 +98,10 @@ pub mod pallet {
     pub type Sessions<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T>)>;
 
+    #[pallet::storage]
+    pub type DeviceAuthenticationResult<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, DeviceId, Result<T::AccountId, DispatchError>>;
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config<I>, I: 'static = ()> {
@@ -149,6 +156,13 @@ pub mod pallet {
             Self::do_add_device(&account_id, attestation)
         }
 
+        #[pallet::feeless_if(
+            |_: &OriginFor<T>, device_id: &DeviceId, credential: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
+                let authentication_result = Pallet::<T, I>::try_authenticate(device_id, credential);
+                DeviceAuthenticationResult::<T, I>::insert(device_id, authentication_result.clone());
+                authentication_result.is_ok()
+            }
+        )]
         #[pallet::call_index(3)]
         pub fn authenticate(
             origin: OriginFor<T>,
@@ -157,17 +171,14 @@ pub mod pallet {
             duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            let account_id = Self::account_id_for(credential.user_id())?;
-            ensure!(
-                Self::account_exists(&account_id),
-                Error::<T, I>::AccountNotFound
-            );
-
-            let device = Devices::<T, I>::get(&account_id, device_id)
-                .ok_or(Error::<T, I>::DeviceNotFound)?;
-            device
-                .verify_user(&credential)
-                .ok_or(Error::<T, I>::CredentialInvalid)?;
+            let account_id = if let Some(authentication_result) =
+                DeviceAuthenticationResult::<T, I>::get(device_id)
+            {
+                DeviceAuthenticationResult::<T, I>::remove(device_id);
+                authentication_result
+            } else {
+                Self::try_authenticate(&device_id, &credential)
+            }?;
 
             Self::do_add_session(&who, &account_id, duration);
             Ok(())
@@ -222,7 +233,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Ok(account_id)
     }
 
-    pub(crate) fn account_exists(who: &T::AccountId) -> bool {
+    pub fn account_exists(who: &T::AccountId) -> bool {
         frame_system::Pallet::<T>::account_exists(who)
     }
 
@@ -245,6 +256,24 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Error::<T, I>::AccountAlreadyRegistered
         );
         Ok(())
+    }
+
+    pub(crate) fn try_authenticate(
+        device_id: &DeviceId,
+        credential: &CredentialOf<T, I>,
+    ) -> Result<T::AccountId, DispatchError> {
+        let account_id = Self::account_id_for(credential.user_id())?;
+        ensure!(
+            Self::account_exists(&account_id),
+            Error::<T, I>::AccountNotFound
+        );
+        let device =
+            Devices::<T, I>::get(&account_id, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
+        device
+            .verify_user(credential)
+            .ok_or(Error::<T, I>::CredentialInvalid)?;
+
+        Ok(account_id)
     }
 
     pub(crate) fn do_add_device(
@@ -277,6 +306,15 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         }
 
         Ok(account_id)
+    }
+
+    pub(crate) fn signer_from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
+        let (account_id, until) = Sessions::<T, I>::get(who)?;
+        if frame_system::Pallet::<T>::block_number() <= until {
+            Some(account_id)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn do_authenticate(
