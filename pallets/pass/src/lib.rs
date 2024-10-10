@@ -153,12 +153,20 @@ pub mod pallet {
         }
 
         #[pallet::feeless_if(
-            |_: &OriginFor<T>, device_id: &DeviceId, _: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
-                if let Ok(account_id) = Pallet::<T, I>::account_id_for(credential.user_id()) {
-                    Pallet::<T, I>::account_exists(&account_id)
-                } else {
-                    false
-                }
+            |_: &OriginFor<T>, device_id: &DeviceId, credential: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
+                Pallet::<T, I>::account_id_for(credential.user_id())
+                    .and_then(|account_id| {
+                        ensure!(
+                            Pallet::<T, I>::account_exists(&account_id),
+                            Error::<T, I>::AccountNotFound
+                        );
+                        let device = Devices::<T, I>::get(&account_id, device_id)
+                            .ok_or::<DispatchError>(Error::<T, I>::DeviceNotFound.into())?;
+                        device
+                            .verify_user(&credential)
+                            .ok_or(Error::<T, I>::CredentialInvalid.into())
+                    })
+                    .is_ok()
             }
         )]
         #[pallet::call_index(3)]
