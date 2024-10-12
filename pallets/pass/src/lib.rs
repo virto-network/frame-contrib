@@ -98,10 +98,6 @@ pub mod pallet {
     pub type Sessions<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T>)>;
 
-    #[pallet::storage]
-    pub type DeviceAuthenticationResult<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, DeviceId, Result<T::AccountId, DispatchError>>;
-
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config<I>, I: 'static = ()> {
@@ -158,9 +154,7 @@ pub mod pallet {
 
         #[pallet::feeless_if(
             |_: &OriginFor<T>, device_id: &DeviceId, credential: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
-                let authentication_result = Pallet::<T, I>::try_authenticate(device_id, credential);
-                DeviceAuthenticationResult::<T, I>::insert(device_id, authentication_result.clone());
-                authentication_result.is_ok()
+                Pallet::<T, I>::try_authenticate(device_id, credential).is_ok()
             }
         )]
         #[pallet::call_index(3)]
@@ -171,15 +165,7 @@ pub mod pallet {
             duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            let account_id = if let Some(authentication_result) =
-                DeviceAuthenticationResult::<T, I>::get(device_id)
-            {
-                DeviceAuthenticationResult::<T, I>::remove(device_id);
-                authentication_result
-            } else {
-                Self::try_authenticate(&device_id, &credential)
-            }?;
-
+            let account_id = Self::try_authenticate(&device_id, &credential)?;
             Self::do_add_session(&who, &account_id, duration);
             Ok(())
         }
