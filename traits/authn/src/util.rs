@@ -43,6 +43,12 @@ where
 #[scale_info(skip_type_params(A, Ch, Cred))]
 pub struct Dev<T, A, Ch, Cred>(T, PhantomData<(A, Ch, Cred)>);
 
+impl<T, A, Ch, Cred> Dev<T, A, Ch, Cred> {
+    pub fn new(t: T) -> Self {
+        Self(t, PhantomData)
+    }
+}
+
 impl<T, A, Ch, Cred> UserAuthenticator for Dev<T, A, Ch, Cred>
 where
     T: AsRef<DeviceId> + FullCodec + MaxEncodedLen + TypeInfo + 'static,
