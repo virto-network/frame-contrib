@@ -38,7 +38,7 @@ where
     }
 }
 
-trait VerifyCredential<Cred> {
+pub trait VerifyCredential<Cred> {
     fn verify(&self, credential: &Cred) -> Option<()>;
 }
 
