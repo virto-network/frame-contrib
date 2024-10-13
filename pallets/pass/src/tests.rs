@@ -225,6 +225,91 @@ mod authenticate {
     }
 
     #[test]
+    fn fail_if_attested_with_credentials_from_a_different_device() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(Balances::mint_into(&SIGNER, 2));
+
+            assert_ok!(Pass::register(
+                RuntimeOrigin::signed(SIGNER),
+                AccountNameA::get(),
+                PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                    device_id: THE_DEVICE,
+                    challenge: AuthenticatorB::generate(&THE_DEVICE),
+                }),
+            ));
+            assert_ok!(Pass::authenticate(
+                RuntimeOrigin::signed(SIGNER),
+                THE_DEVICE,
+                PassCredential::AuthenticatorB(authenticator_b::Credential {
+                    user_id: AccountNameA::get(),
+                    device_id: THE_DEVICE,
+                    challenge: AuthenticatorB::generate(&THE_DEVICE),
+                }),
+                None,
+            ));
+            assert_ok!(Pass::add_device(
+                RuntimeOrigin::signed(SIGNER),
+                PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                    device_id: OTHER_DEVICE,
+                    challenge: AuthenticatorB::generate(&OTHER_DEVICE),
+                }),
+            ));
+
+            assert_noop!(
+                Pass::authenticate(
+                    RuntimeOrigin::signed(OTHER),
+                    THE_DEVICE,
+                    PassCredential::AuthenticatorB(authenticator_b::Credential {
+                        user_id: AccountNameA::get(),
+                        device_id: OTHER_DEVICE,
+                        challenge: AuthenticatorB::generate(&OTHER_DEVICE),
+                    }),
+                    Some(DURATION),
+                ),
+                Error::<Test>::CredentialInvalid
+            );
+        });
+    }
+
+    #[test]
+    fn fail_if_attested_with_credentials_from_a_different_user_device() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(Balances::mint_into(&SIGNER, 2));
+
+            assert_ok!(Pass::register(
+                RuntimeOrigin::signed(SIGNER),
+                AccountNameA::get(),
+                PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                    device_id: THE_DEVICE,
+                    challenge: AuthenticatorB::generate(&THE_DEVICE),
+                }),
+            ));
+            assert_ok!(Pass::register(
+                RuntimeOrigin::signed(SIGNER),
+                AccountNameB::get(),
+                PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                    device_id: OTHER_DEVICE,
+                    challenge: AuthenticatorB::generate(&OTHER_DEVICE),
+                }),
+            ));
+
+            assert_noop!(
+                Pass::authenticate(
+                    RuntimeOrigin::signed(OTHER),
+                    THE_DEVICE,
+                    PassCredential::AuthenticatorB(authenticator_b::Credential {
+                        user_id: AccountNameA::get(),
+                        device_id: OTHER_DEVICE,
+                        challenge: AuthenticatorB::generate(&OTHER_DEVICE),
+                    }),
+                    Some(DURATION),
+                ),
+                Error::<Test>::CredentialInvalid
+            );
+        });
+    }
+
+    #[test]
     fn it_works() {
         prepare(AccountNameA::get()).execute_with(|| {
             let block_number = System::block_number();
