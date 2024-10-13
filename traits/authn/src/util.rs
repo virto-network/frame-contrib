@@ -38,6 +38,10 @@ where
     }
 }
 
+pub trait VerifyCredential<Cred> {
+    fn verify(&self, credential: &Cred) -> Option<()>;
+}
+
 /// Convenient auto-implemtator of the UserAuthenticator trait
 #[derive(Encode, Decode, TypeInfo)]
 #[scale_info(skip_type_params(A, Ch, Cred))]
@@ -51,7 +55,7 @@ impl<T, A, Ch, Cred> Dev<T, A, Ch, Cred> {
 
 impl<T, A, Ch, Cred> UserAuthenticator for Dev<T, A, Ch, Cred>
 where
-    T: AsRef<DeviceId> + FullCodec + MaxEncodedLen + TypeInfo + 'static,
+    T: VerifyCredential<Cred> + AsRef<DeviceId> + FullCodec + MaxEncodedLen + TypeInfo + 'static,
     A: Get<AuthorityId> + 'static,
     Ch: Challenger + 'static,
     Cred: UserChallengeResponse<Ch::Context> + 'static,
@@ -62,6 +66,10 @@ where
 
     fn device_id(&self) -> &DeviceId {
         self.0.as_ref()
+    }
+
+    fn verify_credential(&self, credential: &Self::Credential) -> Option<()> {
+        self.0.verify(credential)
     }
 }
 

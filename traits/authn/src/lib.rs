@@ -89,8 +89,11 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
             .then_some(())?;
         let (cx, challenge) = credential.used_challenge();
         Self::Challenger::check_challenge(&cx, &challenge)?;
-        credential.is_valid().then_some(())
+        credential.is_valid().then_some(())?;
+        self.verify_credential(credential)
     }
+
+    fn verify_credential(&self, credential: &Self::Credential) -> Option<()>;
 
     fn device_id(&self) -> &DeviceId;
 }

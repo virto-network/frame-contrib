@@ -161,7 +161,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
         }
     });
 
-    let match_credentials = authenticators.clone().into_iter().map(|(id, _)| {
+    let match_verify_user = authenticators.clone().into_iter().map(|(id, _)| {
         quote! {
             (
                 #device::#id(device),
@@ -169,6 +169,16 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             ) => device.verify_user(credential)
         }
     });
+
+    let match_verify_credential = authenticators.clone().into_iter().map(|(id, _)| {
+        quote! {
+            (
+                #device::#id(device),
+                #credential::#id(credential),
+            ) => device.verify_credential(credential)
+        }
+    });
+
     let match_user_id = authenticators.clone().into_iter().map(|(id, _)| {
         quote! {
             #credential::#id(credential) => credential.user_id()
@@ -252,7 +262,14 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
 
             fn verify_user(&self, credential: &Self::Credential) -> Option<()> {
                 match (self, credential) {
-                    #(#match_credentials),*,
+                    #(#match_verify_user),*,
+                    _ => None,
+                }
+            }
+
+            fn verify_credential(&self, credential: &Self::Credential) -> Option<()> {
+                match (self, credential) {
+                    #(#match_verify_credential),*,
                     _ => None,
                 }
             }
