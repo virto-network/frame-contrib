@@ -75,6 +75,11 @@ pub mod authenticator_a {
         fn device_id(&self) -> &DeviceId {
             &self.device_id
         }
+
+        // Note: This authenticator should pass intentionally, to pass on simpler tests
+        fn verify_credential(&self, _: &Self::Credential) -> Option<()> {
+            Some(())
+        }
     }
 
     impl DeviceChallengeResponse<()> for DeviceAttestation {
@@ -134,9 +139,31 @@ pub mod authenticator_b {
         TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, MaxEncodedLen,
     )]
     pub struct Credential {
-        pub(crate) device_id: DeviceId,
         pub(crate) user_id: HashedUserId,
         pub(crate) challenge: Challenge,
+        pub(crate) signature: Option<[u8; 32]>,
+    }
+
+    impl Credential {
+        pub fn new(user_id: HashedUserId, challenge: Challenge) -> Self {
+            Self {
+                user_id,
+                challenge,
+                signature: None,
+            }
+        }
+
+        pub fn sign(self, signer: &DeviceId) -> Self {
+            Self {
+                signature: Some(Self::signature(signer, &self)),
+                ..self
+            }
+        }
+
+        // A dummy "signature", to test the signing capabilities
+        pub fn signature(signer: &DeviceId, credential: &Self) -> [u8; 32] {
+            blake2_256(&(signer, credential.user_id, credential.challenge).encode())
+        }
     }
 
     impl Authenticator for AuthenticatorB {
@@ -169,6 +196,14 @@ pub mod authenticator_b {
         fn device_id(&self) -> &DeviceId {
             &self.device_id
         }
+
+        fn verify_credential(&self, credential: &Self::Credential) -> Option<()> {
+            credential.signature.and_then(|signature| {
+                Credential::signature(self.device_id(), &credential)
+                    .eq(&signature)
+                    .then_some(())
+            })
+        }
     }
 
     impl DeviceChallengeResponse<DeviceId> for DeviceAttestation {
@@ -191,11 +226,11 @@ pub mod authenticator_b {
 
     impl UserChallengeResponse<DeviceId> for Credential {
         fn is_valid(&self) -> bool {
-            true
+            self.signature.is_some()
         }
 
         fn used_challenge(&self) -> (DeviceId, Challenge) {
-            (self.device_id, self.challenge)
+            (self.user_id, self.challenge)
         }
 
         fn authority(&self) -> AuthorityId {

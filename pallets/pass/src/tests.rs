@@ -212,11 +212,10 @@ mod authenticate {
                 Pass::authenticate(
                     RuntimeOrigin::signed(OTHER),
                     THE_DEVICE,
-                    PassCredential::AuthenticatorB(authenticator_b::Credential {
-                        user_id: AccountNameA::get(),
-                        device_id: THE_DEVICE,
-                        challenge: AuthenticatorB::generate(&OTHER_DEVICE),
-                    }),
+                    PassCredential::AuthenticatorB(authenticator_b::Credential::new(
+                        AccountNameA::get(),
+                        AuthenticatorB::generate(&OTHER_DEVICE)
+                    )),
                     Some(DURATION),
                 ),
                 Error::<Test>::CredentialInvalid
@@ -240,11 +239,13 @@ mod authenticate {
             assert_ok!(Pass::authenticate(
                 RuntimeOrigin::signed(SIGNER),
                 THE_DEVICE,
-                PassCredential::AuthenticatorB(authenticator_b::Credential {
-                    user_id: AccountNameA::get(),
-                    device_id: THE_DEVICE,
-                    challenge: AuthenticatorB::generate(&THE_DEVICE),
-                }),
+                PassCredential::AuthenticatorB(
+                    authenticator_b::Credential::new(
+                        AccountNameA::get(),
+                        AuthenticatorB::generate(&AccountNameA::get()),
+                    )
+                    .sign(&THE_DEVICE)
+                ),
                 None,
             ));
             assert_ok!(Pass::add_device(
@@ -259,11 +260,13 @@ mod authenticate {
                 Pass::authenticate(
                     RuntimeOrigin::signed(OTHER),
                     THE_DEVICE,
-                    PassCredential::AuthenticatorB(authenticator_b::Credential {
-                        user_id: AccountNameA::get(),
-                        device_id: OTHER_DEVICE,
-                        challenge: AuthenticatorB::generate(&OTHER_DEVICE),
-                    }),
+                    PassCredential::AuthenticatorB(
+                        authenticator_b::Credential::new(
+                            AccountNameA::get(),
+                            AuthenticatorB::generate(&AccountNameA::get())
+                        )
+                        .sign(&OTHER_DEVICE)
+                    ),
                     Some(DURATION),
                 ),
                 Error::<Test>::CredentialInvalid
@@ -297,11 +300,13 @@ mod authenticate {
                 Pass::authenticate(
                     RuntimeOrigin::signed(OTHER),
                     THE_DEVICE,
-                    PassCredential::AuthenticatorB(authenticator_b::Credential {
-                        user_id: AccountNameA::get(),
-                        device_id: OTHER_DEVICE,
-                        challenge: AuthenticatorB::generate(&OTHER_DEVICE),
-                    }),
+                    PassCredential::AuthenticatorB(
+                        authenticator_b::Credential::new(
+                            AccountNameA::get(),
+                            AuthenticatorB::generate(&AccountNameA::get()),
+                        )
+                        .sign(&OTHER_DEVICE)
+                    ),
                     Some(DURATION),
                 ),
                 Error::<Test>::CredentialInvalid
