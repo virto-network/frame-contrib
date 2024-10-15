@@ -9,6 +9,8 @@ mod impl_nonfungibles;
 
 pub trait GasTank: GasBurner + GasFueler {}
 
+pub use impl_nonfungibles::NonFungibleGasBurner;
+
 /// Handles burning _"gas"_ from a tank to be spendable in transactions
 pub trait GasBurner {
     type AccountId: Parameter;
