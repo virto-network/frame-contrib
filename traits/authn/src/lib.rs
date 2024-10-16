@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 use codec::{FullCodec, MaxEncodedLen};
 use frame_support::{traits::Get, Parameter};
 use scale_info::TypeInfo;
