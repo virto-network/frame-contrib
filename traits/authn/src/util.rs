@@ -158,6 +158,12 @@ pub mod dummy {
     #[scale_info(skip_type_params(A))]
     pub struct DummyAttestation<A>(bool, PhantomData<A>);
 
+    impl<A> DummyAttestation<A> {
+        pub fn new(value: bool) -> Self {
+            Self(value, PhantomData)
+        }
+    }
+
     impl<A> Clone for DummyAttestation<A> {
         fn clone(&self) -> Self {
             Self(self.0.clone(), PhantomData)
@@ -173,6 +179,12 @@ pub mod dummy {
     impl<A> Clone for DummyCredential<A> {
         fn clone(&self) -> Self {
             Self(self.0.clone(), PhantomData)
+        }
+    }
+
+    impl<A> DummyCredential<A> {
+        pub fn new(value: bool) -> Self {
+            Self(value, PhantomData)
         }
     }
 
