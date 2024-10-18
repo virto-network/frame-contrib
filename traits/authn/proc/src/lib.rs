@@ -282,7 +282,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
         }
 
 
-        #[derive(TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, MaxEncodedLen)]
+        #[derive(TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode)]
         pub enum #credential {
             #(#credential_variants),*
         }

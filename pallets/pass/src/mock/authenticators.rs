@@ -37,9 +37,7 @@ pub mod authenticator_a {
         pub(crate) device_id: DeviceId,
     }
 
-    #[derive(
-        TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, MaxEncodedLen,
-    )]
+    #[derive(TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode)]
     pub struct Credential {
         pub(crate) user_id: HashedUserId,
         pub(crate) challenge: Challenge,
@@ -135,9 +133,7 @@ pub mod authenticator_b {
         pub(crate) device_id: DeviceId,
     }
 
-    #[derive(
-        TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, MaxEncodedLen,
-    )]
+    #[derive(TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode)]
     pub struct Credential {
         pub(crate) user_id: HashedUserId,
         pub(crate) challenge: Challenge,
