@@ -21,7 +21,7 @@ use sp_runtime::{
     traits::{Dispatchable, TrailingZeroInput},
     DispatchResult,
 };
-use sp_std::fmt::Debug;
+use sp_std::{boxed::Box, fmt::Debug};
 
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;

@@ -1,6 +1,6 @@
 use crate::Config;
 use frame_support::traits::{fungible::Inspect, MapSuccess};
-use frame_system::{pallet_prelude::OriginFor, EnsureSigned};
+use frame_system::EnsureSigned;
 use sp_core::TypedGet;
 use sp_runtime::{morph_types, traits::StaticLookup};
 
@@ -36,7 +36,7 @@ pub type EnsureSignedPays<T, Amount, Beneficiary> =
     MapSuccess<EnsureSigned<AccountIdOf<T>>, PaymentForCreate<AccountIdOf<T>, Amount, Beneficiary>>;
 
 #[cfg(feature = "runtime-benchmarks")]
-use fc_traits_authn::HashedUserId;
+use ::{fc_traits_authn::HashedUserId, frame_system::pallet_prelude::OriginFor};
 #[cfg(feature = "runtime-benchmarks")]
 pub trait BenchmarkHelper<T, I = ()>
 where
