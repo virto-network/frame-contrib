@@ -13,7 +13,8 @@ pub mod composite_prelude {
         Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
         HashedUserId, UserAuthenticator, UserChallengeResponse,
     };
-    pub use frame_support::traits::Get;
+    pub use codec::{Decode, Encode, MaxEncodedLen};
+    pub use frame_support::{pallet_prelude::TypeInfo, traits::Get, DebugNoBound, EqNoBound};
 }
 
 #[macro_export]

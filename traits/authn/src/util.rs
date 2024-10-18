@@ -135,18 +135,47 @@ mod pass_key {
     }
 }
 
-mod dummy {
-    use frame_support::{parameter_types, sp_runtime::str_array as s};
+pub mod dummy {
+    use core::marker::PhantomData;
+
+    use codec::{Decode, Encode, MaxEncodedLen};
+    use frame_support::{
+        parameter_types, sp_runtime::str_array as s, traits::Get, DebugNoBound, EqNoBound,
+        PartialEqNoBound,
+    };
+    use scale_info::TypeInfo;
 
     use crate::{
         AuthorityId, Challenger, DeviceChallengeResponse, DeviceId, HashedUserId,
         UserChallengeResponse,
     };
 
-    use super::{Auth, Dev};
+    use super::{Auth, Dev, VerifyCredential};
 
-    type DummyAttestation = bool;
-    type DummyCredential = bool;
+    #[derive(
+        PartialEqNoBound, EqNoBound, DebugNoBound, Encode, Decode, MaxEncodedLen, TypeInfo,
+    )]
+    #[scale_info(skip_type_params(A))]
+    pub struct DummyAttestation<A>(bool, PhantomData<A>);
+
+    impl<A> Clone for DummyAttestation<A> {
+        fn clone(&self) -> Self {
+            Self(self.0.clone(), PhantomData)
+        }
+    }
+
+    #[derive(
+        PartialEqNoBound, EqNoBound, DebugNoBound, Encode, Decode, MaxEncodedLen, TypeInfo,
+    )]
+    #[scale_info(skip_type_params(A))]
+    pub struct DummyCredential<A>(bool, PhantomData<A>);
+
+    impl<A> Clone for DummyCredential<A> {
+        fn clone(&self) -> Self {
+            Self(self.0.clone(), PhantomData)
+        }
+    }
+
     type DummyChallenger = u8;
     type DummyCx = <DummyChallenger as Challenger>::Context;
 
@@ -163,42 +192,69 @@ mod dummy {
         }
     }
 
-    #[allow(dead_code)]
-    pub type DummyDev = Dev<DeviceId, DummyAttestation, DummyChallenger, DummyCredential>;
-    #[allow(dead_code)]
-    pub type Dummy = Auth<DummyDev, DummyAttestation>;
+    pub type DummyDev<AuthorityId> = Dev<
+        DummyAttestation<AuthorityId>,
+        AuthorityId,
+        DummyChallenger,
+        DummyCredential<AuthorityId>,
+    >;
+    pub type Dummy<AuthorityId> = Auth<DummyDev<AuthorityId>, DummyAttestation<AuthorityId>>;
 
-    impl DeviceChallengeResponse<DummyCx> for DummyAttestation {
+    impl<A> From<DummyAttestation<A>> for DummyDev<A> {
+        fn from(value: DummyAttestation<A>) -> Self {
+            DummyDev::new(value)
+        }
+    }
+
+    impl<A> AsRef<DeviceId> for DummyAttestation<A> {
+        fn as_ref(&self) -> &DeviceId {
+            &DUMMY_DEV
+        }
+    }
+
+    impl<A> VerifyCredential<DummyCredential<A>> for DummyAttestation<A> {
+        fn verify(&self, _: &DummyCredential<A>) -> Option<()> {
+            self.0.then_some(())
+        }
+    }
+
+    impl<A> DeviceChallengeResponse<DummyCx> for DummyAttestation<A>
+    where
+        A: Get<AuthorityId> + 'static,
+    {
         fn device_id(&self) -> &DeviceId {
             &DUMMY_DEV
         }
 
         fn is_valid(&self) -> bool {
-            *self
+            self.0
         }
         fn used_challenge(&self) -> (DummyCx, crate::Challenge) {
             (0, [0; 32])
         }
         fn authority(&self) -> crate::AuthorityId {
-            DummyAuthority::get()
+            A::get()
         }
     }
 
-    impl UserChallengeResponse<DummyCx> for DummyCredential {
+    impl<A> UserChallengeResponse<DummyCx> for DummyCredential<A>
+    where
+        A: Get<AuthorityId> + 'static,
+    {
         fn user_id(&self) -> crate::HashedUserId {
             DUMMY_USER
         }
 
         fn is_valid(&self) -> bool {
-            *self
+            self.0
         }
 
         fn used_challenge(&self) -> (DummyCx, crate::Challenge) {
             (0, [0; 32])
         }
 
-        fn authority(&self) -> crate::AuthorityId {
-            DummyAuthority::get()
+        fn authority(&self) -> AuthorityId {
+            A::get()
         }
     }
 }
