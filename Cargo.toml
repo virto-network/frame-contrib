@@ -10,7 +10,7 @@ codec = { package = "parity-scale-codec", version = "3.6.12", default-features =
 ] }
 env_logger = { version = "0.11.3" }
 impl-trait-for-tuples = { version = "0.2.2" }
-log = { version = "0.4.21" }
+log = { version = "0.4.22", default-features = false }
 scale-info = { version = "2.11.3", default-features = false, features = [
   "derive",
 ] }
