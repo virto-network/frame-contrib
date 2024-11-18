@@ -977,6 +977,7 @@ version = "0.1.0"
 dependencies = [
  "fc-traits-authn-proc",
  "frame-support",
+ "log",
  "parity-scale-codec",
  "scale-info",
 ]

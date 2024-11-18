@@ -8,6 +8,8 @@ pub mod util;
 
 pub use fc_traits_authn_proc::composite_authenticator;
 
+const LOG_TARGET: &str = "authn";
+
 pub mod composite_prelude {
     pub use crate::{
         Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
@@ -36,7 +38,7 @@ macro_rules! composite_authenticators {
     }
 }
 
-// A reasonabily sized secure challenge
+// A reasonably sized secure challenge
 const CHALLENGE_SIZE: usize = 32;
 pub type Challenge = [u8; CHALLENGE_SIZE];
 type CxOf<C> = <C as Challenger>::Context;
@@ -65,13 +67,24 @@ pub trait Authenticator {
     type Device: UserAuthenticator<Challenger = Self::Challenger>;
 
     fn verify_device(attestation: Self::DeviceAttestation) -> Option<Self::Device> {
+        log::trace!(target: LOG_TARGET, "Verifying device with attestation: {:?}", attestation);
+
+        log::trace!(target: LOG_TARGET, "Assert authority {:?}", attestation.authority());
         attestation
             .authority()
             .eq(&Self::Authority::get())
             .then_some(())?;
+        log::trace!(target: LOG_TARGET, "Authority verified");
+
         let (cx, challenge) = attestation.used_challenge();
+        log::trace!(target: LOG_TARGET, "Check challenge {:?}", &challenge);
         Self::Challenger::check_challenge(&cx, &challenge)?;
+        log::trace!(target: LOG_TARGET, "Challenge checked");
+
+        log::trace!(target: LOG_TARGET, "Validate attestation");
         attestation.is_valid().then_some(())?;
+
+        log::trace!(target: LOG_TARGET, "Retrieve device");
         Some(Self::unpack_device(attestation))
     }
 
@@ -86,13 +99,24 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
     type Credential: UserChallengeResponse<CxOf<Self::Challenger>>;
 
     fn verify_user(&self, credential: &Self::Credential) -> Option<()> {
+        log::trace!(target: LOG_TARGET, "Verifying user for credential: {:?}", credential);
+
+        log::trace!(target: LOG_TARGET, "Assert authority {:?}", credential.authority());
         credential
             .authority()
             .eq(&Self::Authority::get())
             .then_some(())?;
+        log::trace!(target: LOG_TARGET, "Authority verified");
+
         let (cx, challenge) = credential.used_challenge();
+        log::trace!(target: LOG_TARGET, "Check challenge {:?}", &challenge);
         Self::Challenger::check_challenge(&cx, &challenge)?;
+        log::trace!(target: LOG_TARGET, "Challenge checked");
+
+        log::trace!(target: LOG_TARGET, "Credential verified");
         credential.is_valid().then_some(())?;
+
+        log::trace!(target: LOG_TARGET, "Verify credential");
         self.verify_credential(credential)
     }
 

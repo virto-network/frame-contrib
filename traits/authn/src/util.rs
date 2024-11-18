@@ -20,7 +20,7 @@ impl<Id: Get<PalletId>> Get<AuthorityId> for AuthorityFromPalletId<Id> {
     }
 }
 
-/// Convenient auto-implemtator of the Authenticator trait
+/// Convenient auto-implementor of the Authenticator trait
 pub struct Auth<Dev, Att>(PhantomData<(Dev, Att)>);
 
 impl<Dev, Att> Authenticator for Auth<Dev, Att>

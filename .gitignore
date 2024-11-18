@@ -10,3 +10,4 @@ target/
 *.pdb
 .vscode
 .DS_Store
+.idea

@@ -10,6 +10,7 @@ version = "0.1.0"
 codec.workspace = true
 frame-support.workspace = true
 fc-traits-authn-proc.workspace = true
+log.workspace = true
 scale-info.workspace = true
 
 [features]
