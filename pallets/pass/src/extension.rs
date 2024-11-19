@@ -100,7 +100,7 @@ where
         post_info: &sp_runtime::traits::PostDispatchInfoOf<Self::Call>,
         len: usize,
         result: &sp_runtime::DispatchResult,
-    ) -> Result<(), frame_support::pallet_prelude::TransactionValidityError> {
+    ) -> Result<(), TransactionValidityError> {
         S::post_dispatch(pre, info, post_info, len, result)
     }
 }
@@ -180,7 +180,7 @@ where
         if Pallet::<T, I>::signer_from_session_key(who).is_some() {
             return Ok(Default::default());
         }
-        self.0.validate(&who, call, info, len)
+        self.0.validate(who, call, info, len)
     }
 
     fn pre_dispatch(
@@ -194,9 +194,7 @@ where
             return Ok(None);
         }
 
-        self.0
-            .pre_dispatch(&who, call, info, len)
-            .map(|pre| Some(pre))
+        self.0.pre_dispatch(who, call, info, len).map(Some)
     }
 
     fn post_dispatch(
@@ -205,7 +203,7 @@ where
         post_info: &sp_runtime::traits::PostDispatchInfoOf<Self::Call>,
         len: usize,
         result: &sp_runtime::DispatchResult,
-    ) -> Result<(), frame_support::pallet_prelude::TransactionValidityError> {
+    ) -> Result<(), TransactionValidityError> {
         if let Some(Some(pre)) = pre {
             S::post_dispatch(Some(pre), info, post_info, len, result)
         } else {

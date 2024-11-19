@@ -191,15 +191,13 @@ impl<Class> VoteTally<u32, Class> for Tally {
     fn setup(_: Class, _: Perbill) {}
 }
 
-pub fn new_test_ext(
-    maybe_tracks: Option<
-        Vec<(
-            TrackIdOf<Test, ()>,
-            TrackInfoOf<Test, ()>,
-            PalletsOriginOf<Test>,
-        )>,
-    >,
-) -> sp_io::TestExternalities {
+type TracksVec = Vec<(
+    TrackIdOf<Test, ()>,
+    TrackInfoOf<Test, ()>,
+    PalletsOriginOf<Test>,
+)>;
+
+pub fn new_test_ext(maybe_tracks: Option<TracksVec>) -> sp_io::TestExternalities {
     let balances = vec![(1, 100), (2, 100), (3, 100), (4, 100), (5, 100), (6, 100)];
 
     let t = RuntimeGenesisConfig {
@@ -220,7 +218,6 @@ pub fn new_test_ext(
             }
 
             System::reset_events();
-        } else {
         }
     });
 

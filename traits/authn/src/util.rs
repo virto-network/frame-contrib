@@ -166,7 +166,7 @@ pub mod dummy {
 
     impl<A> Clone for DummyAttestation<A> {
         fn clone(&self) -> Self {
-            Self(self.0.clone(), PhantomData)
+            Self(self.0, PhantomData)
         }
     }
 
@@ -178,7 +178,7 @@ pub mod dummy {
 
     impl<A> Clone for DummyCredential<A> {
         fn clone(&self) -> Self {
-            Self(self.0.clone(), PhantomData)
+            Self(self.0, PhantomData)
         }
     }
 
