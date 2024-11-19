@@ -164,7 +164,7 @@ where
     type AccountId = S::AccountId;
     type Call = S::Call;
     type AdditionalSigned = S::AdditionalSigned;
-    type Pre = S::Pre;
+    type Pre = Option<S::Pre>;
 
     fn additional_signed(&self) -> Result<Self::AdditionalSigned, TransactionValidityError> {
         self.0.additional_signed()
@@ -191,9 +191,12 @@ where
         len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
         if Pallet::<T, I>::signer_from_session_key(who).is_some() {
-            return Ok((None, Default::default()));
+            return Ok(None);
         }
-        self.0.pre_dispatch(&who, call, info, len)
+
+        self.0
+            .pre_dispatch(&who, call, info, len)
+            .map(|pre| Some(pre))
     }
 
     fn post_dispatch(
@@ -203,8 +206,8 @@ where
         len: usize,
         result: &sp_runtime::DispatchResult,
     ) -> Result<(), frame_support::pallet_prelude::TransactionValidityError> {
-        if let Some(pre) = pre {
-            S::post_dispatch(pre, info, post_info, len, result)
+        if let Some(Some(pre)) = pre {
+            S::post_dispatch(Some(pre), info, post_info, len, result)
         } else {
             Ok(())
         }
