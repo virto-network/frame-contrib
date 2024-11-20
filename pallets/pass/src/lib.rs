@@ -166,7 +166,7 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let account_id = Self::try_authenticate(&device_id, &credential)?;
-            Self::do_add_session(&who, &account_id, duration);
+            Self::try_add_session(&who, &account_id, duration)?;
             Ok(())
         }
 
@@ -197,11 +197,11 @@ pub mod pallet {
             };
 
             if let Some(next_session_key) = maybe_next_session_key {
-                Self::do_add_session(
+                Self::try_add_session(
                     &next_session_key,
                     &account_id,
                     Some(T::MaxSessionDuration::get()),
-                );
+                )?;
             }
 
             // Re-dispatch the call on behalf of the caller.
@@ -287,7 +287,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let (account_id, until) =
             Sessions::<T, I>::get(&who).ok_or(Error::<T, I>::SessionNotFound)?;
         if frame_system::Pallet::<T>::block_number() > until {
-            Sessions::<T, I>::remove(who);
+            Self::try_remove_session(&who)?;
             return Err(Error::<T, I>::SessionExpired.into());
         }
 
@@ -320,12 +320,39 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Ok(account_id)
     }
 
-    pub(crate) fn do_add_session(
+    fn try_remove_session(who: &T::AccountId) -> DispatchResult {
+        // Decrements the provider reference of this `Session` key account once it's expired.
+        //
+        // NOTE: This might not get called at all. We should explore an alternative (maybe a
+        // task) to remove the provider references on all expired sessions.
+        frame_system::Pallet::<T>::dec_providers(who)?;
+        Sessions::<T, I>::remove(who);
+        Ok(())
+    }
+
+    pub(crate) fn try_add_session(
         session_key: &T::AccountId,
         account_id: &T::AccountId,
         duration: Option<BlockNumberFor<T>>,
-    ) {
+    ) -> DispatchResult {
+        // Let's try to remove an existing session that uses the same session key (if any). This is
+        // so we ensure we decrease the provider counter correctly.
+        if Sessions::<T, I>::contains_key(session_key) {
+            Self::try_remove_session(session_key)?;
+        }
+
         let block_number = frame_system::Pallet::<T>::block_number();
+
+        // Add a consumer reference to this account, since we'll be using
+        // it meanwhile it stays active as a Session.
+        //
+        // NOTE: It is possible that this session might not be used at all, and therefore, this
+        // provider reference never removed.
+        //
+        // We should explore an alternative (maybe a task) to remove the provider references on all
+        // expired sessions.
+        frame_system::Pallet::<T>::inc_providers(session_key);
+
         let session_duration = duration
             .unwrap_or(T::MaxSessionDuration::get())
             .min(T::MaxSessionDuration::get());
@@ -337,5 +364,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             session_key: session_key.clone(),
             until,
         });
+
+        Ok(())
     }
 }
