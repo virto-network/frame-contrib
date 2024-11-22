@@ -6,7 +6,7 @@
 
 use fc_traits_authn::{
     util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId,
-    UserAuthenticator, UserChallengeResponse,
+    UserAuthenticator, UserChallengeResponse, HASHED_USER_ID_LEN,
 };
 use frame_support::traits::schedule::DispatchTime;
 use frame_support::traits::Bounded;
@@ -234,8 +234,12 @@ pub mod pallet {
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub fn account_id_for(user: HashedUserId) -> Result<T::AccountId, DispatchError> {
-        let account_id: T::AccountId = T::AccountId::decode(&mut TrailingZeroInput::new(&user))
-            .map_err(|_| Error::<T, I>::AccountNotFound)?;
+        // we know the length of HashedUserId
+        let mut input = [0u8; 2 * HASHED_USER_ID_LEN];
+        input[HASHED_USER_ID_LEN..].copy_from_slice(&user);
+        let account_id: T::AccountId =
+            T::AccountId::decode(&mut TrailingZeroInput::new(&blake2_256(&input)))
+                .map_err(|_| Error::<T, I>::AccountNotFound)?;
         Ok(account_id)
     }
 

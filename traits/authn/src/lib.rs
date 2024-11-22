@@ -45,7 +45,8 @@ type CxOf<C> = <C as Challenger>::Context;
 
 pub type DeviceId = [u8; 32];
 pub type AuthorityId = [u8; 32];
-pub type HashedUserId = [u8; 32];
+pub const HASHED_USER_ID_LEN: usize = 32;
+pub type HashedUserId = [u8; HASHED_USER_ID_LEN];
 
 /// Given some context it deterministically generates a "challenge" used by authenticators
 pub trait Challenger {
