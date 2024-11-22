@@ -443,6 +443,7 @@ mod add_device {
 
 mod dispatch {
     use super::*;
+    use crate::Sessions;
 
     parameter_types! {
         pub Call: Box<RuntimeCall> = Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
@@ -646,10 +647,7 @@ mod dispatch {
 
             run_to(12);
 
-            assert_noop!(
-                Pass::dispatch(RuntimeOrigin::signed(SIGNER), Call::get(), None, None,),
-                Error::<Test>::SessionExpired
-            );
+            assert!(!Sessions::<Test>::contains_key(SIGNER));
 
             assert_ok!(Pass::dispatch(
                 RuntimeOrigin::signed(OTHER),
@@ -660,10 +658,7 @@ mod dispatch {
 
             run_to(20);
 
-            assert_noop!(
-                Pass::dispatch(RuntimeOrigin::signed(OTHER), Call::get(), None, None,),
-                Error::<Test>::SessionExpired
-            );
+            assert!(!Sessions::<Test>::contains_key(OTHER));
         });
     }
 }

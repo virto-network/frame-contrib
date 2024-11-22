@@ -8,15 +8,19 @@ use fc_traits_authn::{
     util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId,
     UserAuthenticator, UserChallengeResponse,
 };
+use frame_support::traits::schedule::DispatchTime;
+use frame_support::traits::Bounded;
 use frame_support::{
     pallet_prelude::*,
     traits::{
         fungible::{Inspect, Mutate},
+        schedule::v3::{Named, TaskName},
         EnsureOriginWithArg,
     },
     PalletId,
 };
 use frame_system::{pallet_prelude::*, RawOrigin};
+use sp_core::blake2_256;
 use sp_runtime::{
     traits::{Dispatchable, TrailingZeroInput},
     DispatchResult,
@@ -74,6 +78,12 @@ pub mod pallet {
             Self::RuntimeOrigin,
             HashedUserId,
             Success = Option<DepositInformation<Self, I>>,
+        >;
+
+        type Scheduler: Named<
+            BlockNumberFor<Self>,
+            <Self as Config<I>>::RuntimeCall,
+            Self::PalletsOrigin,
         >;
 
         #[cfg(feature = "runtime-benchmarks")]
@@ -156,7 +166,7 @@ pub mod pallet {
             |_: &OriginFor<T>, device_id: &DeviceId, credential: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
                 Pallet::<T, I>::try_authenticate(device_id, credential).is_ok()
             }
-        )]
+		)]
         #[pallet::call_index(3)]
         pub fn authenticate(
             origin: OriginFor<T>,
@@ -208,6 +218,16 @@ pub mod pallet {
             let res = call.dispatch(RawOrigin::Signed(account_id).into());
             // Turn the result from the `dispatch` into our expected `DispatchResult` type.
             res.map(|_| ()).map_err(|e| e.error)
+        }
+
+        #[pallet::call_index(6)]
+        pub fn remove_session_key(
+            origin: OriginFor<T>,
+            session_key: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::do_remove_session(&session_key);
+            Ok(())
         }
     }
 }
@@ -286,8 +306,11 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
         let (account_id, until) =
             Sessions::<T, I>::get(&who).ok_or(Error::<T, I>::SessionNotFound)?;
+
+        // Failsafe: In the extreme case the scheduler needs to defer the cleanup call for a
+        // certain
         if frame_system::Pallet::<T>::block_number() > until {
-            Self::try_remove_session(&who)?;
+            Self::do_remove_session(&who);
             return Err(Error::<T, I>::SessionExpired.into());
         }
 
@@ -320,14 +343,15 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Ok(account_id)
     }
 
-    fn try_remove_session(who: &T::AccountId) -> DispatchResult {
+    fn do_remove_session(session_key: &T::AccountId) {
+        Self::cancel_scheduled_session_key_removal(session_key);
         // Decrements the provider reference of this `Session` key account once it's expired.
-        //
-        // NOTE: This might not get called at all. We should explore an alternative (maybe a
-        // task) to remove the provider references on all expired sessions.
-        frame_system::Pallet::<T>::dec_providers(who)?;
-        Sessions::<T, I>::remove(who);
-        Ok(())
+        let _ = frame_system::Pallet::<T>::dec_providers(session_key).inspect_err(|_| {
+			log::warn!(
+                "Failed to remove the last provider for {session_key:?}, which has an active consumer"
+            )
+		});
+        Sessions::<T, I>::remove(session_key);
     }
 
     pub(crate) fn try_add_session(
@@ -338,19 +362,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         // Let's try to remove an existing session that uses the same session key (if any). This is
         // so we ensure we decrease the provider counter correctly.
         if Sessions::<T, I>::contains_key(session_key) {
-            Self::try_remove_session(session_key)?;
+            Self::do_remove_session(session_key);
         }
 
         let block_number = frame_system::Pallet::<T>::block_number();
 
         // Add a consumer reference to this account, since we'll be using
         // it meanwhile it stays active as a Session.
-        //
-        // NOTE: It is possible that this session might not be used at all, and therefore, this
-        // provider reference never removed.
-        //
-        // We should explore an alternative (maybe a task) to remove the provider references on all
-        // expired sessions.
         frame_system::Pallet::<T>::inc_providers(session_key);
 
         let session_duration = duration
@@ -359,11 +377,48 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let until = block_number + session_duration;
 
         Sessions::<T, I>::insert(session_key.clone(), (account_id.clone(), until));
+        Self::schedule_next_removal(session_key, duration)?;
 
         Self::deposit_event(Event::<T, I>::SessionCreated {
             session_key: session_key.clone(),
             until,
         });
+
+        Ok(())
+    }
+
+    fn task_name_from_session_key(session_key: &T::AccountId) -> TaskName {
+        blake2_256(format!("remove_session_key_{session_key}").as_bytes())
+    }
+
+    /// Infallibly cancels an already scheduled session key removal
+    fn cancel_scheduled_session_key_removal(session_key: &T::AccountId) {
+        T::Scheduler::cancel_named(Self::task_name_from_session_key(session_key))
+            .map_or_else(|_| (), |_| ());
+    }
+
+    fn schedule_next_removal(
+        session_key: &T::AccountId,
+        duration: Option<BlockNumberFor<T>>,
+    ) -> DispatchResult {
+        Self::cancel_scheduled_session_key_removal(session_key);
+
+        let duration = duration
+            .unwrap_or(T::MaxSessionDuration::get())
+            .min(T::MaxSessionDuration::get());
+        let call: <T as Config<I>>::RuntimeCall = Call::remove_session_key {
+            session_key: session_key.clone(),
+        }
+        .into();
+
+        T::Scheduler::schedule_named(
+            Self::task_name_from_session_key(session_key),
+            DispatchTime::After(duration),
+            None,
+            0,
+            frame_system::RawOrigin::Root.into(),
+            Bounded::Inline(BoundedVec::truncate_from(call.encode())),
+        )?;
 
         Ok(())
     }

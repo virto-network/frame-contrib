@@ -10,7 +10,7 @@ use frame_support::{
     weights::Weight,
     DebugNoBound, EqNoBound, PalletId,
 };
-use frame_system::{pallet_prelude::OriginFor, EnsureRoot, EnsureRootWithSuccess};
+use frame_system::{EnsureRoot, EnsureRootWithSuccess};
 use scale_info::TypeInfo;
 use sp_core::{blake2_256, H256};
 use sp_io::TestExternalities;
@@ -27,15 +27,29 @@ pub type AccountPublic = <MultiSignature as Verify>::Signer;
 pub type AccountId = <AccountPublic as IdentifyAccount>::AccountId;
 
 // Configure a mock runtime to test the pallet.
-frame_support::construct_runtime!(
-    pub enum Test
-    {
-        System: frame_system,
-        Balances: pallet_balances,
-        Scheduler: pallet_scheduler,
-        Pass: pallet_pass,
-    }
-);
+#[frame_support::runtime]
+mod runtime {
+    #[runtime::runtime]
+    #[runtime::derive(
+        RuntimeCall,
+        RuntimeEvent,
+        RuntimeError,
+        RuntimeOrigin,
+        RuntimeTask,
+        RuntimeHoldReason,
+        RuntimeFreezeReason
+    )]
+    pub struct Test;
+
+    #[runtime::pallet_index(0)]
+    pub type System = frame_system;
+    #[runtime::pallet_index(1)]
+    pub type Scheduler = pallet_scheduler;
+    #[runtime::pallet_index(10)]
+    pub type Balances = pallet_balances;
+    #[runtime::pallet_index(11)]
+    pub type Pass = pallet_pass;
+}
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
 impl frame_system::Config for Test {
@@ -107,11 +121,14 @@ impl Config for Test {
     type RuntimeCall = RuntimeCall;
     type PalletId = PassPalletId;
     type PalletsOrigin = OriginCaller;
+    type Scheduler = Scheduler;
     type MaxSessionDuration = ConstU64<10>;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = BenchmarkHelper;
 }
 
+#[cfg(feature = "runtime-benchmarks")]
+use frame_system::pallet_prelude::OriginFor;
 #[cfg(feature = "runtime-benchmarks")]
 use pallet_pass::{CredentialOf, DeviceAttestationOf};
 
