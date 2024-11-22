@@ -190,12 +190,11 @@ mod gas_burner {
     fn it_works_returning_which_item_was_used_to_burn_gas() {
         new_test_ext().execute_with(|| {
             // Assert "small" tank membership
-            let Some(remaining) = MembershipsGas::check_available_gas(
+            let remaining = MembershipsGas::check_available_gas(
                 &SmallMember::get(),
                 &<() as frame_system::WeightInfo>::remark(100),
-            ) else {
-                return assert!(false);
-            };
+            )
+            .expect("gas to burn equals tank capacity; qed");
 
             assert_eq!(
                 MembershipsGas::burn_gas(
@@ -207,35 +206,33 @@ mod gas_burner {
             );
 
             // Assert "medium" tank membership
-            let Some(remaining) = MembershipsGas::check_available_gas(
+            let remaining = MembershipsGas::check_available_gas(
                 &MediumMember::get(),
-                &<() as frame_system::WeightInfo>::remark(100),
-            ) else {
-                return assert!(false);
-            };
+                &<() as frame_system::WeightInfo>::remark(1000),
+            )
+            .expect("gas to burn equals tank capacity; qed");
 
             assert_eq!(
                 MembershipsGas::burn_gas(
-                    &SmallMember::get(),
+                    &MediumMember::get(),
                     &remaining,
-                    &<() as frame_system::WeightInfo>::remark(100)
+                    &<() as frame_system::WeightInfo>::remark(1000)
                 ),
                 Weight::zero()
             );
 
             // Assert "large" tank membership
-            let Some(remaining) = MembershipsGas::check_available_gas(
+            let remaining = MembershipsGas::check_available_gas(
                 &LargeMember::get(),
-                &<() as frame_system::WeightInfo>::remark(1000),
-            ) else {
-                return assert!(false);
-            };
+                &<() as frame_system::WeightInfo>::remark(10000),
+            )
+            .expect("gas to burn equals tank capacity; qed");
 
             assert_eq!(
                 MembershipsGas::burn_gas(
-                    &SmallMember::get(),
+                    &LargeMember::get(),
                     &remaining,
-                    &<() as frame_system::WeightInfo>::remark(1000)
+                    &<() as frame_system::WeightInfo>::remark(10000)
                 ),
                 Weight::zero()
             );

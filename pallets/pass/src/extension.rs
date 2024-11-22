@@ -1,12 +1,17 @@
 use core::marker::PhantomData;
 
+use crate::{Config, Pallet};
 use codec::{Decode, Encode};
 use frame_support::pallet_prelude::TransactionValidityError;
 use scale_info::{StaticTypeInfo, TypeInfo};
 use sp_runtime::traits::{DispatchInfoOf, SignedExtension};
 
-use crate::{Config, Pallet};
-
+/// Changes the origin account to inner extensions if the signer is a session key, so the validations
+/// and handling of these extensions (like charging to an account) happens on behalf of the `AccountId`
+/// of the account this session key is being associated to.
+///
+/// In the future, this extension would be deprecated in favour of a couple of an extension that issues
+/// authorized origins from `pallet-pass`.
 #[derive(Encode, Decode)]
 pub struct ChargeTransactionToPassAccount<S, T, I = ()>(S, PhantomData<(T, I)>);
 
@@ -67,17 +72,6 @@ where
         self.0.additional_signed()
     }
 
-    fn pre_dispatch(
-        self,
-        who: &Self::AccountId,
-        call: &Self::Call,
-        info: &DispatchInfoOf<Self::Call>,
-        len: usize,
-    ) -> Result<Self::Pre, TransactionValidityError> {
-        let who = Pallet::<T, I>::signer_from_session_key(who).unwrap_or(who.clone());
-        self.0.pre_dispatch(&who, call, info, len)
-    }
-
     fn validate(
         &self,
         who: &Self::AccountId,
@@ -89,13 +83,24 @@ where
         self.0.validate(&who, call, info, len)
     }
 
+    fn pre_dispatch(
+        self,
+        who: &Self::AccountId,
+        call: &Self::Call,
+        info: &DispatchInfoOf<Self::Call>,
+        len: usize,
+    ) -> Result<Self::Pre, TransactionValidityError> {
+        let who = Pallet::<T, I>::signer_from_session_key(who).unwrap_or(who.clone());
+        self.0.pre_dispatch(&who, call, info, len)
+    }
+
     fn post_dispatch(
         pre: Option<Self::Pre>,
         info: &DispatchInfoOf<Self::Call>,
         post_info: &sp_runtime::traits::PostDispatchInfoOf<Self::Call>,
         len: usize,
         result: &sp_runtime::DispatchResult,
-    ) -> Result<(), frame_support::pallet_prelude::TransactionValidityError> {
+    ) -> Result<(), TransactionValidityError> {
         S::post_dispatch(pre, info, post_info, len, result)
     }
 }
