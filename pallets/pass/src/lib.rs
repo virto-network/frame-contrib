@@ -392,6 +392,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     }
 
     fn task_name_from_session_key(session_key: &T::AccountId) -> TaskName {
+        use sp_runtime::format;
         blake2_256(format!("remove_session_key_{session_key}").as_bytes())
     }
 
