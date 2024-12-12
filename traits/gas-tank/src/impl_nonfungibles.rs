@@ -34,7 +34,7 @@ where
         }
     }
 
-    fn get<F>(collection_id: &F::CollectionId, item_id: &F::ItemId) -> Option<Self>
+    pub(crate) fn get<F>(collection_id: &F::CollectionId, item_id: &F::ItemId) -> Option<Self>
     where
         F: nonfungibles_v2::Inspect<T::AccountId>,
     {
@@ -85,7 +85,7 @@ where
             let block_number = frame_system::Pallet::<T>::block_number();
             let period = gas_tank.period.unwrap_or(BlockNumberFor::<T>::max_value());
 
-            let Some(max_weight) = gas_tank.capacity_per_period else {
+            let Some(capacity) = gas_tank.capacity_per_period else {
                 return Some(Weight::MAX);
             };
 
@@ -95,7 +95,7 @@ where
                 gas_tank.put::<F, ItemConfig>(&collection, &item)?;
             };
 
-            let remaining = max_weight.checked_sub(&gas_tank.used.checked_add(estimated)?)?;
+            let remaining = capacity.checked_sub(&gas_tank.used.checked_add(estimated)?)?;
             F::set_typed_attribute(
                 &collection,
                 &item,
@@ -157,6 +157,10 @@ where
             return Self::Gas::zero();
         };
 
+        if gas_tank.capacity_per_period.is_none() {
+            return Self::Gas::MAX;
+        }
+
         gas_tank.used = gas_tank.used.saturating_sub(*gas);
 
         // Should infallibly save the tank, given that it already got a tank
@@ -164,14 +168,10 @@ where
             .put::<F, ItemConfig>(collection_id, item_id)
             .unwrap_or_default();
 
-        if gas_tank.capacity_per_period.is_some() {
-            Weight::MAX
-        } else {
-            gas_tank
-                .capacity_per_period
-                .unwrap_or_default()
-                .saturating_sub(gas_tank.used)
-        }
+        gas_tank
+            .capacity_per_period
+            .unwrap_or_default()
+            .saturating_sub(gas_tank.used)
     }
 }
 

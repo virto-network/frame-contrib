@@ -97,10 +97,12 @@ parameter_types! {
     const SmallMember: AccountId = AccountId::new([1u8;32]);
     const MediumMember: AccountId = AccountId::new([2u8;32]);
     const LargeMember: AccountId = AccountId::new([3u8;32]);
+    const ExtraLargeMember: AccountId = AccountId::new([4u8;32]);
 
     SmallTank: Weight = <() as frame_system::WeightInfo>::remark(100);
     MediumTank: Weight = <() as frame_system::WeightInfo>::remark(1000);
     LargeTank: Weight = <() as frame_system::WeightInfo>::remark(10000);
+    ExtraLargeTank: Weight = <() as frame_system::WeightInfo>::remark(100000);
 }
 
 pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
@@ -237,5 +239,86 @@ mod gas_burner {
                 Weight::zero()
             );
         });
+    }
+}
+
+mod gas_fueler {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        new_test_ext().execute_with(|| {
+            // Burn gas on large tank
+            let remaining = MembershipsGas::check_available_gas(
+                &LargeMember::get(),
+                &<() as frame_system::WeightInfo>::remark(1000),
+            )
+            .expect("gas to burn equals tank capacity; qed");
+
+            assert_eq!(
+                MembershipsGas::burn_gas(
+                    &LargeMember::get(),
+                    &remaining,
+                    &<() as frame_system::WeightInfo>::remark(5000)
+                ),
+                LargeTank::get().saturating_sub(<() as frame_system::WeightInfo>::remark(5000))
+            );
+
+            // Refuels gas
+            assert_eq!(
+                MembershipsGas::refuel_gas(
+                    &(1, 3),
+                    &<() as frame_system::WeightInfo>::remark(5000)
+                ),
+                LargeTank::get()
+            );
+        })
+    }
+}
+
+mod make_tank {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        use frame_support::traits::nonfungibles_v2::Mutate;
+
+        new_test_ext().execute_with(|| {
+            assert_ok!(Memberships::mint_into(
+                &1,
+                &4,
+                &ExtraLargeMember::get(),
+                &Default::default(),
+                true,
+            ));
+
+            MembershipsGas::make_tank(&(1, 4), Some(ExtraLargeTank::get()), None)
+                .expect("failed to register the tank");
+
+            // Burn gas on large tank
+            let remaining = MembershipsGas::check_available_gas(
+                &ExtraLargeMember::get(),
+                &ExtraLargeTank::get(),
+            )
+            .expect("gas to burn equals tank capacity; qed");
+
+            assert_eq!(
+                MembershipsGas::burn_gas(
+                    &ExtraLargeMember::get(),
+                    &remaining,
+                    &ExtraLargeTank::get(),
+                ),
+                Weight::zero()
+            );
+
+            // Refuels gas
+            assert_eq!(
+                MembershipsGas::refuel_gas(
+                    &(1, 4),
+                    &<() as frame_system::WeightInfo>::remark(100000)
+                ),
+                ExtraLargeTank::get()
+            );
+        })
     }
 }
