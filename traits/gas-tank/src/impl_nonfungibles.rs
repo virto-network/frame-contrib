@@ -80,22 +80,22 @@ where
 
     fn check_available_gas(who: &Self::AccountId, estimated: &Self::Gas) -> Option<Self::Gas> {
         F::owned(who).find_map(|(collection, item)| {
-            let mut gas_tank = WeightTank::<T>::get::<F>(&collection, &item)?;
+            let mut tank = WeightTank::<T>::get::<F>(&collection, &item)?;
 
             let block_number = frame_system::Pallet::<T>::block_number();
-            let period = gas_tank.period.unwrap_or(BlockNumberFor::<T>::max_value());
+            let period = tank.period.unwrap_or(BlockNumberFor::<T>::max_value());
 
-            let Some(capacity) = gas_tank.capacity_per_period else {
+            let Some(capacity) = tank.capacity_per_period else {
                 return Some(Weight::MAX);
             };
 
-            if block_number.checked_sub(&gas_tank.since)? > period {
-                gas_tank.since = block_number.checked_add(&period)?;
-                gas_tank.used = Weight::zero();
-                gas_tank.put::<F, ItemConfig>(&collection, &item)?;
+            if block_number.checked_sub(&tank.since)? > period {
+                tank.since = block_number.checked_add(&period)?;
+                tank.used = Weight::zero();
+                tank.put::<F, ItemConfig>(&collection, &item)?;
             };
 
-            let remaining = capacity.checked_sub(&gas_tank.used.checked_add(estimated)?)?;
+            let remaining = capacity.checked_sub(&tank.used.checked_add(estimated)?)?;
             F::set_typed_attribute(
                 &collection,
                 &item,
@@ -121,16 +121,16 @@ where
                 F::clear_typed_attribute(&collection, &item, &ATTR_GAS_TX_PAY_WITH_MEMBERSHIP)
                     .ok()?;
 
-                let mut gas_tank = WeightTank::<T>::get::<F>(&collection, &item)?;
+                let mut tank = WeightTank::<T>::get::<F>(&collection, &item)?;
 
-                if gas_tank.capacity_per_period.is_some() {
-                    gas_tank.used = gas_tank.used.checked_add(used)?;
+                if tank.capacity_per_period.is_some() {
+                    tank.used = tank.used.checked_add(used)?;
                 }
 
-                gas_tank.put::<F, ItemConfig>(&collection, &item)?;
+                tank.put::<F, ItemConfig>(&collection, &item)?;
 
-                let max_weight = gas_tank.capacity_per_period?;
-                Some(max_weight.saturating_sub(gas_tank.used))
+                let max_weight = tank.capacity_per_period?;
+                Some(max_weight.saturating_sub(tank.used))
             })
             .unwrap_or_default()
     }
@@ -151,27 +151,23 @@ where
     type Gas = Weight;
 
     fn refuel_gas((collection_id, item_id): &Self::TankId, gas: &Self::Gas) -> Self::Gas {
-        let Some(mut gas_tank): Option<WeightTank<T>> =
-            F::typed_system_attribute(collection_id, Some(item_id), &ATTR_MEMBERSHIP_GAS)
-        else {
+        let Some(mut tank) = WeightTank::<T>::get::<F>(collection_id, item_id) else {
             return Self::Gas::zero();
         };
 
-        if gas_tank.capacity_per_period.is_none() {
+        if tank.capacity_per_period.is_none() {
             return Self::Gas::MAX;
         }
 
-        gas_tank.used = gas_tank.used.saturating_sub(*gas);
+        tank.used = tank.used.saturating_sub(*gas);
 
         // Should infallibly save the tank, given that it already got a tank
-        gas_tank
-            .put::<F, ItemConfig>(collection_id, item_id)
+        tank.put::<F, ItemConfig>(collection_id, item_id)
             .unwrap_or_default();
 
-        gas_tank
-            .capacity_per_period
+        tank.capacity_per_period
             .unwrap_or_default()
-            .saturating_sub(gas_tank.used)
+            .saturating_sub(tank.used)
     }
 }
 
