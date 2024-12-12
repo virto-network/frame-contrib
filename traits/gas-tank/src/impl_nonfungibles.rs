@@ -109,3 +109,71 @@ where
             .unwrap_or_default()
     }
 }
+
+impl<T, F, ItemConfig> GasFueler for NonFungibleGasBurner<T, F, ItemConfig>
+where
+    T: frame_system::Config,
+    BlockNumberFor<T>: Bounded,
+    F: nonfungibles_v2::Inspect<T::AccountId>
+        + nonfungibles_v2::InspectEnumerable<T::AccountId>
+        + nonfungibles_v2::Mutate<T::AccountId, ItemConfig>,
+    ItemConfig: Default,
+    F::CollectionId: 'static,
+    F::ItemId: 'static,
+{
+    type TankId = (F::CollectionId, F::ItemId);
+    type Gas = Weight;
+
+    fn refuel_gas((collection_id, item_id): &Self::TankId, gas: &Self::Gas) -> Self::Gas {
+        let Some(mut gas_tank): Option<MembershipWeightTank<T>> =
+            F::typed_system_attribute(collection_id, Some(item_id), &ATTR_MEMBERSHIP_GAS)
+        else {
+            return Self::Gas::zero();
+        };
+
+        gas_tank.used = gas_tank.used.saturating_sub(*gas);
+
+        // Should infallibly save the tank, given that it already got a tank
+        let _ = F::set_typed_attribute(collection_id, item_id, &ATTR_MEMBERSHIP_GAS, &gas_tank);
+
+        if gas_tank.max_per_period.is_some() {
+            Weight::MAX
+        } else {
+            gas_tank
+                .max_per_period
+                .unwrap_or_default()
+                .saturating_sub(gas_tank.used)
+        }
+    }
+}
+
+impl<T, F, ItemConfig> MakeTank for NonFungibleGasBurner<T, F, ItemConfig>
+where
+    T: frame_system::Config,
+    BlockNumberFor<T>: Bounded,
+    F: nonfungibles_v2::Inspect<T::AccountId>
+        + nonfungibles_v2::InspectEnumerable<T::AccountId>
+        + nonfungibles_v2::Mutate<T::AccountId, ItemConfig>,
+    ItemConfig: Default,
+    F::CollectionId: 'static,
+    F::ItemId: 'static,
+{
+    type TankId = (F::CollectionId, F::ItemId);
+    type Gas = Weight;
+    type BlockNumber = BlockNumberFor<T>;
+
+    fn make_tank(
+        (collection_id, item_id): &Self::TankId,
+        capacity: Option<Self::Gas>,
+        periodicity: Option<Self::BlockNumber>,
+    ) -> Option<()> {
+        let tank = MembershipWeightTank::<T> {
+            since: frame_system::Pallet::<T>::block_number(),
+            used: Weight::zero(),
+            period: periodicity,
+            max_per_period: capacity,
+        };
+
+        F::set_typed_attribute(&collection_id, item_id, &ATTR_MEMBERSHIP_GAS, &tank).ok()
+    }
+}
