@@ -6,7 +6,7 @@ use frame_support::{
     weights::Weight,
 };
 use frame_system::EnsureNever;
-use impl_nonfungibles::{MembershipWeightTank, NonFungibleGasBurner, ATTR_MEMBERSHIP_GAS};
+use impl_nonfungibles::{NonFungibleGasTank, WeightTank, ATTR_MEMBERSHIP_GAS};
 use sp_runtime::{
     traits::{IdentifyAccount, IdentityLookup, Verify},
     MultiSignature,
@@ -89,7 +89,7 @@ impl pallet_nfts::Config for Test {
     type Helper = ();
 }
 
-pub type MembershipsGas = NonFungibleGasBurner<Test, Memberships, pallet_nfts::ItemConfig>;
+pub type MembershipsGas = NonFungibleGasTank<Test, Memberships, pallet_nfts::ItemConfig>;
 
 parameter_types! {
     const CollectionOwner: AccountId = AccountId::new([0u8;32]);
@@ -120,24 +120,24 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
             (
                 1,
                 SmallMember::get(),
-                MembershipWeightTank::<Test> {
-                    max_per_period: Some(SmallTank::get()),
+                WeightTank::<Test> {
+                    capacity_per_period: Some(SmallTank::get()),
                     ..Default::default()
                 },
             ),
             (
                 2,
                 MediumMember::get(),
-                MembershipWeightTank::<Test> {
-                    max_per_period: Some(MediumTank::get()),
+                WeightTank::<Test> {
+                    capacity_per_period: Some(MediumTank::get()),
                     ..Default::default()
                 },
             ),
             (
                 3,
                 LargeMember::get(),
-                MembershipWeightTank::<Test> {
-                    max_per_period: Some(LargeTank::get()),
+                WeightTank::<Test> {
+                    capacity_per_period: Some(LargeTank::get()),
                     ..Default::default()
                 },
             ),
