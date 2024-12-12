@@ -29,11 +29,11 @@ pub trait GasBurner {
 
 /// Handles fueling _"gas"_ on a tank to spend in future transactions
 pub trait GasFueler {
-    type AccountId: Parameter;
+    type TankId: Parameter;
     type Gas: Parameter;
 
     /// Refills as much `gas` as possible returning what the updated amount of gas in the tank.
     ///
     /// This method is expected not to fail.
-    fn refuel_gas(who: &Self::AccountId, gas: &Self::Gas) -> Self::Gas;
+    fn refuel_gas(id: &Self::TankId, gas: &Self::Gas) -> Self::Gas;
 }
