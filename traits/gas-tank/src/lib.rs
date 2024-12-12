@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use frame_support::Parameter;
+use sp_runtime::traits::BlockNumber;
 
 #[cfg(test)]
 mod tests;
@@ -36,4 +37,20 @@ pub trait GasFueler {
     ///
     /// This method is expected not to fail.
     fn refuel_gas(id: &Self::TankId, gas: &Self::Gas) -> Self::Gas;
+}
+
+pub trait MakeTank {
+    type TankId: Parameter;
+    type Gas: Parameter;
+    type BlockNumber: BlockNumber;
+
+    /// Creates a new tank, allowing to specify a max gas `capacity` and a `periodicity` after
+    /// which the tank gets renewed.
+    ///
+    /// Returns `Some(())` if the creation was successful, or `None` otherwise.
+    fn make_tank(
+        id: &Self::TankId,
+        capacity: Option<Self::Gas>,
+        periodicity: Option<Self::BlockNumber>,
+    ) -> Option<()>;
 }
