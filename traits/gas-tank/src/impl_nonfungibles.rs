@@ -98,7 +98,9 @@ where
                 let mut gas_tank: MembershipWeightTank<T> =
                     F::typed_system_attribute(&collection, Some(&item), &ATTR_MEMBERSHIP_GAS)?;
 
-                gas_tank.used = gas_tank.used.checked_add(used)?;
+                if gas_tank.max_per_period.is_some() {
+                    gas_tank.used = gas_tank.used.checked_add(used)?;
+                }
 
                 F::set_typed_attribute(&collection, &item, &ATTR_MEMBERSHIP_GAS, &gas_tank).ok()?;
                 let max_weight = gas_tank.max_per_period?;
