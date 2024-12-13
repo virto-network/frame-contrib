@@ -2,6 +2,7 @@
 
 use frame_support::Parameter;
 use sp_runtime::traits::BlockNumber;
+use sp_runtime::DispatchResult;
 
 #[cfg(test)]
 mod tests;
@@ -52,5 +53,5 @@ pub trait MakeTank {
         id: &Self::TankId,
         capacity: Option<Self::Gas>,
         periodicity: Option<Self::BlockNumber>,
-    ) -> Option<()>;
+    ) -> DispatchResult;
 }

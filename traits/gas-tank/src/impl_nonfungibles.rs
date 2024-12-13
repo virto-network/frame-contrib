@@ -41,11 +41,11 @@ where
         F::typed_system_attribute(collection_id, Some(item_id), &ATTR_MEMBERSHIP_GAS)
     }
 
-    fn put<F, I>(&self, collection_id: &F::CollectionId, item_id: &F::ItemId) -> Option<()>
+    fn put<F, I>(&self, collection_id: &F::CollectionId, item_id: &F::ItemId) -> DispatchResult
     where
         F: nonfungibles_v2::Inspect<T::AccountId> + nonfungibles_v2::Mutate<T::AccountId, I>,
     {
-        F::set_typed_attribute(collection_id, item_id, &ATTR_MEMBERSHIP_GAS, self).ok()
+        F::set_typed_attribute(collection_id, item_id, &ATTR_MEMBERSHIP_GAS, self)
     }
 }
 
@@ -92,7 +92,7 @@ where
             if block_number.checked_sub(&tank.since)? > period {
                 tank.since = block_number.checked_add(&period)?;
                 tank.used = Weight::zero();
-                tank.put::<F, ItemConfig>(&collection, &item)?;
+                tank.put::<F, ItemConfig>(&collection, &item).ok()?;
             };
 
             let remaining = capacity.checked_sub(&tank.used.checked_add(estimated)?)?;
@@ -127,7 +127,7 @@ where
                     tank.used = tank.used.checked_add(used)?;
                 }
 
-                tank.put::<F, ItemConfig>(&collection, &item)?;
+                tank.put::<F, ItemConfig>(&collection, &item).ok()?;
 
                 let max_weight = tank.capacity_per_period?;
                 Some(max_weight.saturating_sub(tank.used))
@@ -190,7 +190,7 @@ where
         (collection_id, item_id): &Self::TankId,
         capacity: Option<Self::Gas>,
         periodicity: Option<Self::BlockNumber>,
-    ) -> Option<()> {
+    ) -> DispatchResult {
         WeightTank::<T>::new(capacity, periodicity).put::<F, ItemConfig>(collection_id, item_id)
     }
 }
