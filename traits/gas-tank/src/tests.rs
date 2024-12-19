@@ -1,5 +1,6 @@
 use super::*;
 
+use fc_traits_nonfungibles_helpers::SelectNonFungibleItem;
 use frame_support::{
     assert_ok, derive_impl, parameter_types,
     traits::{ConstU128, ConstU32},
@@ -89,7 +90,15 @@ impl pallet_nfts::Config for Test {
     type Helper = ();
 }
 
-pub type MembershipsGas = NonFungibleGasTank<Test, Memberships, pallet_nfts::ItemConfig>;
+#[frame_support::storage_alias]
+type Toggle = StorageValue<Prefix, bool, frame_support::pallet_prelude::ValueQuery>;
+
+parameter_types! {
+     pub ToggleBasedSelector: Box<dyn SelectNonFungibleItem<u16, u32>> = Box::new(|_, _| Toggle::get());
+}
+
+pub type MembershipsGas =
+    NonFungibleGasTank<Test, Memberships, pallet_nfts::ItemConfig, ToggleBasedSelector>;
 
 parameter_types! {
     const CollectionOwner: AccountId = AccountId::new([0u8;32]);
@@ -111,6 +120,8 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
     let collection_id = 1;
     let mut ext = sp_io::TestExternalities::default();
     ext.execute_with(|| {
+        Toggle::put(true);
+
         assert_ok!(Memberships::create_collection_with_id(
             collection_id,
             &CollectionOwner::get(),
@@ -166,6 +177,18 @@ mod gas_burner {
     use frame_support::weights::Weight;
 
     use super::*;
+
+    #[test]
+    fn fail_if_selector_discards_a_membership() {
+        new_test_ext().execute_with(|| {
+            Toggle::put(false);
+            assert!(MembershipsGas::check_available_gas(
+                &SmallMember::get(),
+                &<() as frame_system::WeightInfo>::remark(100),
+            )
+            .is_none());
+        })
+    }
 
     #[test]
     fn fail_if_gas_is_larger_than_membership_capacity() {

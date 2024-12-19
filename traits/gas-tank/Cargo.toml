@@ -10,6 +10,7 @@ version = "0.1.0"
 codec.workspace = true
 frame-support.workspace = true
 frame-system.workspace = true
+fc-traits-nonfungibles-helpers.workspace = true
 sp-runtime.workspace = true
 
 [dev-dependencies]

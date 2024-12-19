@@ -21,6 +21,7 @@ quote = { version = "1" }
 fc-traits-authn = { path = "./traits/authn", default-features = false }
 fc-traits-authn-proc = { path = "./traits/authn/proc", default-features = false }
 fc-traits-gas-tank = { path = "./traits/gas-tank", default-features = false }
+fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", default-features = false }
 fc-traits-tracks = { path = "./traits/tracks", default-features = false }
 
 frame-benchmarking = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
@@ -53,5 +54,6 @@ members = [
   "traits/authn/proc",
   "traits/gas-tank",
   "traits/memberships",
+    "traits/nonfungibles-helpers",
   "traits/tracks",
 ]
