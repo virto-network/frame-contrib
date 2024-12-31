@@ -14,6 +14,12 @@ use frame_support::{sp_runtime::DispatchError, Parameter};
 mod impl_nonfungibles;
 pub use impl_nonfungibles::NonFungiblesMemberships;
 
+mod hooks;
+mod impls;
+
+pub use hooks::*;
+pub use impls::WithHooks;
+
 pub trait Manager<AccountId, ItemConfig>: Inspect<AccountId> {
     /// Transfers ownership of an unclaimed membership in the manager group to an account in the given group and activates it.
     fn assign(
