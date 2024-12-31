@@ -119,25 +119,26 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
 }
 
 mod manager {
+    use super::{new_test_ext, Memberships};
+    use super::{GroupOwner, Member, GROUP, MEMBERSHIP, MEMBERSHIPS_MANAGER_GROUP};
+    use crate::{impl_nonfungibles, Manager, NonFungiblesMemberships};
     use frame_support::assert_ok;
 
-    use crate::{
-        impl_nonfungibles,
-        tests::{GroupOwner, Member, Memberships, GROUP, MEMBERSHIP, MEMBERSHIPS_MANAGER_GROUP},
-        Manager,
-    };
-
-    use super::new_test_ext;
+    type MembershipsManager = NonFungiblesMemberships<Memberships>;
 
     #[test]
     fn assigning_and_releasing_moves_membership_to_special_account() {
         new_test_ext().execute_with(|| {
-            assert_ok!(Memberships::assign(&GROUP, &MEMBERSHIP, &Member::get()));
+            assert_ok!(MembershipsManager::assign(
+                &GROUP,
+                &MEMBERSHIP,
+                &Member::get()
+            ));
             assert_eq!(
                 Memberships::owner(MEMBERSHIPS_MANAGER_GROUP, MEMBERSHIP),
                 Some(impl_nonfungibles::ASSIGNED_MEMBERSHIPS_ACCOUNT.into())
             );
-            assert_ok!(Memberships::release(&GROUP, &MEMBERSHIP));
+            assert_ok!(MembershipsManager::release(&GROUP, &MEMBERSHIP));
             assert_eq!(
                 Memberships::owner(MEMBERSHIPS_MANAGER_GROUP, MEMBERSHIP),
                 Some(GroupOwner::get())

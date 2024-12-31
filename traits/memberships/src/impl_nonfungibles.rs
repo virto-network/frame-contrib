@@ -1,4 +1,5 @@
 use crate::*;
+use core::marker::PhantomData;
 use frame_support::{
     pallet_prelude::DispatchError,
     sp_runtime::{str_array, traits::Zero},
@@ -11,7 +12,9 @@ const ATTR_MEMBER_RANK_TOTAL: &[u8] = b"membership_rank_total";
 
 pub const ASSIGNED_MEMBERSHIPS_ACCOUNT: [u8; 32] = str_array("memberships/assigned_memberships");
 
-impl<T, AccountId> Inspect<AccountId> for T
+pub struct NonFungiblesMemberships<T>(PhantomData<T>);
+
+impl<T, AccountId> Inspect<AccountId> for NonFungiblesMemberships<T>
 where
     T: nonfungibles::Inspect<AccountId> + nonfungibles::InspectEnumerable<AccountId>,
     T::OwnedInCollectionIterator: 'static,
@@ -41,7 +44,7 @@ where
     }
 }
 
-impl<T, AccountId, ItemConfig> Manager<AccountId, ItemConfig> for T
+impl<T, AccountId, ItemConfig> Manager<AccountId, ItemConfig> for NonFungiblesMemberships<T>
 where
     T: nonfungibles::Mutate<AccountId, ItemConfig>
         + nonfungibles::Inspect<AccountId>
@@ -80,7 +83,7 @@ where
     }
 }
 
-impl<T, AccountId, ItemConfig> Rank<AccountId, ItemConfig> for T
+impl<T, AccountId, ItemConfig> Rank<AccountId, ItemConfig> for NonFungiblesMemberships<T>
 where
     T: nonfungibles::Mutate<AccountId, ItemConfig>
         + nonfungibles::Inspect<AccountId>
