@@ -51,6 +51,9 @@ impl pallet_balances::Config for Test {
     type RuntimeFreezeReason = RuntimeFreezeReason;
 }
 
+type CollectionId = <Test as pallet_nfts::Config>::CollectionId;
+type ItemId = <Test as pallet_nfts::Config>::ItemId;
+
 impl pallet_nfts::Config for Test {
     type ApprovalsLimit = ();
     type AttributeDepositBase = ();
@@ -119,29 +122,129 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
 }
 
 mod manager {
+    use super::{new_test_ext, Memberships};
+    use super::{GroupOwner, Member, GROUP, MEMBERSHIP, MEMBERSHIPS_MANAGER_GROUP};
+    use crate::{impl_nonfungibles, Manager, NonFungiblesMemberships};
     use frame_support::assert_ok;
 
-    use crate::{
-        impl_nonfungibles,
-        tests::{GroupOwner, Member, Memberships, GROUP, MEMBERSHIP, MEMBERSHIPS_MANAGER_GROUP},
-        Manager,
-    };
-
-    use super::new_test_ext;
+    type MembershipsManager = NonFungiblesMemberships<Memberships>;
 
     #[test]
     fn assigning_and_releasing_moves_membership_to_special_account() {
         new_test_ext().execute_with(|| {
-            assert_ok!(Memberships::assign(&GROUP, &MEMBERSHIP, &Member::get()));
+            assert_ok!(MembershipsManager::assign(
+                &GROUP,
+                &MEMBERSHIP,
+                &Member::get()
+            ));
             assert_eq!(
                 Memberships::owner(MEMBERSHIPS_MANAGER_GROUP, MEMBERSHIP),
                 Some(impl_nonfungibles::ASSIGNED_MEMBERSHIPS_ACCOUNT.into())
             );
-            assert_ok!(Memberships::release(&GROUP, &MEMBERSHIP));
+            assert_ok!(MembershipsManager::release(&GROUP, &MEMBERSHIP));
             assert_eq!(
                 Memberships::owner(MEMBERSHIPS_MANAGER_GROUP, MEMBERSHIP),
                 Some(GroupOwner::get())
             );
         });
+    }
+}
+
+mod with_hooks {
+    use super::{new_test_ext, Memberships};
+    use super::{AccountId, CollectionId, ItemId, Member, GROUP, MEMBERSHIP};
+    use crate::{
+        GenericRank, Manager, NonFungiblesMemberships, OnMembershipAssigned, OnMembershipReleased,
+        OnRankSet, Rank, WithHooks,
+    };
+    use codec::{Decode, Encode};
+    use frame_support::pallet_prelude::ValueQuery;
+    use frame_support::{assert_ok, parameter_types, storage_alias};
+    use sp_runtime::{traits::ConstU32, BoundedVec, DispatchError};
+
+    #[derive(Debug, Encode, Decode, PartialEq)]
+    enum Hook {
+        MembershipAssigned(AccountId, CollectionId, ItemId),
+        MembershipReleased(CollectionId, ItemId),
+        RankSet(CollectionId, ItemId, GenericRank),
+    }
+
+    #[storage_alias]
+    pub type Hooks = StorageValue<Prefix, BoundedVec<Hook, ConstU32<4>>, ValueQuery>;
+
+    parameter_types! {
+        pub AddMembershipAssignedHook: Box<dyn OnMembershipAssigned<AccountId, CollectionId, ItemId>> = Box::new(
+            |who, g, m| {
+                Hooks::try_append(Hook::MembershipAssigned(who, g, m)).map_err(|_| DispatchError::Other("MaxHooks"))
+            }
+        );
+        pub AddMembershipReleasedHook: Box<dyn OnMembershipReleased<CollectionId, ItemId>> = Box::new(
+            |g, m| Hooks::try_append(Hook::MembershipReleased(g, m)).map_err(|_| DispatchError::Other("MaxHooks"))
+        );
+        pub AddRankSetHook: Box<dyn OnRankSet<CollectionId, ItemId>> = Box::new(
+            |g, m, r| Hooks::try_append(Hook::RankSet(g, m, r)).map_err(|_| DispatchError::Other("MaxHooks"))
+        );
+    }
+
+    type MembershipsManager = WithHooks<
+        NonFungiblesMemberships<Memberships>,
+        AddMembershipAssignedHook,
+        AddMembershipReleasedHook,
+        AddRankSetHook,
+    >;
+
+    #[test]
+    fn assigning_and_releasing_calls_hooks() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(MembershipsManager::assign(
+                &GROUP,
+                &MEMBERSHIP,
+                &Member::get()
+            ));
+
+            assert_eq!(
+                Hooks::get(),
+                BoundedVec::<Hook, ConstU32<4>>::truncate_from(vec![Hook::MembershipAssigned(
+                    Member::get(),
+                    GROUP,
+                    MEMBERSHIP
+                )])
+            );
+
+            assert_ok!(MembershipsManager::release(&GROUP, &MEMBERSHIP,));
+
+            assert_eq!(
+                Hooks::get(),
+                BoundedVec::<Hook, ConstU32<4>>::truncate_from(vec![
+                    Hook::MembershipAssigned(Member::get(), GROUP, MEMBERSHIP),
+                    Hook::MembershipReleased(GROUP, MEMBERSHIP)
+                ])
+            );
+        });
+    }
+
+    #[test]
+    fn setting_rank_calls_hooks() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(MembershipsManager::assign(
+                &GROUP,
+                &MEMBERSHIP,
+                &Member::get()
+            ));
+
+            assert_ok!(MembershipsManager::set_rank(
+                &GROUP,
+                &MEMBERSHIP,
+                GenericRank(1)
+            ));
+
+            assert_eq!(
+                Hooks::get(),
+                BoundedVec::<Hook, ConstU32<4>>::truncate_from(vec![
+                    Hook::MembershipAssigned(Member::get(), GROUP, MEMBERSHIP),
+                    Hook::RankSet(GROUP, MEMBERSHIP, GenericRank(1))
+                ])
+            );
+        })
     }
 }
