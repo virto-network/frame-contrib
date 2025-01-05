@@ -1,3 +1,5 @@
+#![no_std]
+
 /// Defines a predicate to determine whether to select an item or not within a
 /// filter operation.
 pub trait SelectNonFungibleItem<CollectionId, ItemId> {
@@ -24,7 +26,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
+
     use super::*;
+    use alloc::boxed::Box;
 
     #[test]
     fn it_works() {
