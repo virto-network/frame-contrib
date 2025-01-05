@@ -1,4 +1,5 @@
 use crate::*;
+use alloc::boxed::Box;
 use core::marker::PhantomData;
 use frame_support::{
     pallet_prelude::DispatchError,
