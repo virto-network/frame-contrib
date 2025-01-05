@@ -4,7 +4,7 @@ use frame_support::traits::Get;
 
 /// Extends a structure that already implements [`Manager`], and [`Rank`] to support
 /// hooks that are triggered after changes in memberships or ranks happen.
-pub struct WithHooks<T, OnMembershipAssigned = (), OnMembershipReleased = (), OnRankSet = ()>(
+pub struct WithHooks<T, OnMembershipAssigned = NoOp, OnMembershipReleased = NoOp, OnRankSet = NoOp>(
     PhantomData<(T, OnMembershipAssigned, OnMembershipReleased, OnRankSet)>,
 );
 

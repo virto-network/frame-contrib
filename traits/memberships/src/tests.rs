@@ -186,6 +186,26 @@ mod with_hooks {
         );
     }
 
+    type NoHooksManager = WithHooks<NonFungiblesMemberships<Memberships>>;
+
+    #[test]
+    fn noop_hooks_by_default_works() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(NoHooksManager::assign(&GROUP, &MEMBERSHIP, &Member::get()));
+            assert_ok!(NoHooksManager::set_rank(
+                &GROUP,
+                &MEMBERSHIP,
+                GenericRank(1)
+            ));
+            assert_ok!(NoHooksManager::release(&GROUP, &MEMBERSHIP));
+
+            assert_eq!(
+                Hooks::get(),
+                BoundedVec::<Hook, ConstU32<4>>::truncate_from(vec![])
+            )
+        })
+    }
+
     type MembershipsManager = WithHooks<
         NonFungiblesMemberships<Memberships>,
         AddMembershipAssignedHook,
