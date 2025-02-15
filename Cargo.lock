@@ -1006,6 +1006,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-traits-listings"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "parity-scale-codec",
+ "scale-info",
+]
+
+[[package]]
 name = "fc-traits-memberships"
 version = "0.1.0"
 dependencies = [
