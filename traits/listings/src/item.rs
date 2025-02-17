@@ -25,19 +25,20 @@ pub trait Inspect<AccountId> {
     type Price;
 
     /// Returns an iterable list of the items published in an inventory.
-    fn items(
-        inventory_id: Self::InventoryId,
-    ) -> impl Iterator<Item = IdItemOf<Self, impl AsRef<[u8]>, AccountId>>;
+    fn items<N: AsRef<[u8]>>(
+        inventory_id: &Self::InventoryId,
+    ) -> impl Iterator<Item = IdItemOf<Self, N, AccountId>>;
 
     /// Returns an iterable list of the items owned by an account.
-    fn owned(owner: AccountId)
-        -> impl Iterator<Item = IdItemOf<Self, impl AsRef<[u8]>, AccountId>>;
+    fn owned<N: AsRef<[u8]>>(
+        owner: &AccountId,
+    ) -> impl Iterator<Item = IdItemOf<Self, N, AccountId>>;
 
     /// Returns the displayable name for an item.
-    fn item(
-        inventory_id: Self::InventoryId,
-        id: Self::Id,
-    ) -> Item<Self::Id, impl AsRef<[u8]>, AccountId, Self::Price>;
+    fn item<N: AsRef<[u8]>>(
+        inventory_id: &Self::InventoryId,
+        id: &Self::Id,
+    ) -> impl Iterator<Item = IdItemOf<Self, N, AccountId>>;
 
     fn attribute<T: Decode>(
         inventory_id: &Self::InventoryId,
@@ -48,31 +49,31 @@ pub trait Inspect<AccountId> {
 
 pub trait Mutate<AccountId>: Inspect<AccountId> {
     /// Publish a new item in an active inventory.
-    fn publish(
-        inventory_id: Self::InventoryId,
-        id: Self::Id,
-        name: impl AsRef<u8>,
+    fn publish<N: AsRef<[u8]>>(
+        inventory_id: &Self::InventoryId,
+        id: &Self::Id,
+        name: N,
         maybe_price: Option<Self::Price>,
     ) -> DispatchResult;
 
     /// Marks an existing item as whether it can be purchased.
     fn mark_for_sale(
-        inventory_id: Self::InventoryId,
-        id: Self::Id,
+        inventory_id: &Self::InventoryId,
+        id: &Self::Id,
         for_sale: bool,
     ) -> DispatchResult;
 
     /// Marks an existing item as whether it can be resold.
     fn mark_for_resale(
-        inventory_id: Self::InventoryId,
-        id: Self::Id,
+        inventory_id: &Self::InventoryId,
+        id: &Self::Id,
         for_resale: bool,
     ) -> DispatchResult;
 
     /// Sets the price fo an existing item
     fn set_price(
-        inventory_id: Self::InventoryId,
-        id: Self::Id,
+        inventory_id: &Self::InventoryId,
+        id: &Self::Id,
         price: Self::Price,
     ) -> DispatchResult;
 
@@ -86,7 +87,6 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
 
 pub mod subscriptions {
     use super::*;
-    use codec::{Decode, Encode};
     use frame_support::pallet_prelude::DispatchError;
 
     pub struct SubscriptionConditions<Price, Moment> {
@@ -190,62 +190,62 @@ pub mod subscriptions {
 
         /// Retrieves the [SubscriptionConditions] on an item, if any.
         fn subscription_conditions(
-            inventory_id: Self::InventoryId,
-            id: Self::Id,
+            inventory_id: &Self::InventoryId,
+            id: &Self::Id,
         ) -> Option<SubscriptionConditions<Self::Price, Self::Moment>>;
 
         /// Retrieves the [Subscription] state for an item, if it has an active subscription.
         fn subscription(
-            inventory_id: Self::InventoryId,
-            id: Self::Id,
+            inventory_id: &Self::InventoryId,
+            id: &Self::Id,
         ) -> Option<Subscription<Self::Price, Self::Moment>>;
 
         /// If a subscription termination has been disputed, retrieves the [TerminationDispute]
         /// information of such subscription item.
-        fn dispute(
-            inventory_id: Self::InventoryId,
-            id: Self::Id,
-        ) -> Option<SubscriptionTermination<AccountId, Self::Price, Self::Moment, impl AsRef<[u8]>>>;
+        fn dispute<Reason: AsRef<[u8]>>(
+            inventory_id: &Self::InventoryId,
+            id: &Self::Id,
+        ) -> Option<SubscriptionTermination<AccountId, Self::Price, Self::Moment, Reason>>;
     }
 
     /// Methods to modify the state of a subscription item.
     pub trait Mutate<AccountId>: Inspect<AccountId> {
         /// Publish a new subscription item in an active inventory.
-        fn publish(
-            inventory_id: Self::InventoryId,
-            id: Self::Id,
-            name: impl AsRef<u8>,
+        fn publish<Reason: AsRef<[u8]>>(
+            inventory_id: &Self::InventoryId,
+            id: &Self::Id,
+            name: Reason,
             conditions: SubscriptionConditions<Self::Price, Self::Moment>,
         ) -> DispatchResult;
 
         /// Set the [SubscriptionConditions] on an existing subscription item.
         fn set_conditions(
-            inventory_id: Self::InventoryId,
-            id: Self::Id,
+            inventory_id: &Self::InventoryId,
+            id: &Self::Id,
             conditions: SubscriptionConditions<Self::Price, Self::Moment>,
         ) -> DispatchResult;
 
         /// Activates a [Subscription], given an item that contains some [SubscriptionConditions].
-        fn activate(inventory_id: Self::InventoryId, id: Self::Id) -> DispatchResult;
+        fn activate(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
 
         /// Cancels a [Subscription].
-        fn cancel(inventory_id: Self::InventoryId, id: Self::Id) -> DispatchResult;
+        fn cancel(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
 
         /// Terminates a [Subscription].
         ///
         /// The effects of terminating a subscription
-        fn terminate(inventory_id: Self::InventoryId, id: Self::Id) -> DispatchResult;
+        fn terminate(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
 
-        fn dispute_termination(
-            inventory_id: Self::InventoryId,
-            id: Self::Id,
-            dispute_reason: impl AsRef<[u8]>,
+        fn dispute_termination<Reason: AsRef<[u8]>>(
+            inventory_id: &Self::InventoryId,
+            id: &Self::Id,
+            dispute_reason: Reason,
         ) -> DispatchResult;
 
-        fn resolve_termination_dispute(
-            inventory_id: Self::InventoryId,
-            id: Self::Id,
-            dispute_reason: impl AsRef<[u8]>,
+        fn resolve_termination_dispute<Reason: AsRef<[u8]>>(
+            inventory_id: &Self::InventoryId,
+            id: &Self::Id,
+            dispute_reason: Reason,
         ) -> DispatchResult;
     }
 }

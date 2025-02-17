@@ -10,21 +10,21 @@ pub trait Inspect<MerchantId> {
     fn all() -> impl Iterator<Item = (MerchantId, Self::Id)>;
 
     /// Returns an iterable list of the inventories owned by a merchant.
-    fn owned(merchant_id: MerchantId) -> impl Iterator<Item = (MerchantId, Self::Id)>;
+    fn owned(merchant_id: &MerchantId) -> impl Iterator<Item = (MerchantId, Self::Id)>;
 
     /// Returns `false` if the inventory is archived, `true` otherwise.
-    fn is_active(merchant_id: MerchantId, id: MerchantId) -> bool;
+    fn is_active(merchant_id: &MerchantId, id: &MerchantId) -> bool;
 
     /// Returns whether an inventory exists given its id.
-    fn exists(merchant_id: MerchantId, id: Self::Id) -> bool {
-        Self::owned(merchant_id).any(|(_, inventory_id)| inventory_id == id)
+    fn exists(merchant_id: &MerchantId, id: &Self::Id) -> bool {
+        Self::owned(merchant_id).any(|(_, ref inventory_id)| inventory_id == id)
     }
 }
 
 /// Methods to manage the lifecycle of an inventory.
 pub trait Lifecycle<MerchantId>: Inspect<MerchantId> {
     /// Creates a new inventory with a given identification
-    fn create(merchant_id: MerchantId, id: Self::Id) -> DispatchResult;
+    fn create(merchant_id: &MerchantId, id: &Self::Id) -> DispatchResult;
 
     /// Archives an existing inventory with a given identification.
     ///
@@ -35,5 +35,5 @@ pub trait Lifecycle<MerchantId>: Inspect<MerchantId> {
     ///
     /// After archiving an inventory, it's not possible to return the inventory to an
     /// active state again.
-    fn archive(merchant_id: MerchantId, id: Self::Id) -> DispatchResult;
+    fn archive(merchant_id: &MerchantId, id: &Self::Id) -> DispatchResult;
 }
