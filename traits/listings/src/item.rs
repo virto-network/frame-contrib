@@ -1,3 +1,4 @@
+use codec::{Decode, Encode};
 use frame_support::dispatch::DispatchResult;
 
 pub struct Item<Id, Name, AccountId, Price> {
@@ -37,6 +38,12 @@ pub trait Inspect<AccountId> {
         inventory_id: Self::InventoryId,
         id: Self::Id,
     ) -> Item<Self::Id, impl AsRef<[u8]>, AccountId, Self::Price>;
+
+    fn attribute<T: Decode>(
+        inventory_id: &Self::InventoryId,
+        id: &Self::Id,
+        key: &impl AsRef<[u8]>,
+    ) -> T;
 }
 
 pub trait Mutate<AccountId>: Inspect<AccountId> {
@@ -67,6 +74,13 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
         inventory_id: Self::InventoryId,
         id: Self::Id,
         price: Self::Price,
+    ) -> DispatchResult;
+
+    fn set_attribute<T: Encode>(
+        inventory_id: &Self::InventoryId,
+        id: &Self::Id,
+        key: &impl AsRef<[u8]>,
+        value: T,
     ) -> DispatchResult;
 }
 
