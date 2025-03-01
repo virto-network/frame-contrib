@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use codec::{Decode, Encode};
 use frame_support::dispatch::DispatchResult;
 use scale_info::TypeInfo;
