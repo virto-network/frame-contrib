@@ -7,5 +7,5 @@ pub mod item;
 
 pub use inventory::{Inspect as InspectInventory, Lifecycle as InventoryLifecycle};
 pub use item::{
-	subscriptions::InspectSubscription, subscriptions::MutateSubscription, InspectItem, MutateItem,
+    subscriptions::InspectSubscription, subscriptions::MutateSubscription, InspectItem, MutateItem,
 };

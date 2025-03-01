@@ -10,7 +10,7 @@ type AssetBalanceOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>
 
 /// The composite `InventoryId` bound to the pallet instance.
 pub(crate) type InventoryIdOf<T, I> =
-InventoryId<<T as Config<I>>::MerchantId, <T as Config<I>>::InventoryId>;
+    InventoryId<<T as Config<I>>::MerchantId, <T as Config<I>>::InventoryId>;
 
 /// The overarching `AccountId` type.
 pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
@@ -33,19 +33,19 @@ pub(crate) type ItemValueOf<T, I> = BoundedVec<u8, <T as pallet_nfts::Config<I>>
 /// A set of attributes associated to an inventory.
 #[derive(Encode)]
 pub enum InventoryAttribute {
-	/// Indicates if the inventory is archived.
-	Archived,
+    /// Indicates if the inventory is archived.
+    Archived,
 }
 
 /// A set of attributes associated to an item.
 #[derive(Encode)]
 pub enum ItemAttribute {
-	/// The item name.
-	Name,
-	/// The item price,
-	Price,
-	/// Whether an item cannot be resold.
-	NotForResale,
+    /// The item name.
+    Name,
+    /// The item price,
+    Price,
+    /// Whether an item cannot be resold.
+    NotForResale,
 }
 
 /// The internal representation of a listings inventory ID.
@@ -53,41 +53,41 @@ pub enum ItemAttribute {
 pub struct InventoryId<MerchantId, Id>(pub(crate) MerchantId, pub(crate) Id);
 
 impl<MerchantId, Id> From<(MerchantId, Id)> for InventoryId<MerchantId, Id> {
-	fn from(value: (MerchantId, Id)) -> Self {
-		Self(value.0, value.1)
-	}
+    fn from(value: (MerchantId, Id)) -> Self {
+        Self(value.0, value.1)
+    }
 }
 
 impl<MerchantId: Clone, Id: Clone + Incrementable> Incrementable for InventoryId<MerchantId, Id> {
-	fn increment(&self) -> Option<Self> {
-		// Increment shouldn't happen for inventory, but
-		// we'll implement it anyway.
-		self.1
-			.increment()
-			.map(|new_id| Self(self.0.clone(), new_id))
-	}
+    fn increment(&self) -> Option<Self> {
+        // Increment shouldn't happen for inventory, but
+        // we'll implement it anyway.
+        self.1
+            .increment()
+            .map(|new_id| Self(self.0.clone(), new_id))
+    }
 
-	fn initial_value() -> Option<Self> {
-		None
-	}
+    fn initial_value() -> Option<Self> {
+        None
+    }
 }
 
 impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
-	fn from(value: InventoryId<MerchantId, Id>) -> Self {
-		(value.0, value.1)
-	}
+    fn from(value: InventoryId<MerchantId, Id>) -> Self {
+        (value.0, value.1)
+    }
 }
 
 /// The type an item can be, part of its unique identification.
 #[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
 pub enum ItemType<Id> {
-	Unit(Id),
-	Subscription(Id),
+    Unit(Id),
+    Subscription(Id),
 }
 
 /// The sale asset price for an item. Not related to the native sale price of an NFT.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
 pub struct ItemPrice<A, B> {
-	pub asset: A,
-	pub amount: B,
+    pub asset: A,
+    pub amount: B,
 }

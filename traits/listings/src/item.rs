@@ -4,9 +4,9 @@ use scale_info::TypeInfo;
 
 #[derive(Encode, Decode, PartialEq, Clone, Debug, TypeInfo)]
 pub struct Item<AccountId, Price> {
-	pub name: Vec<u8>,
-	pub owner: AccountId,
-	pub price: Option<Price>,
+    pub name: Vec<u8>,
+    pub owner: AccountId,
+    pub price: Option<Price>,
 }
 
 pub type IdItemOf<T, AccountId> = (
@@ -14,7 +14,7 @@ pub type IdItemOf<T, AccountId> = (
         <T as Inspect<AccountId>>::InventoryId,
         <T as Inspect<AccountId>>::Id,
     ),
-	Item<AccountId, <T as Inspect<AccountId>>::Price>,
+    Item<AccountId, <T as Inspect<AccountId>>::Price>,
 );
 
 pub use {Inspect as InspectItem, Mutate as MutateItem};
@@ -26,74 +26,74 @@ pub trait Inspect<AccountId> {
     type Price;
 
     /// Returns an iterable list of the items published in an inventory.
-	fn items(inventory_id: &Self::InventoryId) -> impl Iterator<Item=IdItemOf<Self, AccountId>>;
+    fn items(inventory_id: &Self::InventoryId) -> impl Iterator<Item = IdItemOf<Self, AccountId>>;
 
     /// Returns an iterable list of the items owned by an account.
-	fn owned(owner: &AccountId) -> impl Iterator<Item=IdItemOf<Self, AccountId>>;
+    fn owned(owner: &AccountId) -> impl Iterator<Item = IdItemOf<Self, AccountId>>;
 
     /// Returns the displayable name for an item.
-	fn item(
+    fn item(
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
-	) -> Option<Item<AccountId, Self::Price>>;
+    ) -> Option<Item<AccountId, Self::Price>>;
 
-	/// Returns an attribute associated to the item.
-	fn attribute<K: Encode, V: Decode>(
+    /// Returns an attribute associated to the item.
+    fn attribute<K: Encode, V: Decode>(
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
-		key: &K,
-	) -> Option<V>;
+        key: &K,
+    ) -> Option<V>;
 
-	/// Returns whether an item can be transferred.
-	fn transferable(inventory_id: &Self::InventoryId, id: &Self::Id) -> bool;
+    /// Returns whether an item can be transferred.
+    fn transferable(inventory_id: &Self::InventoryId, id: &Self::Id) -> bool;
 
-	/// Returns whether an item is available for resale.
-	fn can_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> bool;
+    /// Returns whether an item is available for resale.
+    fn can_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> bool;
 }
 
 pub trait Mutate<AccountId>: Inspect<AccountId> {
     /// Publish a new item in an active inventory.
-	fn publish(
+    fn publish(
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
-		name: Vec<u8>,
+        name: Vec<u8>,
         maybe_price: Option<Self::Price>,
     ) -> DispatchResult;
 
-	/// Marks an existing item as whether it cannot be resold.
-	fn mark_not_for_resale(
+    /// Marks an existing item as whether it cannot be resold.
+    fn mark_not_for_resale(
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
-		not_for_resale: bool,
+        not_for_resale: bool,
     ) -> DispatchResult;
 
-	/// Marks an existing item as non-transferable
-	fn mark_can_transfer(
+    /// Marks an existing item as non-transferable
+    fn mark_can_transfer(
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
-		can_tranfer: bool,
+        can_tranfer: bool,
     ) -> DispatchResult;
 
-	/// Sets the price on an existing item.
+    /// Sets the price on an existing item.
     fn set_price(
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
         price: Self::Price,
     ) -> DispatchResult;
 
-	/// Sets an arbitrary attribute on an existing item.
-	fn set_attribute<K: Encode, V: Encode>(
-		inventory_id: &Self::InventoryId,
-		id: &Self::Id,
-		key: &K,
-		value: V,
-	) -> DispatchResult;
-
-	/// Clears an arbitrary attribute on an existing item.
-	fn clear_attribute<K: Encode>(
+    /// Sets an arbitrary attribute on an existing item.
+    fn set_attribute<K: Encode, V: Encode>(
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
-		key: &K,
+        key: &K,
+        value: V,
+    ) -> DispatchResult;
+
+    /// Clears an arbitrary attribute on an existing item.
+    fn clear_attribute<K: Encode>(
+        inventory_id: &Self::InventoryId,
+        id: &Self::Id,
+        key: &K,
     ) -> DispatchResult;
 }
 
@@ -196,7 +196,7 @@ pub mod subscriptions {
         }
     }
 
-	pub use {Inspect as InspectSubscription, Mutate as MutateSubscription};
+    pub use {Inspect as InspectSubscription, Mutate as MutateSubscription};
 
     pub trait Inspect<AccountId>: InspectItem<AccountId> {
         type Moment;
