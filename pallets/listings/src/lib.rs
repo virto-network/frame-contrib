@@ -6,6 +6,7 @@
 //! trait.
 
 extern crate alloc;
+extern crate core;
 
 use fc_traits_listings::*;
 use frame_support::{pallet_prelude::*, traits::EnsureOriginWithArg};
