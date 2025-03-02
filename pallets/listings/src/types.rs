@@ -50,7 +50,7 @@ pub enum ItemAttribute {
 
 /// The internal representation of a listings inventory ID.
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
-pub struct InventoryId<MerchantId, Id>(pub(crate) MerchantId, pub(crate) Id);
+pub struct InventoryId<MerchantId, Id>(pub MerchantId, pub Id);
 
 impl<MerchantId, Id> From<(MerchantId, Id)> for InventoryId<MerchantId, Id> {
     fn from(value: (MerchantId, Id)) -> Self {

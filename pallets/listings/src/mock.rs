@@ -173,20 +173,20 @@ where
     }
 }
 
-pub struct EnsureInventoryCreator;
+pub struct EnsureAccountIdInventories;
 
 impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<AccountIdBytes, Id>>
-    for EnsureInventoryCreator
+    for EnsureAccountIdInventories
 {
     type Success = AccountId;
 
     fn try_origin(
         o: RuntimeOrigin,
-        InventoryId(public, _): &InventoryId<AccountIdBytes, Id>,
+        InventoryId(account_bytes, _): &InventoryId<AccountIdBytes, Id>,
     ) -> Result<Self::Success, RuntimeOrigin> {
-        match o.clone().into() {
-            Ok(RawOrigin::Signed(ref who))
-                if <AccountId as AsRef<[u8]>>::as_ref(who) == &*public =>
+        match Into::<Result<RawOrigin<AccountId>, RuntimeOrigin>>::into(o.clone())? {
+            RawOrigin::Signed(ref who)
+                if <AccountId as AsRef<[u8]>>::as_ref(who) == &*account_bytes =>
             {
                 Ok(who.clone())
             }
@@ -202,39 +202,12 @@ impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<AccountIdBytes, Id>>
     }
 }
 
-pub struct EnsureInventoryOwnedByCaller;
-
-impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<AccountIdBytes, Id>>
-    for EnsureInventoryOwnedByCaller
-{
-    type Success = ();
-
-    fn try_origin(
-        o: RuntimeOrigin,
-        InventoryId(owner, _): &InventoryId<AccountIdBytes, Id>,
-    ) -> Result<(), RuntimeOrigin> {
-        match Into::<Result<RawOrigin<AccountId>, RuntimeOrigin>>::into(o.clone())? {
-            RawOrigin::Signed(ref who) if <AccountId as AsRef<[u8]>>::as_ref(who) == &*owner => {
-                Ok(())
-            }
-            _ => Err(o),
-        }
-    }
-
-    #[cfg(feature = "runtime-benchmarks")]
-    fn try_successful_origin(
-        InventoryId(a, _): &InventoryId<AccountIdBytes, Id>,
-    ) -> Result<RuntimeOrigin, ()> {
-        Ok(RawOrigin::Signed(AccountId::new(*a)).into())
-    }
-}
-
 impl pallet_listings::Config<ListingsInstance> for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type Assets = Assets;
-    type CreateInventoryOrigin = EnsureInventoryCreator;
-    type InventoryAdminOrigin = EnsureInventoryOwnedByCaller;
+    type CreateInventoryOrigin = EnsureAccountIdInventories;
+    type InventoryAdminOrigin = EnsureAccountIdInventories;
     type MerchantId = AccountIdBytes;
     type InventoryId = u32;
     type ItemSKU = u32;
