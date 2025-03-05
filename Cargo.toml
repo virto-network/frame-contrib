@@ -22,6 +22,7 @@ fc-traits-authn = { path = "./traits/authn", default-features = false }
 fc-traits-authn-proc = { path = "./traits/authn/proc", default-features = false }
 fc-traits-gas-tank = { path = "./traits/gas-tank", default-features = false }
 fc-traits-listings = { path = "./traits/listings", default-features = false }
+fc-traits-memberships = { path = "./traits/memberships", default-features = false }
 fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", default-features = false }
 fc-traits-tracks = { path = "./traits/tracks", default-features = false }
 
@@ -49,10 +50,11 @@ pallet-utility = { git = "https://github.com/virto-network/polkadot-sdk", branch
 resolver = "2"
 members = [
   "pallets/gas-transaction-payment",
+  "pallets/listings",
+  "pallets/pass",
   "pallets/referenda-tracks",
   "pallets/template",
-  "pallets/pass",
-  "pallets/listings",
+  "traits",
   "traits/authn",
   "traits/authn/proc",
   "traits/gas-tank",

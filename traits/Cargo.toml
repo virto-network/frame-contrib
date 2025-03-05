@@ -1,0 +1,28 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "frame-contrib-traits"
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+fc-traits-authn.workspace = true
+fc-traits-gas-tank.workspace = true
+fc-traits-listings.workspace = true
+fc-traits-memberships.workspace = true
+fc-traits-tracks.workspace = true
+
+[features]
+default = ["std"]
+std = [
+  "fc-traits-authn/std",
+  "fc-traits-gas-tank/std",
+  "fc-traits-listings/std",
+  "fc-traits-memberships/std",
+  "fc-traits-tracks/std",
+]
+runtime-benchmarks = [
+  "fc-traits-gas-tank/runtime-benchmarks",
+  "fc-traits-memberships/runtime-benchmarks",
+]

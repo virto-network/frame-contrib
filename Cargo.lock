@@ -1123,6 +1123,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "frame-contrib-traits"
+version = "0.1.0"
+dependencies = [
+  "fc-traits-authn",
+  "fc-traits-gas-tank",
+  "fc-traits-listings",
+  "fc-traits-memberships",
+  "fc-traits-tracks",
+]
+
+[[package]]
 name = "frame-metadata"
 version = "16.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
