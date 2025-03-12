@@ -405,7 +405,7 @@ mod set_item_price {
                         amount: 1,
                     }
                 ),
-                CatalogError::ItemsNonTransferable,
+                ListingsError::ItemNonTransferable,
             );
         })
     }

@@ -25,10 +25,14 @@ pub(crate) type ItemPriceOf<T, I> = ItemPrice<AssetIdOf<T, I>, AssetBalanceOf<T,
 pub(crate) type ItemIdOf<T, I> = ItemType<<T as Config<I>>::ItemSKU>;
 
 /// A `BoundedVec` limited by the overarching `KeyLimit`.
-pub(crate) type ItemKeyOf<T, I> = BoundedVec<u8, <T as pallet_nfts::Config<I>>::KeyLimit>;
+pub(crate) type ItemKeyOf<T, I> = BoundedVec<u8, <T as Config<I>>::NonfungiblesKeyLimit>;
 
 /// A `BoundedVec` limited by the overarching `ValueLimit`.
-pub(crate) type ItemValueOf<T, I> = BoundedVec<u8, <T as pallet_nfts::Config<I>>::ValueLimit>;
+pub(crate) type ItemValueOf<T, I> = BoundedVec<u8, <T as Config<I>>::NonfungiblesValueLimit>;
+
+pub(crate) type NativeBalanceOf<T, I> = <
+<T as Config<I>>::Balances as frame_support::traits::fungible::Inspect<AccountIdOf<T>>
+>::Balance;
 
 /// A set of attributes associated to an inventory.
 #[derive(Encode)]
@@ -40,13 +44,16 @@ pub enum InventoryAttribute {
 /// A set of attributes associated to an item.
 #[derive(Encode)]
 pub enum ItemAttribute {
-    /// The item name.
-    Name,
-    /// The item price,
-    Price,
+    /// The item basic info (name and price).
+    #[codec(index = 10)]
+    Info,
     /// Whether an item cannot be resold.
+    #[codec(index = 11)]
     NotForResale,
 }
+
+/// The item's basic information
+pub type ItemInfo<Name, Price> = (Name, Option<Price>);
 
 /// The internal representation of a listings inventory ID.
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]

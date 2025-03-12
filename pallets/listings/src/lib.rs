@@ -9,7 +9,13 @@ extern crate alloc;
 extern crate core;
 
 use fc_traits_listings::*;
-use frame_support::{pallet_prelude::*, traits::EnsureOriginWithArg};
+use frame_support::{
+    pallet_prelude::*,
+    traits::{
+        nonfungibles_v2::{self, Inspect as _},
+        EnsureOriginWithArg,
+    },
+};
 use frame_system::pallet_prelude::*;
 
 // #[cfg(feature = "runtime-benchmarks")]
@@ -32,14 +38,7 @@ pub mod pallet {
     use super::*;
 
     #[pallet::config]
-    pub trait Config<I: 'static = ()>:
-        frame_system::Config
-        + pallet_nfts::Config<
-            I,
-            CollectionId = InventoryIdOf<Self, I>,
-            ItemId = ItemType<Self::ItemSKU>,
-        >
-    {
+    pub trait Config<I: 'static = ()>: frame_system::Config {
         /// The overarching type for events.
         type RuntimeEvent: From<Event<Self, I>>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>;
@@ -47,9 +46,48 @@ pub mod pallet {
         /// A type that defines the weights different calls and methods benchmark.
         type WeightInfo: WeightInfo;
 
-        /// An associated system of assets system. This system must be the same one
+        /// A type that handles the native token and system balances.
+        type Balances: frame_support::traits::fungible::Inspect<Self::AccountId>;
+
+        /// An associated type of assets system. This system must be the same one
         /// that `Payment` uses.
         type Assets: frame_support::traits::fungibles::Inspect<Self::AccountId>;
+
+        /// An associated type of nonfungibles system. This is used to store the inventories and
+        /// items.
+        type Nonfungibles: nonfungibles_v2::Inspect<
+                Self::AccountId,
+                CollectionId = InventoryIdOf<Self, I>,
+                ItemId = ItemType<Self::ItemSKU>,
+            > + nonfungibles_v2::InspectEnumerable<
+                Self::AccountId,
+                CollectionId = InventoryIdOf<Self, I>,
+                ItemId = ItemType<Self::ItemSKU>,
+            > + nonfungibles_v2::Create<
+                Self::AccountId,
+                pallet_nfts::CollectionConfig<
+                    NativeBalanceOf<Self, I>,
+                    BlockNumberFor<Self>,
+                    InventoryIdOf<Self, I>,
+                >,
+                CollectionId = InventoryIdOf<Self, I>,
+                ItemId = ItemType<Self::ItemSKU>,
+            > + nonfungibles_v2::Mutate<
+                Self::AccountId,
+                pallet_nfts::ItemConfig,
+                CollectionId = InventoryIdOf<Self, I>,
+                ItemId = ItemType<Self::ItemSKU>,
+            > + nonfungibles_v2::Transfer<
+                Self::AccountId,
+                CollectionId = InventoryIdOf<Self, I>,
+                ItemId = ItemType<Self::ItemSKU>,
+            >;
+
+        /// Limit size for attribute keys on the `Nonfungibles` system.
+        type NonfungiblesKeyLimit: Get<u32>;
+
+        /// Limit size for attribute values on the `Nonfungibles` system.
+        type NonfungiblesValueLimit: Get<u32>;
 
         /// An origin authorized to create an inventory.
         type CreateInventoryOrigin: EnsureOriginWithArg<
@@ -70,8 +108,6 @@ pub mod pallet {
         /// A type that represents the SKU of an item.
         type ItemSKU: Parameter + Copy;
     }
-
-    pub(crate) type NftsPallet<T, I = ()> = pallet_nfts::Pallet<T, I>;
 
     #[pallet::pallet]
     pub struct Pallet<T, I = ()>(_);
@@ -125,6 +161,8 @@ pub mod pallet {
         NoPermission,
         /// The specified item is not enabled for resale.
         NotForResale,
+        /// The specified item is not transferable.
+        ItemNonTransferable,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -245,7 +283,7 @@ pub mod pallet {
                     ensure!(item.owner == who, Error::<T, I>::NoPermission);
                     ensure!(
                         Self::transferable(&inventory_id, &id),
-                        pallet_nfts::Error::<T, I>::ItemsNonTransferable
+                        Error::<T, I>::ItemNonTransferable,
                     );
                     ensure!(
                         Self::can_resell(&inventory_id, &id),
@@ -280,7 +318,7 @@ pub mod pallet {
             can_transfer: bool,
         ) -> DispatchResult {
             Self::ensure_active_inventory(&inventory_id)?;
-            NftsPallet::<T, I>::owner(inventory_id, id).ok_or(Error::<T, I>::UnknownItem)?;
+            T::Nonfungibles::owner(&inventory_id, &id).ok_or(Error::<T, I>::UnknownItem)?;
             T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
 
             Self::mark_can_transfer(&inventory_id, &id, can_transfer)
@@ -363,7 +401,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         inventory_id: &InventoryIdOf<T, I>,
         id: &ItemIdOf<T, I>,
     ) -> DispatchResult {
-        let creator = NftsPallet::<T, I>::collection_owner(*inventory_id)
+        let creator = T::Nonfungibles::collection_owner(inventory_id)
             .ok_or(Error::<T, I>::UnknownInventory)?;
         let item::Item { owner, .. } =
             Self::item(inventory_id, id).ok_or(Error::<T, I>::UnknownItem)?;
@@ -374,8 +412,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
     fn ensure_active_inventory(inventory_id: &InventoryIdOf<T, I>) -> DispatchResult {
         let InventoryId(merchant, id) = &inventory_id;
-        NftsPallet::<T, I>::collection_owner(*inventory_id)
-            .ok_or(Error::<T, I>::UnknownInventory)?;
+        T::Nonfungibles::collection_owner(inventory_id).ok_or(Error::<T, I>::UnknownInventory)?;
         ensure!(
             Self::is_active(merchant, id),
             Error::<T, I>::ArchivedInventory

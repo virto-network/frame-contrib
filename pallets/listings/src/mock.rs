@@ -1,9 +1,7 @@
 //! Test environment for template pallet.
 
 use crate::{self as pallet_listings, InventoryId, ItemType};
-use std::marker::PhantomData;
 
-use crate::types::{InventoryIdOf, ItemIdOf};
 use fc_traits_listings::InventoryLifecycle;
 use frame_support::traits::fungible::Unbalanced;
 use frame_support::traits::tokens::Precision;
@@ -90,7 +88,7 @@ parameter_types! {
 impl pallet_nfts::Config<ListingsInstance> for Test {
     type RuntimeEvent = RuntimeEvent;
     type CollectionId = InventoryId<AccountIdBytes, u32>;
-    type ItemId = pallet_listings::ItemType<u32>;
+    type ItemId = ItemType<u32>;
     type Currency = Balances;
     type ForceOrigin = EnsureNever<AccountId>;
     type CreateOrigin = EnsureNever<AccountId>;
@@ -115,9 +113,14 @@ impl pallet_nfts::Config<ListingsInstance> for Test {
     type Helper = OwnersCatalogBenchmarkHelper<Self, ListingsInstance>;
     type WeightInfo = ();
 }
+#[cfg(feature = "runtime-benchmarks")]
+use core::marker::PhantomData;
 
 #[cfg(feature = "runtime-benchmarks")]
 pub struct OwnersCatalogBenchmarkHelper<T, I>(PhantomData<(T, I)>);
+
+#[cfg(feature = "runtime-benchmarks")]
+use crate::types::{InventoryIdOf, ItemIdOf};
 
 #[cfg(feature = "runtime-benchmarks")]
 impl<T, I: 'static>
@@ -205,7 +208,11 @@ impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<AccountIdBytes, Id>>
 impl pallet_listings::Config<ListingsInstance> for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
+    type Balances = Balances;
     type Assets = Assets;
+    type Nonfungibles = ListingsCatalog;
+    type NonfungiblesKeyLimit = <Self as pallet_nfts::Config<ListingsInstance>>::KeyLimit;
+    type NonfungiblesValueLimit = <Self as pallet_nfts::Config<ListingsInstance>>::ValueLimit;
     type CreateInventoryOrigin = EnsureAccountIdInventories;
     type InventoryAdminOrigin = EnsureAccountIdInventories;
     type MerchantId = AccountIdBytes;
