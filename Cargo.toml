@@ -21,6 +21,8 @@ quote = { version = "1" }
 fc-traits-authn = { path = "./traits/authn", default-features = false }
 fc-traits-authn-proc = { path = "./traits/authn/proc", default-features = false }
 fc-traits-gas-tank = { path = "./traits/gas-tank", default-features = false }
+fc-traits-listings = { path = "./traits/listings", default-features = false }
+fc-traits-memberships = { path = "./traits/memberships", default-features = false }
 fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", default-features = false }
 fc-traits-tracks = { path = "./traits/tracks", default-features = false }
 
@@ -33,6 +35,7 @@ sp-io = { git = "https://github.com/virto-network/polkadot-sdk", branch = "relea
 sp-runtime = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 sp-std = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 
+pallet-assets = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 pallet-babe = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 pallet-balances = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 pallet-nfts = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
@@ -47,13 +50,16 @@ pallet-utility = { git = "https://github.com/virto-network/polkadot-sdk", branch
 resolver = "2"
 members = [
   "pallets/gas-transaction-payment",
+  "pallets/listings",
+  "pallets/pass",
   "pallets/referenda-tracks",
   "pallets/template",
-  "pallets/pass",
+  "traits",
   "traits/authn",
   "traits/authn/proc",
   "traits/gas-tank",
+  "traits/listings",
   "traits/memberships",
-    "traits/nonfungibles-helpers",
+  "traits/nonfungibles-helpers",
   "traits/tracks",
 ]
