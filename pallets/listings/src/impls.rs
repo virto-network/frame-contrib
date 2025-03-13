@@ -166,12 +166,21 @@ mod item {
                     &ItemAttribute::NotForResale,
                     &(),
                 )
-            } else {
+            } else if !not_for_resale
+                && T::Nonfungibles::typed_system_attribute::<ItemAttribute, ()>(
+                    inventory_id,
+                    Some(id),
+                    &ItemAttribute::NotForResale,
+                )
+                .is_some()
+            {
                 T::Nonfungibles::clear_typed_attribute(
                     inventory_id,
                     id,
                     &ItemAttribute::NotForResale,
                 )
+            } else {
+                Ok(())
             }
         }
 

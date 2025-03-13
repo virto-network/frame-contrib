@@ -12,14 +12,15 @@ use fc_traits_listings::*;
 use frame_support::{
     pallet_prelude::*,
     traits::{
+        fungible,
         nonfungibles_v2::{self, Inspect as _},
         EnsureOriginWithArg,
     },
 };
 use frame_system::pallet_prelude::*;
 
-// #[cfg(feature = "runtime-benchmarks")]
-// pub mod benchmarking;
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmarking;
 #[cfg(test)]
 mod mock;
 #[cfg(test)]
@@ -47,7 +48,12 @@ pub mod pallet {
         type WeightInfo: WeightInfo;
 
         /// A type that handles the native token and system balances.
+        #[cfg(not(feature = "runtime-benchmarks"))]
         type Balances: frame_support::traits::fungible::Inspect<Self::AccountId>;
+
+        #[cfg(feature = "runtime-benchmarks")]
+        /// A type that handles the native token and system balances.
+        type Balances: fungible::Inspect<Self::AccountId> + fungible::Mutate<Self::AccountId>;
 
         /// An associated type of assets system. This system must be the same one
         /// that `Payment` uses.
@@ -107,6 +113,10 @@ pub mod pallet {
 
         /// A type that represents the SKU of an item.
         type ItemSKU: Parameter + Copy;
+
+        #[cfg(feature = "runtime-benchmarks")]
+        /// Helper for executing pallet benchmarks
+        type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }
 
     #[pallet::pallet]

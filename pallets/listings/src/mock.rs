@@ -1,6 +1,6 @@
 //! Test environment for template pallet.
 
-use crate::{self as pallet_listings, InventoryId, ItemType};
+use crate::{self as pallet_listings, InventoryId, ItemPrice, ItemType};
 
 use fc_traits_listings::InventoryLifecycle;
 use frame_support::traits::fungible::Unbalanced;
@@ -46,9 +46,9 @@ mod runtime {
     #[runtime::pallet_index(11)]
     pub type Assets = pallet_assets;
     #[runtime::pallet_index(20)]
-    pub type Listings = pallet_listings<Instance1>;
+    pub type Listings = pallet_listings;
     #[runtime::pallet_index(21)]
-    pub type ListingsCatalog = pallet_nfts<Instance1>;
+    pub type ListingsCatalog = pallet_nfts;
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
@@ -73,8 +73,6 @@ impl pallet_assets::Config for Test {
     type Freezer = ();
 }
 
-pub type ListingsInstance = pallet_listings::Instance1;
-
 pub type AccountIdBytes = [u8; 32];
 
 parameter_types! {
@@ -85,7 +83,7 @@ parameter_types! {
     pub DepositPerByte: Balance = 1;
 }
 
-impl pallet_nfts::Config<ListingsInstance> for Test {
+impl pallet_nfts::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type CollectionId = InventoryId<AccountIdBytes, u32>;
     type ItemId = ItemType<u32>;
@@ -110,23 +108,24 @@ impl pallet_nfts::Config<ListingsInstance> for Test {
     type OffchainSignature = MultiSignature;
     type OffchainPublic = AccountPublic;
     #[cfg(feature = "runtime-benchmarks")]
-    type Helper = OwnersCatalogBenchmarkHelper<Self, ListingsInstance>;
+    type Helper = OwnersCatalogBenchmarkHelper<Self>;
     type WeightInfo = ();
 }
 #[cfg(feature = "runtime-benchmarks")]
 use core::marker::PhantomData;
 
 #[cfg(feature = "runtime-benchmarks")]
-pub struct OwnersCatalogBenchmarkHelper<T, I>(PhantomData<(T, I)>);
+pub struct OwnersCatalogBenchmarkHelper<T, I = ()>(PhantomData<(T, I)>);
 
+use crate::types::ItemPriceOf;
 #[cfg(feature = "runtime-benchmarks")]
 use crate::types::{InventoryIdOf, ItemIdOf};
 
 #[cfg(feature = "runtime-benchmarks")]
 impl<T, I: 'static>
     pallet_nfts::BenchmarkHelper<
-        InventoryIdOf<Test, ListingsInstance>,
-        ItemIdOf<Test, ListingsInstance>,
+        InventoryIdOf<Test>,
+        ItemIdOf<Test>,
         sp_runtime::MultiSigner,
         sp_runtime::AccountId32,
         MultiSignature,
@@ -134,7 +133,7 @@ impl<T, I: 'static>
 where
     T: pallet_nfts::Config<I>,
 {
-    fn collection(i: u16) -> InventoryIdOf<Test, ListingsInstance> {
+    fn collection(i: u16) -> InventoryIdOf<Test> {
         fn convert(i: u16) -> [u8; 32] {
             let high = (i >> 8) as u8;
             let low = (i & 0xFF) as u8;
@@ -151,7 +150,7 @@ where
         InventoryId(convert(i), 1u16.into())
     }
 
-    fn item(i: u16) -> ItemIdOf<Test, ListingsInstance> {
+    fn item(i: u16) -> ItemIdOf<Test> {
         ItemType::Unit(i.into())
     }
 
@@ -205,19 +204,42 @@ impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<AccountIdBytes, Id>>
     }
 }
 
-impl pallet_listings::Config<ListingsInstance> for Test {
+impl pallet_listings::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type Balances = Balances;
     type Assets = Assets;
     type Nonfungibles = ListingsCatalog;
-    type NonfungiblesKeyLimit = <Self as pallet_nfts::Config<ListingsInstance>>::KeyLimit;
-    type NonfungiblesValueLimit = <Self as pallet_nfts::Config<ListingsInstance>>::ValueLimit;
+    type NonfungiblesKeyLimit = <Self as pallet_nfts::Config>::KeyLimit;
+    type NonfungiblesValueLimit = <Self as pallet_nfts::Config>::ValueLimit;
     type CreateInventoryOrigin = EnsureAccountIdInventories;
     type InventoryAdminOrigin = EnsureAccountIdInventories;
     type MerchantId = AccountIdBytes;
     type InventoryId = u32;
     type ItemSKU = u32;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = ListingsBenchmarkHelper;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+pub struct ListingsBenchmarkHelper;
+
+#[cfg(feature = "runtime-benchmarks")]
+impl pallet_listings::BenchmarkHelper<Test> for ListingsBenchmarkHelper {
+    fn inventory_id() -> InventoryIdOf<Test> {
+        InventoryId([0u8; 32], 0)
+    }
+
+    fn item_id() -> ItemIdOf<Test> {
+        ItemType::Unit(0)
+    }
+
+    fn item_price() -> ItemPriceOf<Test> {
+        ItemPrice {
+            asset: 0,
+            amount: 10,
+        }
+    }
 }
 
 pub const ROOT: AccountId = AccountId::new([0u8; 32]);

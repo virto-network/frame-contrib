@@ -5,13 +5,13 @@ use crate::{mock::*, InventoryId, ItemPrice, ItemType};
 use frame_support::{assert_noop, assert_ok};
 use sp_runtime::{BoundedVec, DispatchError};
 
-type Listings = fc_pallet_listings::Pallet<Test, ListingsInstance>;
-type ListingsError = fc_pallet_listings::Error<Test, ListingsInstance>;
-type ListingsEvent = fc_pallet_listings::Event<Test, ListingsInstance>;
+type Listings = fc_pallet_listings::Pallet<Test>;
+type ListingsError = fc_pallet_listings::Error<Test>;
+type ListingsEvent = fc_pallet_listings::Event<Test>;
 
-type Catalog = pallet_nfts::Pallet<Test, ListingsInstance>;
-type CatalogError = pallet_nfts::Error<Test, ListingsInstance>;
-type CatalogEvent = pallet_nfts::Event<Test, ListingsInstance>;
+type Catalog = pallet_nfts::Pallet<Test>;
+type CatalogError = pallet_nfts::Error<Test>;
+type CatalogEvent = pallet_nfts::Event<Test>;
 
 mod create_inventory {
     use super::*;

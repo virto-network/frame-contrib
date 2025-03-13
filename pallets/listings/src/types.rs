@@ -9,28 +9,28 @@ type AssetIdOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::As
 type AssetBalanceOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::Balance;
 
 /// The composite `InventoryId` bound to the pallet instance.
-pub(crate) type InventoryIdOf<T, I> =
+pub type InventoryIdOf<T, I = ()> =
     InventoryId<<T as Config<I>>::MerchantId, <T as Config<I>>::InventoryId>;
 
 /// The overarching `AccountId` type.
 pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 
 /// The [`Item`][item::Item] type bound to the pallet instance.
-pub(crate) type ItemOf<T, I> = item::Item<AccountIdOf<T>, ItemPriceOf<T, I>>;
+pub(crate) type ItemOf<T, I = ()> = item::Item<AccountIdOf<T>, ItemPriceOf<T, I>>;
 
 /// The [`ItemPrice`] type bound to the pallet instance.
-pub(crate) type ItemPriceOf<T, I> = ItemPrice<AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
+pub(crate) type ItemPriceOf<T, I = ()> = ItemPrice<AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
 
 /// The ID of every item inside the inventory.
-pub(crate) type ItemIdOf<T, I> = ItemType<<T as Config<I>>::ItemSKU>;
+pub type ItemIdOf<T, I = ()> = ItemType<<T as Config<I>>::ItemSKU>;
 
 /// A `BoundedVec` limited by the overarching `KeyLimit`.
-pub(crate) type ItemKeyOf<T, I> = BoundedVec<u8, <T as Config<I>>::NonfungiblesKeyLimit>;
+pub(crate) type ItemKeyOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::NonfungiblesKeyLimit>;
 
 /// A `BoundedVec` limited by the overarching `ValueLimit`.
-pub(crate) type ItemValueOf<T, I> = BoundedVec<u8, <T as Config<I>>::NonfungiblesValueLimit>;
+pub(crate) type ItemValueOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::NonfungiblesValueLimit>;
 
-pub(crate) type NativeBalanceOf<T, I> = <
+pub(crate) type NativeBalanceOf<T, I = ()> = <
 <T as Config<I>>::Balances as frame_support::traits::fungible::Inspect<AccountIdOf<T>>
 >::Balance;
 
@@ -97,4 +97,12 @@ pub enum ItemType<Id> {
 pub struct ItemPrice<A, B> {
     pub asset: A,
     pub amount: B,
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+pub trait BenchmarkHelper<T: Config<I>, I: 'static = ()> {
+    fn inventory_id() -> InventoryIdOf<T, I>;
+    fn item_id() -> ItemIdOf<T, I>;
+
+    fn item_price() -> ItemPriceOf<T, I>;
 }
