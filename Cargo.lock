@@ -1051,6 +1051,15 @@ name = "fc-traits-nonfungibles-helpers"
 version = "0.1.0"
 
 [[package]]
+name = "fc-traits-payments"
+version = "0.1.0"
+dependencies = [
+  "frame-support",
+  "parity-scale-codec",
+  "scale-info",
+]
+
+[[package]]
 name = "fc-traits-tracks"
 version = "0.1.0"
 dependencies = [

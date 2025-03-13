@@ -1,0 +1,20 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "fc-traits-payments"
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+codec.workspace = true
+scale-info.workspace = true
+frame-support.workspace = true
+
+[features]
+default = ["std"]
+std = [
+  "codec/std",
+  "scale-info/std",
+  "frame-support/std",
+]
