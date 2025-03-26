@@ -7,35 +7,27 @@ use frame_support::weights::Weight;
 pub use Mutate as PaymentMutate;
 
 /// Represents a payment.
-pub struct Payment<AccountId, Asset, Balance> {
+pub struct Payment<AccountId, Asset, Balance, Description> {
     beneficiary: AccountId,
     asset: Asset,
     amount: Balance,
-    remark: Option<Vec<u8>>,
-    charge_type: ChargeType<Balance>,
+    description: Option<Description>,
 }
 
-pub enum ChargeType<Balance> {
-    /// The payment is a single charge
-    Single,
-    /// The payment is a recurring charge. A maximum amount is authorized.
-    Recurring { max: Balance },
-}
-
-impl<AccountId, Asset, Balance: Copy> Payment<AccountId, Asset, Balance> {
+impl<AccountId, Asset, Balance: Copy, Description: Clone>
+    Payment<AccountId, Asset, Balance, Description>
+{
     pub fn new(
         beneficiary: AccountId,
         asset: Asset,
         amount: Balance,
-        remark: Option<Vec<u8>>,
-        charge_type: ChargeType<Balance>,
+        description: Option<Description>,
     ) -> Self {
         Self {
             beneficiary,
             asset,
             amount,
-            remark,
-            charge_type,
+            description,
         }
     }
 
@@ -51,16 +43,8 @@ impl<AccountId, Asset, Balance: Copy> Payment<AccountId, Asset, Balance> {
         self.amount
     }
 
-    pub fn remark(&self) -> Option<Vec<u8>> {
-        self.remark.clone()
-    }
-
-    pub fn status(&self) -> Option<Vec<u8>> {
-        self.remark.clone()
-    }
-
-    pub fn charge_type(&self) -> &ChargeType<Balance> {
-        &self.charge_type
+    pub fn description(&self) -> Option<Description> {
+        self.description.clone()
     }
 }
 
@@ -68,9 +52,12 @@ pub trait Inspect<AccountId> {
     type Id;
     type AssetId;
     type Balance;
+    type Description;
 
     /// Given an `Id`, returns the details of a payment.
-    fn details(id: Self::AssetId) -> Payment<AccountId, Self::AssetId, Self::Balance>;
+    fn details(
+        id: Self::AssetId,
+    ) -> Payment<AccountId, Self::AssetId, Self::Balance, Self::Description>;
 }
 
 pub trait Mutate<AccountId>: Inspect<AccountId> {
