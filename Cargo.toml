@@ -33,6 +33,7 @@ frame-system = { git = "https://github.com/virto-network/polkadot-sdk", branch =
 
 sp-core = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 sp-io = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
+sp-keystore = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 sp-runtime = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 sp-std = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 
@@ -53,6 +54,7 @@ members = [
   "pallets/gas-transaction-payment",
   "pallets/listings",
   "pallets/pass",
+  "pallets/payments",
   "pallets/referenda-tracks",
   "pallets/template",
   "traits",
