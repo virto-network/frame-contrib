@@ -71,6 +71,18 @@ fn build_payment(assert_payment_creation: bool) -> Fees<Test> {
         );
     }
 
+    assert_eq!(
+        Hooks::get(),
+        vec![
+            PaymentStatusHooks::Created(PaymentId(1)),
+            PaymentStatusHooks::Charged(
+                PaymentId(1),
+                SYSTEM_FEE + FEE_BENEFICIARY_AMOUNT,
+                PAYMENT_AMOUNT - (SYSTEM_FEE + FEE_BENEFICIARY_AMOUNT),
+            ),
+        ],
+    );
+
     fees_details
 }
 
@@ -126,6 +138,15 @@ fn test_pay_and_release_works() {
             PAYMENT_ID
         ));
 
+        assert_eq!(
+            Hooks::get().last(),
+            Some(&PaymentStatusHooks::Released(
+                PaymentId(1),
+                SYSTEM_FEE + FEE_BENEFICIARY_AMOUNT,
+                PAYMENT_AMOUNT - (SYSTEM_FEE + FEE_BENEFICIARY_AMOUNT),
+            ))
+        );
+
         System::assert_has_event(RuntimeEvent::Payments(Event::PaymentReleased {
             payment_id: PAYMENT_ID,
         }));
@@ -179,6 +200,11 @@ fn test_pay_and_cancel_works() {
             RuntimeOrigin::signed(PAYMENT_BENEFICIARY),
             PAYMENT_ID
         ));
+
+        assert_eq!(
+            Hooks::get().last(),
+            Some(&PaymentStatusHooks::Cancelled(PaymentId(1)))
+        );
 
         System::assert_has_event(RuntimeEvent::Payments(Event::PaymentCancelled {
             payment_id: PAYMENT_ID,
@@ -292,6 +318,7 @@ fn payment_disputed_beneficiary_wins() {
     new_test_ext().execute_with(|| {
         const EXPECTED_BALANCE_SENDER: u64 = 77;
         const EXPECTED_BALANCE_BENEFICIARY: u64 = 25;
+        const EXPECTED_BENEFICIARY_RECEIVED_AMOUNT: u64 = 17;
 
         let _ = Assets::mint(
             RuntimeOrigin::signed(ASSET_ADMIN_ACCOUNT),
@@ -336,6 +363,15 @@ fn payment_disputed_beneficiary_wins() {
                 in_favor_of: Role::Beneficiary
             }
         ));
+
+        assert_eq!(
+            Hooks::get().last(),
+            Some(&PaymentStatusHooks::Released(
+                PaymentId(1),
+                SYSTEM_FEE + FEE_BENEFICIARY_AMOUNT,
+                EXPECTED_BENEFICIARY_RECEIVED_AMOUNT,
+            ))
+        );
 
         assert_eq!(
             <Assets as fungibles::Inspect<_>>::balance(ASSET_ID, &SENDER_ACCOUNT),

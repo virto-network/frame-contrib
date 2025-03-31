@@ -1,5 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 use frame_system::pallet_prelude::BlockNumberFor;
 /// Edit this file to define custom logic or remove it if it is not needed.
 /// Learn more about FRAME and the core library of Substrate FRAME pallets:
@@ -18,6 +20,8 @@ mod tests;
 pub use codec::{Decode, Encode, MaxEncodedLen};
 use sp_io::hashing::blake2_256;
 
+use alloc::vec::Vec;
+use fc_traits_payments::OnPaymentStatusChanged;
 use frame_support::{
     dispatch::{GetDispatchInfo, PostDispatchInfo},
     ensure, fail,
@@ -36,16 +40,17 @@ use frame_support::{
         Bounded, CallerTrait, QueryPreimage, StorePreimage,
     },
 };
-use sp_std::vec::Vec;
+use sp_runtime::{
+    traits::{CheckedAdd, CheckedSub, Dispatchable, StaticLookup},
+    ArithmeticError, DispatchError, DispatchResult, Percent, Saturating,
+};
 
 pub mod weights;
-use sp_runtime::{
-    traits::{CheckedAdd, Dispatchable, StaticLookup},
-    DispatchError, DispatchResult, Percent, Saturating,
-};
 pub use weights::*;
 
+mod impls;
 pub mod types;
+
 pub use types::*;
 
 pub trait PaymentId<T: frame_system::Config>: Copy + Clone {
@@ -62,15 +67,14 @@ pub mod pallet {
     };
     use frame_system::pallet_prelude::*;
 
-    use sp_runtime::{traits::Get, Percent};
+    use sp_runtime::{traits::Get, ArithmeticError, Percent};
 
     #[cfg(feature = "runtime-benchmarks")]
-    pub trait BenchmarkHelper<AccountId, AssetId, Balance> {
-        fn create_asset(id: AssetId, admin: AccountId, is_sufficient: bool, min_balance: Balance);
-    }
+    use frame_support::traits::fungibles::Create as FunCreate;
 
     #[pallet::config]
     pub trait Config: frame_system::Config {
+        /// The overarching event type
         type RuntimeEvent: TryInto<Event<Self>>
             + From<Event<Self>>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>;
@@ -80,18 +84,33 @@ pub mod pallet {
             + CallerTrait<Self::AccountId>
             + MaxEncodedLen;
 
-        /// The aggregated call type.
+        /// The overarching call type.
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>
             + GetDispatchInfo
             + From<Call<Self>>;
 
+        #[cfg(not(feature = "runtime-benchmarks"))]
+        /// Currency type that this works on.
+        type Assets: FunInspect<Self::AccountId, Balance=Self::AssetsBalance>
+        + FunMutate<Self::AccountId>
+        + FunBalanced<Self::AccountId>
+        + FunsInspect<Self::AccountId>;
+
+        #[cfg(feature = "runtime-benchmarks")]
         /// Currency type that this works on.
         type Assets: FunInspect<Self::AccountId, Balance = Self::AssetsBalance>
+        + FunCreate<Self::AccountId>
             + FunMutate<Self::AccountId>
             + FunBalanced<Self::AccountId>
-            + FunHoldMutate<Self::AccountId, Reason = Self::RuntimeHoldReason>
             + FunsInspect<Self::AccountId>;
+
+        type AssetsHold: FunHoldMutate<
+            Self::AccountId,
+            AssetId=AssetIdOf<Self>,
+            Balance=BalanceOf<Self>,
+            Reason=Self::RuntimeHoldReason,
+        >;
 
         /// Just the `Currency::Balance` type; we have this item to allow us to
         /// constrain it to `From<u64>`.
@@ -99,7 +118,7 @@ pub mod pallet {
             + codec::FullCodec
             + Copy
             + MaybeSerializeDeserialize
-            + sp_std::fmt::Debug
+        + core::fmt::Debug
             + Default
             + TypeInfo
             + MaxEncodedLen;
@@ -130,6 +149,9 @@ pub mod pallet {
         /// Weight information for extrinsics in this pallet.
         type WeightInfo: WeightInfo;
 
+        /// A hook that
+        type OnPaymentStatusChanged: OnPaymentStatusChanged<Self::PaymentId, BalanceOf<Self>>;
+
         #[pallet::constant]
         type PalletId: Get<PalletId>;
 
@@ -149,16 +171,12 @@ pub mod pallet {
         /// canceled payment
         #[pallet::constant]
         type CancelBufferBlockLength: Get<BlockNumberFor<Self>>;
-
-        #[cfg(feature = "runtime-benchmarks")]
-        type BenchmarkHelper: BenchmarkHelper<AccountIdOf<Self>, AssetIdOf<Self>, BalanceOf<Self>>;
     }
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
     #[pallet::storage]
-    #[pallet::getter(fn payment)]
     /// Payments created by a user, this method of storageDoubleMap is chosen
     /// since there is no usecase for listing payments by provider/currency. The
     /// payment will only be referenced by the creator in any transaction of
@@ -263,11 +281,10 @@ pub mod pallet {
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         /// This allows any user to create a new payment, that releases only to
-        /// specified recipient The only action is to store the details of this
+        /// specified recipient. The only action is to store the details of this
         /// payment in storage and reserve the specified amount. User also has
         /// the option to add a remark, this remark can then be used to run
-        /// custom logic and trigger alternate payment flows. the specified
-        /// amount.
+        /// custom logic and trigger alternate payment flows.
         #[pallet::call_index(0)]
         #[pallet::weight(<T as Config>::WeightInfo::pay(remark.as_ref().map(|x| x.len() as u32).unwrap_or(0))
 		)]
@@ -282,7 +299,7 @@ pub mod pallet {
             let beneficiary = T::Lookup::lookup(beneficiary)?;
 
             // create PaymentDetail and add to storage
-            let (payment_id, payment_detail) = Self::create_payment(
+            let (payment_id, payment_detail) = Self::do_create_payment(
                 &sender,
                 beneficiary,
                 asset.clone(),
@@ -293,14 +310,35 @@ pub mod pallet {
             )?;
 
             // reserve funds for payment
-            Self::reserve_payment_amount(&sender, payment_detail)?;
-            // emit paymentcreated event
+            Self::reserve_payment_amount(&sender, &payment_detail)?;
+
+            let (_, total_beneficiary_fee_amount_mandatory, total_beneficiary_fee_amount_optional) =
+                payment_detail.fees.summary_for(Role::Beneficiary, false)?;
+
+            let fees = total_beneficiary_fee_amount_mandatory
+                .checked_add(&total_beneficiary_fee_amount_optional)
+                .ok_or(DispatchError::Arithmetic(ArithmeticError::Overflow))?;
+
+            let beneficiary_amount = payment_detail
+                .amount
+                .checked_sub(&fees)
+                .ok_or(DispatchError::Arithmetic(ArithmeticError::Underflow))?;
+
+            // notify external systems about payment success
+            T::OnPaymentStatusChanged::on_payment_charge_success(
+                &payment_id,
+                fees,
+                beneficiary_amount,
+            );
+
+            // emit `PaymentCreated` event
             Self::deposit_event(Event::PaymentCreated {
                 payment_id,
                 asset,
                 amount,
                 remark,
             });
+
             Ok(().into())
         }
 
@@ -322,6 +360,20 @@ pub mod pallet {
                 Error::<T>::InvalidAction
             );
             Self::settle_payment(&sender, &payment.beneficiary, &payment_id, None)?;
+
+            let (_, total_beneficiary_fee_amount_mandatory, total_beneficiary_fee_amount_optional) =
+                payment.fees.summary_for(Role::Beneficiary, false)?;
+
+            let fees = total_beneficiary_fee_amount_mandatory
+                .checked_add(&total_beneficiary_fee_amount_optional)
+                .ok_or(DispatchError::Arithmetic(ArithmeticError::Overflow))?;
+
+            let beneficiary_amount = payment
+                .amount
+                .checked_sub(&fees)
+                .ok_or(DispatchError::Arithmetic(ArithmeticError::Underflow))?;
+
+            T::OnPaymentStatusChanged::on_payment_released(&payment_id, fees, beneficiary_amount);
 
             Self::deposit_event(Event::PaymentReleased { payment_id });
             Ok(().into())
@@ -407,8 +459,8 @@ pub mod pallet {
 
                     let (
                         fee_beneficiary_recipients,
-                        _total_beneficiary_fee_amount_mandatory,
-                        _total_beneficiary_fee_amount_optional,
+                        total_beneficiary_fee_amount_mandatory,
+                        total_beneficiary_fee_amount_optional,
                     ) = payment.fees.summary_for(Role::Beneficiary, IS_DISPUTE)?;
 
                     Self::try_transfer_fees(&sender, payment, fee_sender_recipients, IS_DISPUTE)?;
@@ -430,6 +482,28 @@ pub mod pallet {
                     )?;
 
                     payment.state = PaymentState::Finished;
+
+                    let fees = total_beneficiary_fee_amount_mandatory
+                        .checked_add(&total_beneficiary_fee_amount_optional)
+                        .ok_or(DispatchError::Arithmetic(ArithmeticError::Overflow))?;
+
+                    let beneficiary_amount = payment
+                        .amount
+                        .checked_sub(&fees)
+                        .ok_or(DispatchError::Arithmetic(ArithmeticError::Underflow))?;
+
+                    // notify external systems about payment success
+                    T::OnPaymentStatusChanged::on_payment_charge_success(
+                        &payment_id,
+                        fees,
+                        beneficiary_amount,
+                    );
+                    T::OnPaymentStatusChanged::on_payment_released(
+                        &payment_id,
+                        fees,
+                        beneficiary_amount,
+                    );
+
                     Ok(())
                 },
             )?;
@@ -465,6 +539,8 @@ pub mod pallet {
                 }
                 _ => fail!(Error::<T>::InvalidAction),
             }
+
+            T::OnPaymentStatusChanged::on_payment_cancelled(&payment_id);
 
             Payment::<T>::remove(&sender, &payment_id);
             PaymentParties::<T>::remove(payment_id);
@@ -507,7 +583,7 @@ pub mod pallet {
                     // Hold beneficiary incentive amount to balance the incentives at the time to
                     // resolve the dispute
                     let reason = &HoldReason::TransferPayment.into();
-                    T::Assets::hold(
+                    T::AssetsHold::hold(
                         payment.asset.clone(),
                         reason,
                         &beneficiary,
@@ -540,7 +616,7 @@ pub mod pallet {
             let beneficiary = T::BeneficiaryOrigin::ensure_origin(origin)?;
             let sender = T::Lookup::lookup(sender)?;
             // create PaymentDetail and add to storage
-            let (payment_id, _) = Self::create_payment(
+            let (payment_id, _) = Self::do_create_payment(
                 &sender,
                 beneficiary,
                 asset,
@@ -586,7 +662,7 @@ impl<T: Config> Pallet<T> {
     /// amounts will be calculated and the `PaymentDetail` will be added to
     /// storage.
     #[allow(clippy::too_many_arguments)]
-    fn create_payment(
+    fn do_create_payment(
         sender: &T::AccountId,
         beneficiary: T::AccountId,
         asset: AssetIdOf<T>,
@@ -624,13 +700,15 @@ impl<T: Config> Pallet<T> {
                 *maybe_payment = Ok(new_payment.clone());
                 PaymentParties::<T>::insert(payment_id, (sender, beneficiary));
 
+                T::OnPaymentStatusChanged::on_payment_created(&payment_id);
+
                 Ok(new_payment)
             },
         )
         .map(|payment| (payment_id, payment))
     }
 
-    fn reserve_payment_amount(sender: &T::AccountId, payment: PaymentDetail<T>) -> DispatchResult {
+    fn reserve_payment_amount(sender: &T::AccountId, payment: &PaymentDetail<T>) -> DispatchResult {
         let (_fee_recipients, total_fee_from_sender_mandatory, total_fee_from_sender_optional) =
             payment.fees.summary_for(Role::Sender, false)?;
 
@@ -638,10 +716,10 @@ impl<T: Config> Pallet<T> {
             .saturating_add(payment.incentive_amount)
             .saturating_add(total_fee_from_sender_optional);
         let reason = &HoldReason::TransferPayment.into();
-        T::Assets::hold(payment.asset.clone(), reason, sender, total_hold_amount)?;
+        T::AssetsHold::hold(payment.asset.clone(), reason, sender, total_hold_amount)?;
 
-        T::Assets::transfer_and_hold(
-            payment.asset,
+        T::AssetsHold::transfer_and_hold(
+            payment.asset.clone(),
             reason,
             sender,
             &payment.beneficiary,
@@ -663,7 +741,7 @@ impl<T: Config> Pallet<T> {
             .saturating_add(total_fee_from_sender_optional);
         let reason = &HoldReason::TransferPayment.into();
 
-        T::Assets::release(
+        T::AssetsHold::release(
             payment.asset.clone(),
             reason,
             sender,
@@ -673,7 +751,7 @@ impl<T: Config> Pallet<T> {
         .map_err(|_| Error::<T>::ReleaseFailed)?;
 
         let beneficiary = &payment.beneficiary;
-        T::Assets::release(
+        T::AssetsHold::release(
             payment.asset.clone(),
             reason,
             beneficiary,
@@ -719,7 +797,7 @@ impl<T: Config> Pallet<T> {
                 .saturating_add(payment.incentive_amount)
                 .saturating_add(total_sender_fee_amount_optional);
 
-            T::Assets::release(
+            T::AssetsHold::release(
                 payment.asset.clone(),
                 reason,
                 sender,
@@ -730,8 +808,8 @@ impl<T: Config> Pallet<T> {
 
             let (
                 fee_beneficiary_recipients,
-                _total_beneficiary_fee_amount_mandatory,
-                _total_beneficiary_fee_amount_optional,
+                total_beneficiary_fee_amount_mandatory,
+                total_beneficiary_fee_amount_optional,
             ) = payment.fees.summary_for(Role::Beneficiary, is_dispute)?;
 
             let mut beneficiary_release_amount = payment.amount;
@@ -741,7 +819,7 @@ impl<T: Config> Pallet<T> {
                     beneficiary_release_amount.saturating_add(payment.incentive_amount);
             }
 
-            T::Assets::release(
+            T::AssetsHold::release(
                 payment.asset.clone(),
                 reason,
                 beneficiary,
@@ -802,6 +880,20 @@ impl<T: Config> Pallet<T> {
                             Expendable,
                         )
                         .map_err(|_| Error::<T>::TransferFailed)?;
+
+                        let fees = total_beneficiary_fee_amount_mandatory
+                            .checked_add(&total_beneficiary_fee_amount_optional)
+                            .ok_or(DispatchError::Arithmetic(ArithmeticError::Overflow))?;
+
+                        T::OnPaymentStatusChanged::on_payment_released(
+                            payment_id,
+                            fees,
+                            amount_to_beneficiary
+                                .checked_add(&payment.incentive_amount)
+                                .ok_or(DispatchError::Arithmetic(ArithmeticError::Underflow))?
+                                .checked_sub(&total_beneficiary_fee_amount_mandatory)
+                                .ok_or(DispatchError::Arithmetic(ArithmeticError::Underflow))?,
+                        );
                     }
                 }
             }
@@ -816,7 +908,7 @@ impl<T: Config> Pallet<T> {
         payment: &PaymentDetail<T>,
         fee_recipients: Vec<Fee<T>>,
         is_dispute: bool,
-    ) -> Result<(), sp_runtime::DispatchError> {
+    ) -> DispatchResult {
         for (recipient_account, fee_amount, mandatory) in fee_recipients.iter() {
             if !is_dispute || *mandatory {
                 T::Assets::transfer(

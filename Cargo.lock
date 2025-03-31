@@ -955,6 +955,7 @@ dependencies = [
 name = "fc-pallet-payments"
 version = "0.1.0"
 dependencies = [
+ "fc-traits-payments",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
@@ -970,7 +971,6 @@ dependencies = [
  "sp-io",
  "sp-keystore",
  "sp-runtime",
- "sp-std",
 ]
 
 [[package]]
@@ -1077,6 +1077,7 @@ name = "fc-traits-payments"
 version = "0.1.0"
 dependencies = [
  "frame-support",
+ "impl-trait-for-tuples",
  "parity-scale-codec",
  "scale-info",
 ]
@@ -1161,6 +1162,7 @@ dependencies = [
  "fc-traits-gas-tank",
  "fc-traits-listings",
  "fc-traits-memberships",
+ "fc-traits-payments",
  "fc-traits-tracks",
 ]
 

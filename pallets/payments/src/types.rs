@@ -5,7 +5,7 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use frame_system::pallet_prelude::BlockNumberFor;
 use scale_info::TypeInfo;
 use sp_runtime::{traits::Zero, BoundedVec, Percent, Saturating};
-use sp_std::{collections::btree_map::BTreeMap, vec::Vec};
+use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 
 // This pallet's asset id and balance type.
 pub type AssetIdOf<T> =
