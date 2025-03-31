@@ -92,24 +92,24 @@ pub mod pallet {
 
         #[cfg(not(feature = "runtime-benchmarks"))]
         /// Currency type that this works on.
-        type Assets: FunInspect<Self::AccountId, Balance=Self::AssetsBalance>
-        + FunMutate<Self::AccountId>
-        + FunBalanced<Self::AccountId>
-        + FunsInspect<Self::AccountId>;
+        type Assets: FunInspect<Self::AccountId, Balance = Self::AssetsBalance>
+            + FunMutate<Self::AccountId>
+            + FunBalanced<Self::AccountId>
+            + FunsInspect<Self::AccountId>;
 
         #[cfg(feature = "runtime-benchmarks")]
         /// Currency type that this works on.
         type Assets: FunInspect<Self::AccountId, Balance = Self::AssetsBalance>
-        + FunCreate<Self::AccountId>
+            + FunCreate<Self::AccountId>
             + FunMutate<Self::AccountId>
             + FunBalanced<Self::AccountId>
             + FunsInspect<Self::AccountId>;
 
         type AssetsHold: FunHoldMutate<
             Self::AccountId,
-            AssetId=AssetIdOf<Self>,
-            Balance=BalanceOf<Self>,
-            Reason=Self::RuntimeHoldReason,
+            AssetId = AssetIdOf<Self>,
+            Balance = BalanceOf<Self>,
+            Reason = Self::RuntimeHoldReason,
         >;
 
         /// Just the `Currency::Balance` type; we have this item to allow us to
@@ -118,7 +118,7 @@ pub mod pallet {
             + codec::FullCodec
             + Copy
             + MaybeSerializeDeserialize
-        + core::fmt::Debug
+            + core::fmt::Debug
             + Default
             + TypeInfo
             + MaxEncodedLen;
