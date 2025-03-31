@@ -10,6 +10,7 @@ version = "0.1.0"
 codec.workspace = true
 scale-info.workspace = true
 frame-support.workspace = true
+impl-trait-for-tuples.workspace = true
 
 [features]
 default = ["std"]

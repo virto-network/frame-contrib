@@ -7,16 +7,19 @@ repository.workspace = true
 version = "0.1.0"
 
 [dependencies]
-codec .workspace = true
-scale-info .workspace = true
-frame-support .workspace = true
-pallet-referenda .workspace = true
+codec.workspace = true
+scale-info.workspace = true
+frame-support.workspace = true
+pallet-referenda.workspace = true
 
 [features]
 default = ["std"]
 std = [
-	"codec/std",
-	"scale-info/std",
-	"frame-support/std",
-	"pallet-referenda/std",
+  "codec/std",
+  "scale-info/std",
+  "frame-support/std",
+  "pallet-referenda/std",
+]
+runtime-benchmarks = [
+  "pallet-referenda/runtime-benchmarks"
 ]

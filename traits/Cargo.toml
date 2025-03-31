@@ -11,6 +11,7 @@ fc-traits-authn.workspace = true
 fc-traits-gas-tank.workspace = true
 fc-traits-listings.workspace = true
 fc-traits-memberships.workspace = true
+fc-traits-payments.workspace = true
 fc-traits-tracks.workspace = true
 
 [features]
@@ -20,6 +21,7 @@ std = [
   "fc-traits-gas-tank/std",
   "fc-traits-listings/std",
   "fc-traits-memberships/std",
+  "fc-traits-payments/std",
   "fc-traits-tracks/std",
 ]
 runtime-benchmarks = [

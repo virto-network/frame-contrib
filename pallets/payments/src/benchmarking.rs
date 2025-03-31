@@ -1,20 +1,16 @@
 use super::*;
 #[allow(unused)]
 use crate::{types::*, Pallet as Payments};
+use alloc::vec;
 use frame_benchmarking::{account, v2::*};
+use frame_support::traits::fungibles::Create;
 use frame_support::{
     assert_ok,
-    traits::{
-        fungibles::{Inspect, Mutate},
-        Get,
-    },
+    traits::{fungibles::Mutate, Get},
     BoundedVec,
 };
-
 use frame_system::RawOrigin;
-use log;
 use sp_runtime::Percent;
-use sp_std::vec;
 
 macro_rules! assert_has_event {
 	($patt:pat $(if $guard:expr)?) => {
@@ -39,12 +35,21 @@ fn create_accounts<T: Config>() -> (
     (sender, beneficiary, sender_lookup, beneficiary_lookup)
 }
 
+fn create_asset<T: Config>(
+    id: AssetIdOf<T>,
+    admin: AccountIdOf<T>,
+    is_sufficient: bool,
+    min_balance: BalanceOf<T>,
+) {
+    T::Assets::create(id, admin, is_sufficient, min_balance).unwrap();
+}
+
 fn create_and_mint_asset<T: Config>(
     sender: &T::AccountId,
     beneficiary: &T::AccountId,
     asset: &AssetIdOf<T>,
 ) -> Result<(), BenchmarkError> {
-    T::BenchmarkHelper::create_asset(
+    create_asset::<T>(
         asset.clone(),
         sender.clone(),
         true,
@@ -77,7 +82,7 @@ fn create_payment<T: Config>(
     let (sender, beneficiary, sender_lookup, beneficiary_lookup) = create_accounts::<T>();
     create_and_mint_asset::<T>(&sender, &beneficiary, &asset)?;
 
-    let (payment_id, payment_detail) = Payments::<T>::create_payment(
+    let (payment_id, payment_detail) = Payments::<T>::do_create_payment(
         &sender,
         beneficiary.clone(),
         asset.clone(),
@@ -88,7 +93,7 @@ fn create_payment<T: Config>(
     )?;
 
     // reserve funds for payment
-    Payments::<T>::reserve_payment_amount(&sender, payment_detail)?;
+    Payments::<T>::reserve_payment_amount(&sender, &payment_detail)?;
 
     log::info!("reserve_payment_amount executed");
 
@@ -104,8 +109,8 @@ fn create_payment<T: Config>(
 }
 
 #[benchmarks(
-	where
-		<<T as Config>::Assets as Inspect<<T as frame_system::Config>::AccountId>>::AssetId: Default,
+where
+    AssetIdOf<T>: Default,
 )]
 mod benchmarks {
     use super::*;
@@ -260,7 +265,7 @@ mod benchmarks {
         create_and_mint_asset::<T>(&sender, &beneficiary, &asset)?;
         let amount = <BalanceOf<T>>::from(100000_u32);
 
-        let (payment_id, _) = Payments::<T>::create_payment(
+        let (payment_id, _) = Payments::<T>::do_create_payment(
             &sender,
             beneficiary,
             asset.clone(),

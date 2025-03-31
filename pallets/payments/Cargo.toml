@@ -11,10 +11,10 @@ version = "0.1.0"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
+fc-traits-payments = { workspace = true }
 codec = { workspace = true, features = ["derive"] }
 scale-info.workspace = true
 sp-runtime.workspace = true
-sp-std.workspace = true
 sp-core.workspace = true
 sp-io.workspace = true
 frame-support.workspace = true
@@ -44,6 +44,7 @@ runtime-benchmarks = [
 ]
 std = [
   "frame-benchmarking/std",
+  "fc-traits-payments/std",
   "frame-support/std",
   "frame-system/std",
   "log/std",
@@ -58,7 +59,6 @@ std = [
   "sp-io/std",
   "sp-keystore/std",
   "sp-runtime/std",
-  "sp-std/std",
 ]
 try-runtime = [
   "frame-support/try-runtime",

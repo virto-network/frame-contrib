@@ -184,18 +184,51 @@ impl crate::types::FeeHandler<Test> for MockFeeHandler {
     }
 }
 
-#[cfg(feature = "runtime-benchmarks")]
-pub struct BenchmarkHelper;
-#[cfg(feature = "runtime-benchmarks")]
-impl super::BenchmarkHelper<AccountId, AssetId, Balance> for BenchmarkHelper {
-    fn create_asset(id: AssetId, admin: AccountId, is_sufficient: bool, min_balance: Balance) {
-        <Assets as frame_support::traits::tokens::fungibles::Create<AccountId>>::create(
-            id,
-            admin,
-            is_sufficient,
-            min_balance,
-        )
-        .unwrap();
+#[derive(Encode, Decode, PartialEq, Debug)]
+pub enum PaymentStatusHooks {
+    Created(PaymentId),
+    Charged(PaymentId, Balance, Balance),
+    Released(PaymentId, Balance, Balance),
+    Cancelled(PaymentId),
+}
+
+parameter_types! {
+    pub storage Hooks: Vec<PaymentStatusHooks> = vec![];
+}
+
+pub struct OnPaymentStatusHooks;
+
+impl fc_traits_payments::OnPaymentStatusChanged<PaymentId, Balance> for OnPaymentStatusHooks {
+    fn on_payment_created(id: &PaymentId) {
+        let mut hooks = Hooks::get();
+        hooks.push(PaymentStatusHooks::Created(id.clone()));
+        Hooks::set(&hooks);
+    }
+
+    fn on_payment_charge_success(id: &PaymentId, fees: Balance, resulting_amount: Balance) {
+        let mut hooks = Hooks::get();
+        hooks.push(PaymentStatusHooks::Charged(
+            id.clone(),
+            fees,
+            resulting_amount,
+        ));
+        Hooks::set(&hooks);
+    }
+
+    fn on_payment_cancelled(_id: &PaymentId) {
+        let mut hooks = Hooks::get();
+        hooks.push(PaymentStatusHooks::Cancelled(_id.clone()));
+        Hooks::set(&hooks);
+    }
+
+    fn on_payment_released(id: &PaymentId, fees: Balance, resulting_amount: Balance) {
+        let mut hooks = Hooks::get();
+        hooks.push(PaymentStatusHooks::Released(
+            id.clone(),
+            fees,
+            resulting_amount,
+        ));
+        Hooks::set(&hooks);
     }
 }
 
@@ -207,27 +240,27 @@ parameter_types! {
 
 impl Config for Test {
     type RuntimeEvent = RuntimeEvent;
+    type PalletsOrigin = OriginCaller;
+    type RuntimeCall = RuntimeCall;
     type Assets = Assets;
+    type AssetsHold = Assets;
     type AssetsBalance = u64;
-    type PaymentId = PaymentId;
     type FeeHandler = MockFeeHandler;
-    type IncentivePercentage = IncentivePercentage;
-    type MaxRemarkLength = MaxRemarkLength;
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;
     type DisputeResolver = frame_system::EnsureRootWithSuccess<u64, ConstU64<ROOT_ACCOUNT>>;
-    type PalletId = PaymentPalletId;
-    type RuntimeHoldReason = RuntimeHoldReason;
-    type MaxDiscounts = ConstU32<50>;
-    type MaxFees = ConstU32<50>;
-    type RuntimeCall = RuntimeCall;
+    type PaymentId = PaymentId;
     type Scheduler = Scheduler;
     type Preimages = ();
-    type CancelBufferBlockLength = ConstU64<10>;
-    type PalletsOrigin = OriginCaller;
+    type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = ();
-    #[cfg(feature = "runtime-benchmarks")]
-    type BenchmarkHelper = BenchmarkHelper;
+    type OnPaymentStatusChanged = OnPaymentStatusHooks;
+    type PalletId = PaymentPalletId;
+    type IncentivePercentage = IncentivePercentage;
+    type MaxRemarkLength = MaxRemarkLength;
+    type MaxFees = ConstU32<50>;
+    type MaxDiscounts = ConstU32<50>;
+    type CancelBufferBlockLength = ConstU64<10>;
 }
 
 // Build genesis storage according to the mock runtime.

@@ -18,6 +18,7 @@ serde = { version = "1.0.203" }
 syn = { version = "2" }
 quote = { version = "1" }
 
+frame-contrib-traits = { path = "./traits", default-features = false }
 fc-traits-authn = { path = "./traits/authn", default-features = false }
 fc-traits-authn-proc = { path = "./traits/authn/proc", default-features = false }
 fc-traits-gas-tank = { path = "./traits/gas-tank", default-features = false }
