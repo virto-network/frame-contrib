@@ -139,7 +139,8 @@ mod benchmarks {
 
         assert_has_event!(
             Event::PaymentCreated { asset, amount, remark, .. }
-            if asset == asset_id && amount == payment_amount && remark == order_remark
+            if asset == asset_id && amount == payment_amount &&
+                remark == order_remark.as_ref().map(|r| BoundedVec::truncate_from(r.encode()))
         );
         Ok(())
     }

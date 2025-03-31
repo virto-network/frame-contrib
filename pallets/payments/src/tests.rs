@@ -38,7 +38,7 @@ fn build_payment(assert_payment_creation: bool) -> Fees<Test> {
             payment_id: PaymentId(1),
             asset: ASSET_ID,
             amount: PAYMENT_AMOUNT,
-            remark: Some(remark.clone()),
+            remark: Some(BoundedVec::truncate_from(remark.clone().encode())),
         }));
 
         assert_eq!(

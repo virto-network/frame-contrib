@@ -21,7 +21,7 @@ pub use codec::{Decode, Encode, MaxEncodedLen};
 use sp_io::hashing::blake2_256;
 
 use alloc::vec::Vec;
-use fc_traits_payments::OnPaymentStatusChanged;
+use fc_traits_payments::{OnPaymentStatusChanged, PaymentMutate};
 use frame_support::{
     dispatch::{GetDispatchInfo, PostDispatchInfo},
     ensure, fail,
@@ -298,46 +298,7 @@ pub mod pallet {
             let sender = T::SenderOrigin::ensure_origin(origin)?;
             let beneficiary = T::Lookup::lookup(beneficiary)?;
 
-            // create PaymentDetail and add to storage
-            let (payment_id, payment_detail) = Self::do_create_payment(
-                &sender,
-                beneficiary,
-                asset.clone(),
-                amount,
-                PaymentState::Created,
-                T::IncentivePercentage::get(),
-                remark.as_ref().map(|x| x.as_slice()),
-            )?;
-
-            // reserve funds for payment
-            Self::reserve_payment_amount(&sender, &payment_detail)?;
-
-            let (_, total_beneficiary_fee_amount_mandatory, total_beneficiary_fee_amount_optional) =
-                payment_detail.fees.summary_for(Role::Beneficiary, false)?;
-
-            let fees = total_beneficiary_fee_amount_mandatory
-                .checked_add(&total_beneficiary_fee_amount_optional)
-                .ok_or(DispatchError::Arithmetic(ArithmeticError::Overflow))?;
-
-            let beneficiary_amount = payment_detail
-                .amount
-                .checked_sub(&fees)
-                .ok_or(DispatchError::Arithmetic(ArithmeticError::Underflow))?;
-
-            // notify external systems about payment success
-            T::OnPaymentStatusChanged::on_payment_charge_success(
-                &payment_id,
-                fees,
-                beneficiary_amount,
-            );
-
-            // emit `PaymentCreated` event
-            Self::deposit_event(Event::PaymentCreated {
-                payment_id,
-                asset,
-                amount,
-                remark,
-            });
+            Self::create(&sender, asset, amount, &beneficiary, remark)?;
 
             Ok(().into())
         }
