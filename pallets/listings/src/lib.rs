@@ -106,13 +106,13 @@ pub mod pallet {
         type InventoryAdminOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, InventoryIdOf<Self, I>>;
 
         /// A type that represents the identification of a merchant.
-        type MerchantId: Parameter + Copy;
+        type MerchantId: Parameter + MaxEncodedLen + Copy;
 
         /// A type that represents the unique identification of an inventory from a merchant.
-        type InventoryId: Parameter + Copy;
+        type InventoryId: Parameter + MaxEncodedLen + Copy;
 
         /// A type that represents the SKU of an item.
-        type ItemSKU: Parameter + Copy;
+        type ItemSKU: Parameter + MaxEncodedLen + Copy;
 
         #[cfg(feature = "runtime-benchmarks")]
         /// Helper for executing pallet benchmarks

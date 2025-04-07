@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
-use codec::{Decode, Encode};
+use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::dispatch::DispatchResult;
+use frame_support::Parameter;
 use scale_info::TypeInfo;
 
 #[derive(Encode, Decode, PartialEq, Clone, Debug, TypeInfo)]
@@ -22,8 +23,8 @@ pub use {Inspect as InspectItem, Mutate as MutateItem};
 
 /// Methods for fetching information about a regular item from an inventory.
 pub trait Inspect<AccountId> {
-    type InventoryId;
-    type Id;
+    type InventoryId: Parameter + MaxEncodedLen;
+    type Id: Parameter + MaxEncodedLen;
     type Price;
 
     /// Returns an iterable list of the items published in an inventory.
