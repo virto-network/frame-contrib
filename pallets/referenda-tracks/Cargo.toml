@@ -41,6 +41,7 @@ runtime-benchmarks = [
 	"pallet-preimage/runtime-benchmarks",
 	"pallet-referenda/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
+  "fc-traits-tracks/runtime-benchmarks"
 ]
 std = [
 	"codec/std",
