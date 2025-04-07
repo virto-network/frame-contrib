@@ -54,6 +54,7 @@ resolver = "2"
 members = [
   "pallets/gas-transaction-payment",
   "pallets/listings",
+  "pallets/orders",
   "pallets/pass",
   "pallets/payments",
   "pallets/referenda-tracks",

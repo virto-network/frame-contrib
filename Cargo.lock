@@ -933,17 +933,17 @@ dependencies = [
 name = "fc-pallet-orders"
 version = "1.0.0"
 dependencies = [
-  "frame-benchmarking",
-  "frame-contrib-traits",
-  "frame-support",
-  "frame-system",
-  "pallet-balances",
-  "parity-scale-codec",
-  "scale-info",
-  "sp-core",
-  "sp-io",
-  "sp-runtime",
-  "sp-std",
+ "frame-benchmarking",
+ "frame-contrib-traits",
+ "frame-support",
+ "frame-system",
+ "pallet-balances",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
 ]
 
 [[package]]
