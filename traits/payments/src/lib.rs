@@ -3,7 +3,6 @@
 extern crate alloc;
 
 use codec::{Encode, MaxEncodedLen};
-use frame_support::pallet_prelude::Member;
 use frame_support::sp_runtime::DispatchError;
 use frame_support::traits::tokens::Balance;
 use frame_support::Parameter;
@@ -41,7 +40,7 @@ impl<AccountId, Asset, Balance: Copy> Payment<AccountId, Asset, Balance> {
 }
 
 pub trait Inspect<AccountId> {
-    type Id: Member + MaxEncodedLen;
+    type Id: Parameter + MaxEncodedLen;
     type AssetId: Parameter;
     type Balance: Balance;
 
