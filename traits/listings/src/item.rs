@@ -5,10 +5,16 @@ use frame_support::Parameter;
 use scale_info::TypeInfo;
 
 #[derive(Encode, Decode, PartialEq, Clone, Debug, TypeInfo)]
-pub struct Item<AccountId, Price> {
+pub struct Item<AccountId, Asset, Balance> {
     pub name: Vec<u8>,
     pub owner: AccountId,
-    pub price: Option<Price>,
+    pub price: Option<ItemPrice<Asset, Balance>>,
+}
+
+#[derive(Encode, Decode, PartialEq, Clone, Debug, TypeInfo, MaxEncodedLen)]
+pub struct ItemPrice<Asset, Balance> {
+    pub asset: Asset,
+    pub amount: Balance,
 }
 
 pub type IdItemOf<T, AccountId> = (
@@ -16,7 +22,7 @@ pub type IdItemOf<T, AccountId> = (
         <T as Inspect<AccountId>>::InventoryId,
         <T as Inspect<AccountId>>::Id,
     ),
-    Item<AccountId, <T as Inspect<AccountId>>::Price>,
+    Item<AccountId, <T as Inspect<AccountId>>::Asset, <T as Inspect<AccountId>>::Balance>,
 );
 
 pub use {Inspect as InspectItem, Mutate as MutateItem};
@@ -25,7 +31,8 @@ pub use {Inspect as InspectItem, Mutate as MutateItem};
 pub trait Inspect<AccountId> {
     type InventoryId: Parameter + MaxEncodedLen;
     type Id: Parameter + MaxEncodedLen;
-    type Price;
+    type Asset: Parameter + MaxEncodedLen;
+    type Balance: frame_support::traits::tokens::Balance;
 
     /// Returns an iterable list of the items published in an inventory.
     fn items(inventory_id: &Self::InventoryId) -> impl Iterator<Item = IdItemOf<Self, AccountId>>;
@@ -37,7 +44,7 @@ pub trait Inspect<AccountId> {
     fn item(
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
-    ) -> Option<Item<AccountId, Self::Price>>;
+    ) -> Option<Item<AccountId, Self::Asset, Self::Balance>>;
 
     /// Returns an attribute associated to the item.
     fn attribute<K: Encode, V: Decode>(
@@ -59,15 +66,14 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
         name: Vec<u8>,
-        maybe_price: Option<Self::Price>,
+        maybe_price: Option<ItemPrice<Self::Asset, Self::Balance>>,
     ) -> DispatchResult;
 
-    /// Marks an existing item as whether it cannot be resold.
-    fn mark_not_for_resale(
-        inventory_id: &Self::InventoryId,
-        id: &Self::Id,
-        not_for_resale: bool,
-    ) -> DispatchResult;
+    /// Enables an existing item to be resold.
+    fn enable_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
+
+    /// Disables an existing item to be resold.
+    fn disable_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
 
     /// Marks an existing item as non-transferable
     fn mark_can_transfer(
@@ -76,11 +82,18 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
         can_tranfer: bool,
     ) -> DispatchResult;
 
+    /// Forcefully transfers an item, even though is disabled for transfer.
+    fn transfer(
+        inventory_id: &Self::InventoryId,
+        id: &Self::Id,
+        beneficiary: &AccountId,
+    ) -> DispatchResult;
+
     /// Sets the price on an existing item.
     fn set_price(
         inventory_id: &Self::InventoryId,
         id: &Self::Id,
-        price: Self::Price,
+        price: ItemPrice<Self::Asset, Self::Balance>,
     ) -> DispatchResult;
 
     /// Sets an arbitrary attribute on an existing item.
@@ -207,20 +220,27 @@ pub mod subscriptions {
         fn subscription_conditions(
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
-        ) -> Option<SubscriptionConditions<Self::Price, Self::Moment>>;
+        ) -> Option<SubscriptionConditions<ItemPrice<Self::Asset, Self::Balance>, Self::Moment>>;
 
         /// Retrieves the [Subscription] state for an item, if it has an active subscription.
         fn subscription(
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
-        ) -> Option<Subscription<Self::Price, Self::Moment>>;
+        ) -> Option<Subscription<ItemPrice<Self::Asset, Self::Balance>, Self::Moment>>;
 
         /// If a subscription termination has been disputed, retrieves the [TerminationDispute]
         /// information of such subscription item.
         fn dispute<Reason: AsRef<[u8]>>(
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
-        ) -> Option<SubscriptionTermination<AccountId, Self::Price, Self::Moment, Reason>>;
+        ) -> Option<
+            SubscriptionTermination<
+                AccountId,
+                ItemPrice<Self::Asset, Self::Balance>,
+                Self::Moment,
+                Reason,
+            >,
+        >;
     }
 
     /// Methods to modify the state of a subscription item.
@@ -230,14 +250,14 @@ pub mod subscriptions {
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
             name: Reason,
-            conditions: SubscriptionConditions<Self::Price, Self::Moment>,
+            conditions: SubscriptionConditions<ItemPrice<Self::Asset, Self::Balance>, Self::Moment>,
         ) -> DispatchResult;
 
         /// Set the [SubscriptionConditions] on an existing subscription item.
         fn set_conditions(
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
-            conditions: SubscriptionConditions<Self::Price, Self::Moment>,
+            conditions: SubscriptionConditions<ItemPrice<Self::Asset, Self::Balance>, Self::Moment>,
         ) -> DispatchResult;
 
         /// Activates a [Subscription], given an item that contains some [SubscriptionConditions].

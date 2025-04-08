@@ -356,7 +356,11 @@ pub mod pallet {
             Self::ensure_item_owned_by_creator(&inventory_id, &id)?;
             T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
 
-            Self::mark_not_for_resale(&inventory_id, &id, not_for_resale)?;
+            if not_for_resale {
+                Self::disable_resell(&inventory_id, &id)
+            } else {
+                Self::enable_resell(&inventory_id, &id)
+            }?;
 
             Self::deposit_event(Event::MarkNotForResale {
                 inventory_id,
