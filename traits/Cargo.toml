@@ -17,15 +17,15 @@ fc-traits-tracks.workspace = true
 [features]
 default = ["std"]
 std = [
-  "fc-traits-authn/std",
-  "fc-traits-gas-tank/std",
-  "fc-traits-listings/std",
-  "fc-traits-memberships/std",
-  "fc-traits-payments/std",
-  "fc-traits-tracks/std",
+	"fc-traits-authn/std",
+	"fc-traits-gas-tank/std",
+	"fc-traits-listings/std",
+	"fc-traits-memberships/std",
+	"fc-traits-payments/std",
+	"fc-traits-tracks/std",
 ]
 runtime-benchmarks = [
-  "fc-traits-gas-tank/runtime-benchmarks",
-  "fc-traits-memberships/runtime-benchmarks",
-  "fc-traits-tracks/runtime-benchmarks"
+	"fc-traits-gas-tank/runtime-benchmarks",
+	"fc-traits-memberships/runtime-benchmarks",
+	"fc-traits-tracks/runtime-benchmarks",
 ]
