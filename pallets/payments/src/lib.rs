@@ -92,14 +92,14 @@ pub mod pallet {
 
         #[cfg(not(feature = "runtime-benchmarks"))]
         /// Currency type that this works on.
-        type Assets: FunInspect<Self::AccountId, Balance = Self::AssetsBalance>
+        type Assets: FunInspect<Self::AccountId>
             + FunMutate<Self::AccountId>
             + FunBalanced<Self::AccountId>
             + FunsInspect<Self::AccountId>;
 
         #[cfg(feature = "runtime-benchmarks")]
         /// Currency type that this works on.
-        type Assets: FunInspect<Self::AccountId, Balance = Self::AssetsBalance>
+        type Assets: FunInspect<Self::AccountId>
             + FunCreate<Self::AccountId>
             + FunMutate<Self::AccountId>
             + FunBalanced<Self::AccountId>
@@ -111,17 +111,6 @@ pub mod pallet {
             Balance = BalanceOf<Self>,
             Reason = Self::RuntimeHoldReason,
         >;
-
-        /// Just the `Currency::Balance` type; we have this item to allow us to
-        /// constrain it to `From<u64>`.
-        type AssetsBalance: sp_runtime::traits::AtLeast32BitUnsigned
-            + codec::FullCodec
-            + Copy
-            + MaybeSerializeDeserialize
-            + core::fmt::Debug
-            + Default
-            + TypeInfo
-            + MaxEncodedLen;
 
         type FeeHandler: FeeHandler<Self>;
 

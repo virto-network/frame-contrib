@@ -68,7 +68,8 @@ mod item {
     impl<T: Config<I>, I: 'static> InspectItem<AccountIdOf<T>> for Pallet<T, I> {
         type InventoryId = InventoryIdOf<T, I>;
         type Id = ItemType<T::ItemSKU>;
-        type Price = ItemPriceOf<T, I>;
+        type Asset = AssetIdOf<T, I>;
+        type Balance = AssetBalanceOf<T, I>;
 
         fn items(
             inventory_id: &Self::InventoryId,
@@ -94,7 +95,7 @@ mod item {
 
         fn item(inventory_id: &Self::InventoryId, id: &Self::Id) -> Option<ItemOf<T, I>> {
             let owner = T::Nonfungibles::owner(inventory_id, id)?;
-            let (name, price): ItemInfo<Vec<u8>, Self::Price> =
+            let (name, price): ItemInfo<Vec<u8>, ItemPriceOf<T, I>> =
                 T::Nonfungibles::typed_system_attribute(
                     inventory_id,
                     Some(id),
@@ -131,7 +132,7 @@ mod item {
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
             name: Vec<u8>,
-            maybe_price: Option<Self::Price>,
+            maybe_price: Option<ItemPriceOf<T, I>>,
         ) -> DispatchResult {
             let inventory_owner = T::Nonfungibles::collection_owner(inventory_id)
                 .ok_or(Error::<T, I>::UnknownInventory)?;
@@ -154,34 +155,31 @@ mod item {
             Ok(())
         }
 
-        fn mark_not_for_resale(
-            inventory_id: &Self::InventoryId,
-            id: &Self::Id,
-            not_for_resale: bool,
-        ) -> DispatchResult {
-            if not_for_resale {
-                T::Nonfungibles::set_typed_attribute(
-                    inventory_id,
-                    id,
-                    &ItemAttribute::NotForResale,
-                    &(),
-                )
-            } else if !not_for_resale
-                && T::Nonfungibles::typed_system_attribute::<ItemAttribute, ()>(
-                    inventory_id,
-                    Some(id),
-                    &ItemAttribute::NotForResale,
-                )
-                .is_some()
-            {
+        fn enable_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult {
+            let not_for_resale = T::Nonfungibles::typed_system_attribute::<ItemAttribute, ()>(
+                inventory_id,
+                Some(id),
+                &ItemAttribute::NotForResale,
+            );
+
+            if not_for_resale.is_some() {
                 T::Nonfungibles::clear_typed_attribute(
                     inventory_id,
                     id,
                     &ItemAttribute::NotForResale,
-                )
-            } else {
-                Ok(())
+                )?;
             }
+
+            Ok(())
+        }
+
+        fn disable_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult {
+            T::Nonfungibles::set_typed_attribute(
+                inventory_id,
+                id,
+                &ItemAttribute::NotForResale,
+                &(),
+            )
         }
 
         fn mark_can_transfer(
@@ -196,12 +194,26 @@ mod item {
             }
         }
 
+        fn transfer(
+            inventory_id: &Self::InventoryId,
+            id: &Self::Id,
+            beneficiary: &AccountIdOf<T>,
+        ) -> DispatchResult {
+            if !T::Nonfungibles::can_transfer(inventory_id, id) {
+                T::Nonfungibles::enable_transfer(inventory_id, id)?;
+                T::Nonfungibles::transfer(inventory_id, id, beneficiary)?;
+                return T::Nonfungibles::disable_transfer(inventory_id, id);
+            }
+
+            T::Nonfungibles::transfer(inventory_id, id, beneficiary)
+        }
+
         fn set_price(
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
-            price: Self::Price,
+            price: ItemPriceOf<T, I>,
         ) -> DispatchResult {
-            let (name, _): ItemInfo<Vec<u8>, Self::Price> =
+            let (name, _): ItemInfo<Vec<u8>, ItemPriceOf<T, I>> =
                 T::Nonfungibles::typed_system_attribute(
                     inventory_id,
                     Some(id),

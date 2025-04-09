@@ -49,7 +49,7 @@ pub mod pallet {
 
         /// A type that handles the native token and system balances.
         #[cfg(not(feature = "runtime-benchmarks"))]
-        type Balances: frame_support::traits::fungible::Inspect<Self::AccountId>;
+        type Balances: fungible::Inspect<Self::AccountId>;
 
         #[cfg(feature = "runtime-benchmarks")]
         /// A type that handles the native token and system balances.
@@ -106,13 +106,13 @@ pub mod pallet {
         type InventoryAdminOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, InventoryIdOf<Self, I>>;
 
         /// A type that represents the identification of a merchant.
-        type MerchantId: Parameter + Copy;
+        type MerchantId: Parameter + MaxEncodedLen + Copy;
 
         /// A type that represents the unique identification of an inventory from a merchant.
-        type InventoryId: Parameter + Copy;
+        type InventoryId: Parameter + MaxEncodedLen + Copy;
 
         /// A type that represents the SKU of an item.
-        type ItemSKU: Parameter + Copy;
+        type ItemSKU: Parameter + MaxEncodedLen + Copy;
 
         #[cfg(feature = "runtime-benchmarks")]
         /// Helper for executing pallet benchmarks
@@ -356,7 +356,11 @@ pub mod pallet {
             Self::ensure_item_owned_by_creator(&inventory_id, &id)?;
             T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
 
-            Self::mark_not_for_resale(&inventory_id, &id, not_for_resale)?;
+            if not_for_resale {
+                Self::disable_resell(&inventory_id, &id)
+            } else {
+                Self::enable_resell(&inventory_id, &id)
+            }?;
 
             Self::deposit_event(Event::MarkNotForResale {
                 inventory_id,

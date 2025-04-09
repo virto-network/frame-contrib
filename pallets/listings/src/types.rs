@@ -2,11 +2,14 @@ use super::*;
 use frame_support::traits::fungibles::Inspect;
 use frame_support::traits::Incrementable;
 
+pub use item::ItemPrice;
+
 /// The AssetId type bound to the pallet instance.
-type AssetIdOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::AssetId;
+pub(crate) type AssetIdOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::AssetId;
 
 /// The asset Balance type bound to the pallet instance.
-type AssetBalanceOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::Balance;
+pub(crate) type AssetBalanceOf<T, I> =
+    <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::Balance;
 
 /// The composite `InventoryId` bound to the pallet instance.
 pub type InventoryIdOf<T, I = ()> =
@@ -16,7 +19,8 @@ pub type InventoryIdOf<T, I = ()> =
 pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 
 /// The [`Item`][item::Item] type bound to the pallet instance.
-pub(crate) type ItemOf<T, I = ()> = item::Item<AccountIdOf<T>, ItemPriceOf<T, I>>;
+pub(crate) type ItemOf<T, I = ()> =
+    item::Item<AccountIdOf<T>, AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
 
 /// The [`ItemPrice`] type bound to the pallet instance.
 pub(crate) type ItemPriceOf<T, I = ()> = ItemPrice<AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
@@ -90,13 +94,6 @@ impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
 pub enum ItemType<Id> {
     Unit(Id),
     Subscription(Id),
-}
-
-/// The sale asset price for an item. Not related to the native sale price of an NFT.
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
-pub struct ItemPrice<A, B> {
-    pub asset: A,
-    pub amount: B,
 }
 
 #[cfg(feature = "runtime-benchmarks")]
