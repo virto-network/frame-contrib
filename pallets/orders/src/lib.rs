@@ -12,13 +12,12 @@ use frame_contrib_traits::{
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Incrementable;
 use frame_system::pallet_prelude::*;
-use std::ops::Index;
 
 // #[cfg(feature = "runtime-benchmarks")]
 // pub mod benchmarking;
-//
-// #[cfg(test)]
-// mod mock;
+
+#[cfg(test)]
+mod mock;
 // #[cfg(test)]
 // mod tests;
 
@@ -43,10 +42,9 @@ type OrderDetailsOf<T, I = ()> = OrderDetails<
     PaymentIdOf<T, I>,
     <T as Config<I>>::MaxItemLen,
 >;
-type OrderItemOf<T, I = ()> =
-    OrderItem<AccountIdOf<T>, InventoryIdOf<T, I>, ItemIdOf<T, I>, PaymentIdOf<T, I>>;
 
 #[derive(Clone, Debug, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo)]
+#[scale_info(skip_type_params(MaxItemLen))]
 pub struct OrderDetails<AccountId, InventoryId, ItemId, PaymentId, MaxItemLen: Get<u32>> {
     status: OrderStatus,
     items: BoundedVec<OrderItem<AccountId, InventoryId, ItemId, PaymentId>, MaxItemLen>,
@@ -140,7 +138,7 @@ pub mod pallet {
         /// Determines the maximum amount of items (regardless of origin restrictions) a single
         /// order can have.
         #[pallet::constant]
-        type MaxItemLen: Parameter + Get<u32>;
+        type MaxItemLen: Get<u32>;
     }
 
     #[pallet::pallet]
@@ -429,6 +427,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         })
     }
 
+    #[allow(dead_code)]
     fn transfer_item(
         inventory_id: &InventoryIdOf<T, I>,
         id: &ItemIdOf<T, I>,
@@ -531,7 +530,7 @@ impl<T: Config<I>, I: 'static> OnPaymentStatusChanged<PaymentIdOf<T, I>, Payment
                         });
 
                         if delivered_items == details.items.len() {
-                            details.status == OrderStatus::Delivered;
+                            details.status = OrderStatus::Delivered;
 
                             Self::deposit_event(Event::<T, I>::OrderDelivered {
                                 order_id: order_id.clone(),
