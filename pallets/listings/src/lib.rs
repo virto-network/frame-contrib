@@ -49,7 +49,7 @@ pub mod pallet {
 
         /// A type that handles the native token and system balances.
         #[cfg(not(feature = "runtime-benchmarks"))]
-        type Balances: frame_support::traits::fungible::Inspect<Self::AccountId>;
+        type Balances: fungible::Inspect<Self::AccountId>;
 
         #[cfg(feature = "runtime-benchmarks")]
         /// A type that handles the native token and system balances.

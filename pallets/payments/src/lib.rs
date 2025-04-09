@@ -33,7 +33,6 @@ use frame_support::{
         schedule::{v3::Named as ScheduleNamed, DispatchTime},
         tokens::{
             fungibles::Inspect as FunsInspect,
-            Balance,
             Fortitude::Polite,
             Precision::Exact,
             Preservation::{Expendable, Preserve},
