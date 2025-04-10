@@ -940,6 +940,7 @@ dependencies = [
  "frame-contrib-traits",
  "frame-support",
  "frame-system",
+ "mock-helpers",
  "pallet-assets",
  "pallet-balances",
  "pallet-nfts",

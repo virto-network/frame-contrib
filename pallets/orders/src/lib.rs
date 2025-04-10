@@ -18,8 +18,8 @@ use frame_system::pallet_prelude::*;
 
 #[cfg(test)]
 mod mock;
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;
 
 pub mod weights;
 pub use weights::*;
@@ -231,11 +231,12 @@ pub mod pallet {
 
             Cart::<T, I>::try_mutate(owner.clone(), |carts| {
                 ensure!(
-                    carts.len() as u32 <= max_carts,
+                    (carts.len() as u32) < max_carts,
                     Error::<T, I>::MaxCartsExceeded
                 );
 
                 let order_id = Self::generate_order_id()?;
+
                 Order::<T, I>::insert(
                     order_id.clone(),
                     (

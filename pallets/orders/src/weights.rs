@@ -11,7 +11,6 @@ pub trait WeightInfo {
 	fn create_cart() -> Weight;
 	fn set_cart_items() -> Weight;
 	fn checkout() -> Weight;
-
 	fn cancel() -> Weight;
 	fn pay() -> Weight;
 }
