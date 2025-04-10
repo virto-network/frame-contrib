@@ -1,0 +1,46 @@
+[package]
+name = "mock-helpers"
+description = "Some useful helpers to construct mocks"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+fc-pallet-listings = { workspace = true, optional = true }
+frame-support.workspace = true
+frame-system.workspace = true
+pallet-assets = { workspace = true, optional = true }
+pallet-balances = { workspace = true, optional = true }
+sp-io.workspace = true
+sp-runtime.workspace = true
+
+[features]
+default = [
+  "std",
+  "fc-pallet-listings",
+  "pallet-assets",
+]
+
+std = [
+  "fc-pallet-listings?/std",
+  "frame-support/std",
+  "pallet-assets?/std",
+  "pallet-balances?/std",
+  "sp-io/std",
+  "sp-runtime/std",
+  "frame-system/std",
+]
+
+fc-pallet-listings = [
+  "dep:fc-pallet-listings"
+]
+
+pallet-assets = [
+  "dep:pallet-assets"
+]
+
+pallet-balances = [
+  "dep:pallet-balances"
+]

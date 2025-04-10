@@ -1862,6 +1862,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mock-helpers"
+version = "0.1.0"
+dependencies = [
+ "fc-pallet-listings",
+ "frame-support",
+ "frame-system",
+ "pallet-assets",
+ "pallet-balances",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "nalgebra"
 version = "0.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
