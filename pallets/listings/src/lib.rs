@@ -39,7 +39,10 @@ pub mod pallet {
     use super::*;
 
     #[pallet::config]
-    pub trait Config<I: 'static = ()>: frame_system::Config {
+    pub trait Config<I: 'static = ()>: frame_system::Config
+    where
+        AssetIdOf<Self, I>: MaybeSerializeDeserialize,
+    {
         /// The overarching type for events.
         type RuntimeEvent: From<Event<Self, I>>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>;
@@ -106,17 +109,77 @@ pub mod pallet {
         type InventoryAdminOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, InventoryIdOf<Self, I>>;
 
         /// A type that represents the identification of a merchant.
-        type MerchantId: Parameter + MaxEncodedLen + Copy;
+        type MerchantId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
 
         /// A type that represents the unique identification of an inventory from a merchant.
-        type InventoryId: Parameter + MaxEncodedLen + Copy;
+        type InventoryId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
 
         /// A type that represents the SKU of an item.
-        type ItemSKU: Parameter + MaxEncodedLen + Copy;
+        type ItemSKU: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
 
         #[cfg(feature = "runtime-benchmarks")]
         /// Helper for executing pallet benchmarks
         type BenchmarkHelper: BenchmarkHelper<Self, I>;
+    }
+
+    #[pallet::genesis_config]
+    #[derive(frame_support::DefaultNoBound)]
+    pub struct GenesisConfig<T: Config<I>, I: 'static = ()> {
+        /// Genesis inventories: merchant, inventory_id, owner
+        pub inventories: Vec<(T::MerchantId, T::InventoryId, T::AccountId)>,
+        /// Genesis items: inventory_id, item_id, name, price, transferable, for_resale
+        pub items: Vec<(
+            (T::MerchantId, T::InventoryId),
+            ItemIdOf<T, I>,
+            Vec<u8>,
+            Option<(AssetIdOf<T, I>, AssetBalanceOf<T, I>)>,
+            bool,
+            bool,
+        )>,
+    }
+
+    #[pallet::genesis_build]
+    impl<T: Config<I>, I: 'static> BuildGenesisConfig for GenesisConfig<T, I> {
+        fn build(&self) {
+            for (merchant_id, inventory_id, owner) in &self.inventories {
+                assert!(T::Nonfungibles::collection_owner(&InventoryId(
+                    *merchant_id,
+                    *inventory_id
+                ))
+                .is_none());
+                let result = Pallet::<T, I>::create(merchant_id, inventory_id, owner);
+                assert!(result.is_ok());
+            }
+
+            for (
+                (merchant_id, inventory_id),
+                item_id,
+                name,
+                maybe_price,
+                transferable,
+                for_resale,
+            ) in &self.items
+            {
+                let inventory_id = &InventoryId(*merchant_id, *inventory_id);
+                let price = maybe_price
+                    .clone()
+                    .map(|(asset, amount)| ItemPrice { asset, amount });
+
+                assert!(T::Nonfungibles::owner(inventory_id, item_id).is_none());
+                let result = Pallet::<T, I>::publish(inventory_id, item_id, name.to_owned(), price);
+                assert!(result.is_ok());
+
+                if !transferable {
+                    let result = Pallet::<T, I>::mark_can_transfer(inventory_id, item_id, false);
+                    assert!(result.is_ok());
+                }
+
+                if !for_resale {
+                    let result = Pallet::<T, I>::disable_resell(&inventory_id, item_id);
+                    assert!(result.is_ok());
+                }
+            }
+        }
     }
 
     #[pallet::pallet]

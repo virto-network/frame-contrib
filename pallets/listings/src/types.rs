@@ -1,8 +1,7 @@
 use super::*;
-use frame_support::traits::fungibles::Inspect;
-use frame_support::traits::Incrementable;
-
+use frame_support::traits::{fungibles::Inspect, Incrementable};
 pub use item::ItemPrice;
+use sp_runtime::{Deserialize, Serialize};
 
 /// The AssetId type bound to the pallet instance.
 pub(crate) type AssetIdOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::AssetId;
@@ -23,7 +22,7 @@ pub(crate) type ItemOf<T, I = ()> =
     item::Item<AccountIdOf<T>, AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
 
 /// The [`ItemPrice`] type bound to the pallet instance.
-pub(crate) type ItemPriceOf<T, I = ()> = ItemPrice<AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
+pub type ItemPriceOf<T, I = ()> = ItemPrice<AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
 
 /// The ID of every item inside the inventory.
 pub type ItemIdOf<T, I = ()> = ItemType<<T as Config<I>>::ItemSKU>;
@@ -90,7 +89,19 @@ impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
 }
 
 /// The type an item can be, part of its unique identification.
-#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+#[derive(
+    Encode,
+    Decode,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    RuntimeDebug,
+    MaxEncodedLen,
+    TypeInfo,
+    Serialize,
+    Deserialize,
+)]
 pub enum ItemType<Id> {
     Unit(Id),
     Subscription(Id),
