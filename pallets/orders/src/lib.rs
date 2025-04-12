@@ -10,9 +10,10 @@ use frame_contrib_traits::{
     payments::{OnPaymentStatusChanged, PaymentInspect, PaymentMutate},
 };
 use frame_support::pallet_prelude::*;
-use frame_support::traits::Incrementable;
+use frame_support::traits::schedule::{DispatchTime, Priority};
+use frame_support::traits::{schedule::v3::Named, Bounded, BoundedInline, Incrementable};
 use frame_system::pallet_prelude::*;
-
+use sp_runtime::traits::{Hash, TrailingZeroInput};
 // #[cfg(feature = "runtime-benchmarks")]
 // pub mod benchmarking;
 
@@ -68,7 +69,13 @@ pub enum OrderStatus {
     /// meaning the funds need to be released by the seller, or some time needs to be elapsed,
     /// before the items can be unlocked.
     InProgress,
-    /// In this state, every item has been processed, meaning every item should be unlocked.
+    /// In this state, every item has been processed, and the order is now complete.
+    Completed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo)]
+pub enum DeliveryStatus {
+    Cancelled,
     Delivered,
 }
 
@@ -79,13 +86,15 @@ pub struct OrderItem<AccountId, InventoryId, ItemId, PaymentId> {
     seller: AccountId,
     beneficiary: Option<AccountId>,
     payment_id: Option<PaymentId>,
-    delivery: Option<()>,
+    delivery: Option<DeliveryStatus>,
 }
 
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::traits::Incrementable;
+    use frame_support::dispatch::{GetDispatchInfo, PostDispatchInfo};
+    use frame_support::traits::{CallerTrait, Incrementable};
+    use sp_runtime::traits::Dispatchable;
 
     #[pallet::config]
     pub trait Config<I: 'static = ()>: frame_system::Config {
@@ -94,6 +103,15 @@ pub mod pallet {
         /// The overarching event type.
         type RuntimeEvent: From<Event<Self, I>>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+        /// The caller origin, overarching type of all pallets origins.
+        type PalletsOrigin: From<frame_system::RawOrigin<Self::AccountId>>
+            + CallerTrait<Self::AccountId>
+            + MaxEncodedLen;
+        /// The overarching call type.
+        type RuntimeCall: Parameter
+            + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>
+            + GetDispatchInfo
+            + From<Call<Self, I>>;
         /// The weight information for this pallet.
         type WeightInfo: WeightInfo;
 
@@ -106,12 +124,18 @@ pub mod pallet {
         /// While the maximum amount of carts can be greater than [`MaxCartLen`][Self::MaxCartLen],
         /// this limit will be enforced at all times.
         type CreateOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = (Self::AccountId, u32)>;
-        /// The origin set items into an order. Returns an `AccountId` representing the origin,
+        /// The origin admins an order. Returns an `AccountId` representing the origin,
         /// and the maximum amount of items such origin is allowed to have on each cart.
         ///
         /// While the maximum amount of items can be greater than [`MaxItemLen`][Self::MaxItemLen],
         /// this limit will be enforced at all times.
-        type SetItemsOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = (Self::AccountId, u32)>;
+        type InventoryAdminOrigin: EnsureOrigin<
+            Self::RuntimeOrigin,
+            Success = (Self::AccountId, u32),
+        >;
+        /// The origin to complete a payment. Returns an `AccountId`, representing the account
+        /// which will pay for the order.
+        type PaymentOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
 
         // Types: A set of parameter types that the pallet uses to handle information.
 
@@ -128,9 +152,18 @@ pub mod pallet {
             > + MutateItem<Self::AccountId>;
         /// The `Payments` component of a `Marketplace` system.
         type Payments: PaymentInspect<Self::AccountId> + PaymentMutate<Self::AccountId>;
+        /// The `Scheduler` system.
+        type Scheduler: Named<
+            BlockNumberFor<Self>,
+            <Self as Config<I>>::RuntimeCall,
+            Self::PalletsOrigin,
+        >;
 
         // Parameters: A set of constant parameters to configure limits.
 
+        /// The time after which an unpaid order in `Checkout` status is automatically cancelled.
+        #[pallet::constant]
+        type MaxLifetimeForCheckoutOrder: Get<BlockNumberFor<Self>>;
         /// Determines the maximum amount of carts (regardless of origin restrictions) an account
         /// can have.
         #[pallet::constant]
@@ -165,7 +198,7 @@ pub mod pallet {
             id: ItemIdOf<T, I>,
         },
         /// An order has been fully delivered.
-        OrderDelivered { order_id: T::OrderId },
+        OrderCompleted { order_id: T::OrderId },
     }
 
     #[pallet::error]
@@ -178,10 +211,12 @@ pub mod pallet {
         MaxItemsExceeded,
         /// The specified order is not found.
         OrderNotFound,
-        /// The order is in an invalid state where it cannot be cancelled.
+        /// The order is in an invalid state where it cannot be mutated.
         InvalidState,
         /// The specified item is not found in the listings.
         ItemNotFound,
+        /// The specified payment is not found in the payments.
+        PaymentNotFound,
         /// The specified item is not for sale.
         ItemNotForSale,
         /// The specified item is already locked.
@@ -276,22 +311,29 @@ pub mod pallet {
 
         #[pallet::call_index(2)]
         pub fn checkout(origin: OriginFor<T>, order_id: T::OrderId) -> DispatchResult {
-            let ref who = ensure_signed(origin)?;
+            let (ref who, _) = T::InventoryAdminOrigin::ensure_origin(origin)?;
 
             Order::<T, I>::try_mutate(order_id.clone(), |order| -> DispatchResult {
                 let Some((owner, details)) = order else {
                     return Err(Error::<T, I>::OrderNotFound.into());
                 };
+                ensure!(
+                    details.status == OrderStatus::Cart,
+                    Error::<T, I>::InvalidState
+                );
                 ensure!(who == owner, Error::<T, I>::NoPermission);
 
-                for item in details.items.iter_mut() {
-                    Self::try_lock_item(&item.inventory_id, &item.id)?;
+                for order_item in details.items.iter_mut() {
+                    let item = T::Listings::item(&order_item.inventory_id, &order_item.id)
+                        .ok_or(Error::<T, I>::ItemNotFound)?;
+                    ensure!(item.price.is_some(), Error::<T, I>::ItemNotForSale);
+                    Self::try_lock_item(&order_item.inventory_id, &order_item.id)?;
                 }
 
                 details.status = OrderStatus::Checkout;
                 Self::remove_cart(who, &order_id)?;
 
-                // TODO: Schedule cancellation (and items' release) task
+                Self::schedule_cancel(&order_id)?;
 
                 Self::deposit_event(Event::<T, I>::OrderCheckout { order_id });
 
@@ -301,33 +343,49 @@ pub mod pallet {
 
         #[pallet::call_index(3)]
         pub fn cancel(origin: OriginFor<T>, order_id: T::OrderId) -> DispatchResult {
-            let ref maybe_who = ensure_signed_or_root(origin)?;
-            let (ref owner, details) =
-                Order::<T, I>::get(&order_id).ok_or(Error::<T, I>::OrderNotFound)?;
+            Order::<T, I>::try_mutate(order_id.clone(), |maybe_order| -> DispatchResult {
+                let ref maybe_who = T::InventoryAdminOrigin::ensure_origin_or_root(origin)?;
+                let Some((ref owner, details)) = maybe_order else {
+                    return Err(Error::<T, I>::OrderNotFound.into());
+                };
 
-            if let Some(who) = maybe_who {
-                ensure!(who == owner, Error::<T, I>::NoPermission);
-            }
-            ensure!(
-                matches!(details.status, OrderStatus::Cart | OrderStatus::Checkout),
-                Error::<T, I>::InvalidState,
-            );
+                if let Some((who, _)) = maybe_who {
+                    ensure!(who == owner, Error::<T, I>::NoPermission);
+                }
+                ensure!(
+                    matches!(details.status, OrderStatus::Cart | OrderStatus::Checkout),
+                    Error::<T, I>::InvalidState,
+                );
 
-            // TODO: Remove scheduled cancellation task.
+                for OrderItem {
+                    inventory_id, id, ..
+                } in &details.items
+                {
+                    Self::try_unlock_item(inventory_id, id)?;
+                }
 
-            Self::deposit_event(Event::<T, I>::OrderCancelled { order_id });
+                details.status = OrderStatus::Cancelled;
 
-            Ok(())
+                Self::try_remove_scheduled_cancel(&order_id)?;
+
+                Self::deposit_event(Event::<T, I>::OrderCancelled { order_id });
+
+                Ok(())
+            })
         }
 
         #[pallet::call_index(4)]
         pub fn pay(origin: OriginFor<T>, order_id: T::OrderId) -> DispatchResult {
-            let ref who = ensure_signed(origin)?;
+            let ref who = T::PaymentOrigin::ensure_origin(origin)?;
 
             Order::<T, I>::try_mutate(order_id.clone(), |order| -> DispatchResult {
                 let Some((owner, details)) = order else {
                     return Err(Error::<T, I>::OrderNotFound.into());
                 };
+                ensure!(
+                    details.status == OrderStatus::Checkout,
+                    Error::<T, I>::InvalidState
+                );
 
                 for order_item in details.items.iter_mut() {
                     let beneficiary = order_item.beneficiary.clone().unwrap_or(owner.clone());
@@ -342,7 +400,7 @@ pub mod pallet {
                         &who.clone(),
                         asset,
                         amount,
-                        &beneficiary,
+                        &item.owner,
                         Some(order_item.clone()),
                     )?;
 
@@ -356,11 +414,13 @@ pub mod pallet {
                             order_item.id.clone(),
                         ),
                     );
+
+                    Self::transfer_item(&order_item.inventory_id, &order_item.id, &beneficiary)?;
                 }
 
                 details.status = OrderStatus::InProgress;
 
-                // TODO: Remove scheduled cancellation task.
+                Self::try_remove_scheduled_cancel(&order_id)?;
 
                 Self::deposit_event(Event::<T, I>::OrderInProgress { order_id });
 
@@ -383,35 +443,24 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     }
 
     fn try_lock_item(inventory_id: &InventoryIdOf<T, I>, id: &ItemIdOf<T, I>) -> DispatchResult {
-        let item = T::Listings::item(inventory_id, id).ok_or(Error::<T, I>::ItemNotFound)?;
-        ensure!(item.price.is_some(), Error::<T, I>::ItemNotForSale,);
         ensure!(
             T::Listings::transferable(inventory_id, id),
             Error::<T, I>::ItemAlreadyLocked
         );
-        ensure!(
-            T::Listings::can_resell(inventory_id, id),
-            Error::<T, I>::ItemAlreadyLocked
-        );
 
-        T::Listings::mark_can_transfer(inventory_id, id, false)?;
-        T::Listings::disable_resell(inventory_id, id)?;
-        Ok(())
+        // TODO: Ensure that I can get the address of the original seller before
+        // checking whether an item is attempted to be resold.
+
+        // ensure!(
+        //     T::Listings::can_resell(inventory_id, id),
+        //     Error::<T, I>::ItemAlreadyLocked
+        // );
+
+        T::Listings::disable_transfer(inventory_id, id)
     }
 
     fn try_unlock_item(inventory_id: &InventoryIdOf<T, I>, id: &ItemIdOf<T, I>) -> DispatchResult {
-        ensure!(
-            !T::Listings::transferable(inventory_id, id),
-            Error::<T, I>::ItemAlreadyUnlocked
-        );
-        ensure!(
-            !T::Listings::can_resell(inventory_id, id),
-            Error::<T, I>::ItemAlreadyUnlocked
-        );
-
-        T::Listings::mark_can_transfer(inventory_id, id, true)?;
-        T::Listings::enable_resell(inventory_id, id)?;
-        Ok(())
+        T::Listings::enable_transfer(inventory_id, id)
     }
 
     /// Infallibly removes a cart from the user's list of carts if it exists there.
@@ -428,7 +477,6 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         })
     }
 
-    #[allow(dead_code)]
     fn transfer_item(
         inventory_id: &InventoryIdOf<T, I>,
         id: &ItemIdOf<T, I>,
@@ -447,41 +495,136 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         order_id: &T::OrderId,
         items: impl Iterator<Item = (InventoryIdOf<T, I>, ItemIdOf<T, I>, Option<T::AccountId>)>,
     ) -> Result<(), DispatchError> {
-        let (ref who, max_items) = T::SetItemsOrigin::ensure_origin(origin)?;
-
-        let items = items
-            .map(|(inventory_id, id, beneficiary)| {
-                let Item { owner, .. } =
-                    T::Listings::item(&inventory_id, &id).ok_or(Error::<T, I>::ItemNotFound)?;
-
-                Ok(OrderItem {
-                    inventory_id,
-                    id,
-                    seller: owner,
-                    beneficiary,
-                    payment_id: None,
-                    delivery: None,
-                })
-            })
-            .collect::<Result<Vec<_>, DispatchError>>()?;
-
-        ensure!(
-            items.len() <= max_items as usize,
-            Error::<T, I>::MaxItemsExceeded
-        );
-
-        let items = BoundedVec::try_from(items).map_err(|_| Error::<T, I>::MaxItemsExceeded)?;
-
         Order::<T, I>::try_mutate(order_id, |order_items| {
+            let (ref who, max_items) = T::InventoryAdminOrigin::ensure_origin(origin)?;
             let Some((owner, details)) = order_items else {
                 return Err(Error::<T, I>::OrderNotFound.into());
             };
 
             ensure!(who == owner, Error::<T, I>::NoPermission);
+            ensure!(
+                matches!(details.status, OrderStatus::Cart),
+                Error::<T, I>::InvalidState
+            );
 
-            details.items = items;
+            let items = items
+                .map(|(inventory_id, id, beneficiary)| {
+                    let Item { owner, .. } =
+                        T::Listings::item(&inventory_id, &id).ok_or(Error::<T, I>::ItemNotFound)?;
+
+                    Ok(OrderItem {
+                        inventory_id,
+                        id,
+                        seller: owner,
+                        beneficiary,
+                        payment_id: None,
+                        delivery: None,
+                    })
+                })
+                .collect::<Result<Vec<_>, DispatchError>>()?;
+
+            ensure!(
+                items.len() <= max_items as usize,
+                Error::<T, I>::MaxItemsExceeded
+            );
+            details.items =
+                BoundedVec::try_from(items).map_err(|_| Error::<T, I>::MaxItemsExceeded)?;
 
             Ok(())
+        })
+    }
+
+    fn schedule_cancel(order_id: &T::OrderId) -> DispatchResult {
+        let (id, call) = Self::schedule_cancel_params(order_id);
+        T::Scheduler::schedule_named(
+            id,
+            DispatchTime::After(T::MaxLifetimeForCheckoutOrder::get()),
+            None,
+            Priority::default(),
+            frame_system::RawOrigin::Root.into(),
+            Bounded::Inline(BoundedInline::truncate_from(call.encode())),
+        )?;
+
+        Ok(())
+    }
+
+    fn try_remove_scheduled_cancel(order_id: &T::OrderId) -> DispatchResult {
+        let (id, _) = Self::schedule_cancel_params(order_id);
+        if T::Scheduler::next_dispatch_time(id).is_ok() {
+            T::Scheduler::cancel_named(id)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn schedule_cancel_params(order_id: &T::OrderId) -> ([u8; 32], <T as Config<I>>::RuntimeCall) {
+        let call = Call::<T, I>::cancel {
+            order_id: order_id.clone(),
+        }
+        .into();
+        let hash = T::Hashing::hash_of(&call).using_encoded(|bytes| {
+            Decode::decode(&mut TrailingZeroInput::new(&bytes))
+                .expect("decode from TrailingZeroes onto [u8;32] is safe; qed")
+        });
+
+        (hash, call)
+    }
+
+    fn update_delivered_items(
+        payment_id: &PaymentIdOf<T, I>,
+        delivery_status: DeliveryStatus,
+    ) -> DispatchResult {
+        Payment::<T, I>::try_mutate(payment_id, |payment| {
+            let (order_id, inventory_id, id) =
+                &payment.clone().ok_or(Error::<T, I>::PaymentNotFound)?;
+
+            Order::<T, I>::try_mutate(order_id.clone(), |maybe_order| {
+                let Some((_, details)) = maybe_order else {
+                    Err(Error::<T, I>::OrderNotFound)?
+                };
+
+                let item = details
+                    .items
+                    .iter_mut()
+                    .find(|order_item| {
+                        &order_item.inventory_id == inventory_id && &order_item.id == id
+                    })
+                    .ok_or(Error::<T, I>::ItemNotFound)?;
+
+                if delivery_status == DeliveryStatus::Cancelled {
+                    let payment =
+                        T::Payments::details(payment_id).ok_or(Error::<T, I>::OrderNotFound)?;
+                    Self::transfer_item(inventory_id, id, payment.beneficiary())?;
+                }
+
+                Self::try_unlock_item(inventory_id, id)?;
+                item.delivery = Some(delivery_status);
+
+                let delivered_items = details
+                    .items
+                    .iter()
+                    .filter(|order_item| order_item.delivery.is_some())
+                    .count();
+
+                Self::deposit_event(Event::<T, I>::ItemDelivered {
+                    order_id: order_id.clone(),
+                    inventory_id: inventory_id.clone(),
+                    id: id.clone(),
+                });
+
+                if delivered_items == details.items.len() {
+                    details.status = OrderStatus::Completed;
+
+                    Self::deposit_event(Event::<T, I>::OrderCompleted {
+                        order_id: order_id.clone(),
+                    })
+                }
+
+                // Remove the payment
+                *payment = None;
+
+                Ok(())
+            })
         })
     }
 }
@@ -489,60 +632,16 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 impl<T: Config<I>, I: 'static> OnPaymentStatusChanged<PaymentIdOf<T, I>, PaymentBalanceOf<T, I>>
     for Pallet<T, I>
 {
+    fn on_payment_cancelled(payment_id: &PaymentIdOf<T, I>) {
+        let _ = Self::update_delivered_items(payment_id, DeliveryStatus::Cancelled);
+    }
+
     fn on_payment_released(
         payment_id: &PaymentIdOf<T, I>,
         _fees: PaymentBalanceOf<T, I>,
         _resulting_amount: PaymentBalanceOf<T, I>,
     ) {
         // This should be infallible.
-        let _: Result<_, DispatchError> =
-            Payment::<T, I>::try_mutate(payment_id, |maybe_order_item| {
-                if let Some((order_id, inventory_id, id)) = maybe_order_item {
-                    return Order::<T, I>::try_mutate(order_id.clone(), |maybe_order| {
-                        let Some((_, details)) = maybe_order else {
-                            return Err(Error::<T, I>::OrderNotFound.into());
-                        };
-
-                        let item = details
-                            .items
-                            .iter_mut()
-                            .find(|order_item| {
-                                &order_item.inventory_id == inventory_id && &order_item.id == id
-                            })
-                            .ok_or(Error::<T, I>::ItemNotFound)?;
-
-                        // Unlocking an item should be infallible.
-                        let _ = Self::try_unlock_item(inventory_id, id);
-                        item.delivery = Some(());
-
-                        // Clear the payment
-                        Payment::<T, I>::remove(payment_id);
-
-                        let delivered_items = details
-                            .items
-                            .iter()
-                            .filter(|order_item| order_item.delivery.is_some())
-                            .count();
-
-                        Self::deposit_event(Event::<T, I>::ItemDelivered {
-                            order_id: order_id.clone(),
-                            inventory_id: inventory_id.clone(),
-                            id: id.clone(),
-                        });
-
-                        if delivered_items == details.items.len() {
-                            details.status = OrderStatus::Delivered;
-
-                            Self::deposit_event(Event::<T, I>::OrderDelivered {
-                                order_id: order_id.clone(),
-                            })
-                        }
-
-                        Ok(())
-                    });
-                }
-
-                Ok(())
-            });
+        let _ = Self::update_delivered_items(payment_id, DeliveryStatus::Delivered);
     }
 }

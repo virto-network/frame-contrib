@@ -8,7 +8,7 @@ pub struct Item<SKU, Price> {
     name: Vec<u8>,
     price: Option<Price>,
     transferable: bool,
-    not_for_resale: bool,
+    for_resale: bool,
 }
 
 impl<SKU, Price> Item<SKU, Price> {
@@ -18,7 +18,7 @@ impl<SKU, Price> Item<SKU, Price> {
             name,
             price,
             transferable: true,
-            not_for_resale: false,
+            for_resale: true,
         }
     }
 
@@ -28,7 +28,7 @@ impl<SKU, Price> Item<SKU, Price> {
     }
 
     pub fn not_for_resale(mut self) -> Self {
-        self.not_for_resale = true;
+        self.for_resale = false;
         self
     }
 }
@@ -103,7 +103,7 @@ impl<T: Config<I>, I: 'static> ExtHelper for ListingsExtBuilder<T, I> {
                                  name,
                                  price,
                                  transferable,
-                                 not_for_resale,
+                                 for_resale: not_for_resale,
                              }| {
                                 (
                                     inventory_id.clone(),

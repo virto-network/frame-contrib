@@ -4,9 +4,12 @@ use crate::{self as fc_pallet_orders, Config};
 use codec::{Decode, Encode, MaxEncodedLen};
 use core::cell::Cell;
 use fc_pallet_listings::{InventoryIdOf, ItemIdOf, ItemPrice, ItemType};
-use frame_support::pallet_prelude::Weight;
-use frame_support::traits::{ConstU64, EnsureOrigin, EqualPrivilegeOnly, Get};
-use frame_support::{derive_impl, pallet_prelude::ConstU32, PalletId};
+use frame_support::{
+    derive_impl,
+    pallet_prelude::{ConstU32, Hooks, Weight},
+    traits::{ConstU64, EnsureOrigin, EqualPrivilegeOnly, Get},
+    PalletId,
+};
 use frame_system::{EnsureNever, EnsureRoot, EnsureRootWithSuccess, EnsureSigned};
 use mock_helpers::ExtHelper;
 use scale_info::TypeInfo;
@@ -244,6 +247,12 @@ thread_local! {
     pub static LAST_ID: Cell<u32>  = const { Cell::new(0) };
 }
 
+impl PaymentId {
+    pub fn last() -> Self {
+        Self(LAST_ID.get())
+    }
+}
+
 impl fc_pallet_payments::PaymentId<Test> for PaymentId {
     fn next(_sender: &AccountId, _beneficiary: &AccountId) -> Option<Self> {
         LAST_ID.with(|id| {
@@ -306,13 +315,18 @@ impl EnsureOrigin<RuntimeOrigin> for LimitsPerAccountId {
 }
 
 impl Config for Test {
-    type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
+    type PalletsOrigin = OriginCaller;
+    type RuntimeCall = RuntimeCall;
+    type WeightInfo = ();
     type CreateOrigin = LimitsPerAccountId;
-    type SetItemsOrigin = LimitsPerAccountId;
+    type InventoryAdminOrigin = LimitsPerAccountId;
+    type PaymentOrigin = EnsureSigned<AccountId>;
     type OrderId = u32;
     type Listings = Listings;
     type Payments = Payments;
+    type Scheduler = Scheduler;
+    type MaxLifetimeForCheckoutOrder = ConstU64<10>;
     type MaxCartLen = ConstU32<4>;
     type MaxItemLen = ConstU32<4>;
 }
@@ -340,22 +354,25 @@ pub struct ExtBuilder {
 }
 
 impl ExtBuilder {
-    fn with_account(mut self, account: AccountId, balance: Balance) -> Self {
+    pub(crate) fn with_account(mut self, account: AccountId, balance: Balance) -> Self {
         self.balances = self.balances.with_account(account, balance);
         self
     }
 
-    fn with_asset(mut self, asset: mock_helpers::Asset<AccountId, AssetId, Balance>) -> Self {
+    pub(crate) fn with_asset(
+        mut self,
+        asset: mock_helpers::Asset<AccountId, AssetId, Balance>,
+    ) -> Self {
         self.assets = self.assets.with_asset(asset);
         self
     }
 
-    fn with_inventory(mut self, inventory: mock_helpers::InventoryOf<Test>) -> Self {
+    pub(crate) fn with_inventory(mut self, inventory: mock_helpers::InventoryOf<Test>) -> Self {
         self.listings = self.listings.with_inventory(inventory);
         self
     }
 
-    fn build(&mut self) -> TestExternalities {
+    pub(crate) fn build(&mut self) -> TestExternalities {
         let mut storage = frame_system::GenesisConfig::<Test>::default()
             .build_storage()
             .unwrap();
@@ -459,4 +476,12 @@ pub fn new_test_ext() -> TestExternalities {
                 )),
         )
         .build()
+}
+
+pub fn run_to_block(n: u64) {
+    while System::block_number() < n {
+        Scheduler::on_finalize(System::block_number());
+        System::set_block_number(System::block_number() + 1);
+        Scheduler::on_initialize(System::block_number());
+    }
 }
