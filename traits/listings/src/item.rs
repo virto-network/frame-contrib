@@ -75,12 +75,11 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
     /// Disables an existing item to be resold.
     fn disable_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
 
+    /// Marks an existing item as transferable
+    fn enable_transfer(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
+
     /// Marks an existing item as non-transferable
-    fn mark_can_transfer(
-        inventory_id: &Self::InventoryId,
-        id: &Self::Id,
-        can_tranfer: bool,
-    ) -> DispatchResult;
+    fn disable_transfer(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
 
     /// Forcefully transfers an item, even though is disabled for transfer.
     fn transfer(

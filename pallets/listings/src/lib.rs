@@ -170,7 +170,7 @@ pub mod pallet {
                 assert!(result.is_ok());
 
                 if !transferable {
-                    let result = Pallet::<T, I>::mark_can_transfer(inventory_id, item_id, false);
+                    let result = Pallet::<T, I>::disable_transfer(inventory_id, item_id);
                     assert!(result.is_ok());
                 }
 
@@ -394,7 +394,11 @@ pub mod pallet {
             T::Nonfungibles::owner(&inventory_id, &id).ok_or(Error::<T, I>::UnknownItem)?;
             T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
 
-            Self::mark_can_transfer(&inventory_id, &id, can_transfer)
+            if can_transfer {
+                Self::enable_transfer(&inventory_id, &id)
+            } else {
+                Self::disable_transfer(&inventory_id, &id)
+            }
         }
 
         /// Marks whether an item is marked as _"not for resale"_ or not. The caller must be a valid

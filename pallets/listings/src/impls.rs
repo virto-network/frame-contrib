@@ -182,16 +182,16 @@ mod item {
             )
         }
 
-        fn mark_can_transfer(
-            inventory_id: &Self::InventoryId,
-            id: &Self::Id,
-            can_transfer: bool,
-        ) -> DispatchResult {
-            if can_transfer {
-                T::Nonfungibles::enable_transfer(inventory_id, id)
-            } else {
-                T::Nonfungibles::disable_transfer(inventory_id, id)
+        fn enable_transfer(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult {
+            if !T::Nonfungibles::can_transfer(inventory_id, id) {
+                return T::Nonfungibles::enable_transfer(inventory_id, id);
             }
+
+            Ok(())
+        }
+
+        fn disable_transfer(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult {
+            T::Nonfungibles::disable_transfer(inventory_id, id)
         }
 
         fn transfer(
