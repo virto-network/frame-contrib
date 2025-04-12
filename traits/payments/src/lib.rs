@@ -12,18 +12,24 @@ pub use {Inspect as PaymentInspect, Mutate as PaymentMutate};
 
 /// Represents a payment.
 pub struct Payment<AccountId, Asset, Balance> {
+    creator: AccountId,
     beneficiary: AccountId,
     asset: Asset,
     amount: Balance,
 }
 
 impl<AccountId, Asset, Balance: Copy> Payment<AccountId, Asset, Balance> {
-    pub fn new(beneficiary: AccountId, asset: Asset, amount: Balance) -> Self {
+    pub fn new(creator: AccountId, beneficiary: AccountId, asset: Asset, amount: Balance) -> Self {
         Self {
+            creator,
             beneficiary,
             asset,
             amount,
         }
+    }
+
+    pub fn creator(&self) -> &AccountId {
+        &self.creator
     }
 
     pub fn beneficiary(&self) -> &AccountId {
@@ -45,7 +51,7 @@ pub trait Inspect<AccountId> {
     type Balance: Balance;
 
     /// Given an `Id`, returns the details of a payment.
-    fn details(id: Self::Id) -> Option<Payment<AccountId, Self::AssetId, Self::Balance>>;
+    fn details(id: &Self::Id) -> Option<Payment<AccountId, Self::AssetId, Self::Balance>>;
 }
 
 pub trait Mutate<AccountId>: Inspect<AccountId> {

@@ -8,16 +8,12 @@ impl<T: Config> Inspect<AccountIdOf<T>> for Pallet<T> {
     type AssetId = AssetIdOf<T>;
     type Balance = BalanceOf<T>;
 
-    fn details(id: Self::Id) -> Option<Payment<AccountIdOf<T>, Self::AssetId, Self::Balance>> {
-        let (creator, _) = PaymentParties::<T>::get(id).ok()?;
-        let PaymentDetail {
-            asset,
-            amount,
-            beneficiary,
-            ..
-        } = PaymentDetails::<T>::get(creator, id).ok()?;
+    fn details(id: &Self::Id) -> Option<Payment<AccountIdOf<T>, Self::AssetId, Self::Balance>> {
+        let (creator, beneficiary) = PaymentParties::<T>::get(id).ok()?;
+        let PaymentDetail { asset, amount, .. } =
+            PaymentDetails::<T>::get(creator.clone(), id).ok()?;
 
-        Some(Payment::new(beneficiary, asset, amount))
+        Some(Payment::new(creator, beneficiary, asset, amount))
     }
 }
 
