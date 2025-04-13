@@ -22,72 +22,13 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+pub mod types;
 pub mod weights;
+
 pub use weights::*;
 
 pub use pallet::*;
-
-type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
-type InventoryIdOf<T, I = ()> =
-    <<T as Config<I>>::Listings as InspectItem<AccountIdOf<T>>>::InventoryId;
-type ItemIdOf<T, I = ()> = <<T as Config<I>>::Listings as InspectItem<AccountIdOf<T>>>::Id;
-type PaymentIdOf<T, I = ()> = <<T as Config<I>>::Payments as PaymentInspect<AccountIdOf<T>>>::Id;
-type PaymentAssetIdOf<T, I = ()> =
-    <<T as Config<I>>::Payments as PaymentInspect<AccountIdOf<T>>>::AssetId;
-type PaymentBalanceOf<T, I = ()> =
-    <<T as Config<I>>::Payments as PaymentInspect<AccountIdOf<T>>>::Balance;
-type OrderDetailsOf<T, I = ()> = OrderDetails<
-    AccountIdOf<T>,
-    InventoryIdOf<T, I>,
-    ItemIdOf<T, I>,
-    PaymentIdOf<T, I>,
-    <T as Config<I>>::MaxItemLen,
->;
-
-#[derive(Clone, Debug, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo)]
-#[scale_info(skip_type_params(MaxItemLen))]
-pub struct OrderDetails<AccountId, InventoryId, ItemId, PaymentId, MaxItemLen: Get<u32>> {
-    status: OrderStatus,
-    items: BoundedVec<OrderItem<AccountId, InventoryId, ItemId, PaymentId>, MaxItemLen>,
-}
-
-#[derive(Clone, Debug, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo)]
-pub enum OrderStatus {
-    /// The list of items is editable. A buyer can add or remove items, and they'll be locked once
-    /// added to the list, meaning there are some restrictions for the item (i.e. cannot transfer or
-    /// resell the item).
-    Cart,
-    /// The order is now ready to be paid. The list of items is no longer editable.
-    Checkout,
-    /// The order is cancelled. The list of items is now empty, and items are unlocked, ready to be
-    /// acquired by another buyer.
-    Cancelled,
-    /// The order is paid. One or more items in the order haven't been fully processed (i.e. not yet
-    /// transferred to the beneficiary, or the funds haven't been released by the seller).
-    ///
-    /// In this state, items are owned by the buyer (or beneficiaries if set), and are still locked,
-    /// meaning the funds need to be released by the seller, or some time needs to be elapsed,
-    /// before the items can be unlocked.
-    InProgress,
-    /// In this state, every item has been processed, and the order is now complete.
-    Completed,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo)]
-pub enum DeliveryStatus {
-    Cancelled,
-    Delivered,
-}
-
-#[derive(Clone, Debug, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo)]
-pub struct OrderItem<AccountId, InventoryId, ItemId, PaymentId> {
-    id: ItemId,
-    inventory_id: InventoryId,
-    seller: AccountId,
-    beneficiary: Option<AccountId>,
-    payment_id: Option<PaymentId>,
-    delivery: Option<DeliveryStatus>,
-}
+use types::*;
 
 #[frame_support::pallet]
 pub mod pallet {
