@@ -293,7 +293,7 @@ mod set_cart_items {
 
 mod checkout {
     use super::*;
-    use crate::OrderStatus;
+    use crate::types::OrderStatus;
     use frame_contrib_traits::listings::MutateItem;
 
     pub fn new_test_ext<T>(who: AccountId, f: impl FnOnce(u32) -> T) -> T {
@@ -506,7 +506,7 @@ mod cancel {
 
 mod pay {
     use super::*;
-    use crate::{OrderDetails, OrderStatus};
+    use crate::types::{OrderDetails, OrderStatus};
     use fc_pallet_listings::{InventoryIdOf, ItemIdOf, ItemPrice};
     use frame_contrib_traits::listings::item::Item;
     use frame_contrib_traits::listings::InspectItem;

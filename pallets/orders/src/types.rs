@@ -62,3 +62,37 @@ pub enum DeliveryStatus {
     Cancelled,
     Delivered,
 }
+
+#[cfg(feature = "runtime-benchmarks")]
+pub use benchmarks::*;
+
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarks {
+    use super::*;
+    use frame_support::traits::{
+        fungible::Mutate as FunMutate,
+        fungibles::{Create, Mutate},
+    };
+
+    pub(crate) type MerchantIdOf<B, T, I> = <B as BenchmarkHelper<T, I>>::MerchantId;
+    pub(crate) type InternalInventoryIdOf<B, T, I> = <B as BenchmarkHelper<T, I>>::InventoryId;
+
+    pub trait BenchmarkHelper<T: Config<I>, I: 'static = ()> {
+        /// The native `Balances` system.
+        type Balances: FunMutate<T::AccountId>;
+        /// The `Assets` system bound to the configuration `Listings` system.
+        type Assets: Create<T::AccountId, AssetId = PaymentAssetIdOf<T, I>, Balance = PaymentBalanceOf<T, I>>
+            + Mutate<T::AccountId, AssetId = PaymentAssetIdOf<T, I>, Balance = PaymentBalanceOf<T, I>>;
+        /// The `MerchantId` that uniquely identifies which is the merchant an inventory belongs to.
+        type MerchantId: Parameter;
+        /// The `InventoryId` that uniquely identifies the ID of the inventory.
+        type InventoryId: Parameter;
+
+        /// The identifier of the inventory created to gather the items for the order.
+        fn inventory_id() -> (Self::MerchantId, Self::InventoryId);
+
+        /// An iterator for getting multiple `item_id`s. Used when trying to build many items to
+        /// set up a benchmark test.
+        fn item_id(i: usize) -> ItemIdOf<T, I>;
+    }
+}

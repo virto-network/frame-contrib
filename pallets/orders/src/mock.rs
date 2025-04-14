@@ -3,6 +3,10 @@
 use crate::{self as fc_pallet_orders, Config};
 use codec::{Decode, Encode, MaxEncodedLen};
 use core::cell::Cell;
+
+#[cfg(feature = "runtime-benchmarks")]
+use fc_pallet_listings::InventoryId;
+
 use fc_pallet_listings::{InventoryIdOf, ItemIdOf, ItemPrice, ItemType};
 use frame_support::{
     derive_impl,
@@ -10,7 +14,9 @@ use frame_support::{
     traits::{ConstU64, EnsureOrigin, EqualPrivilegeOnly, Get},
     PalletId,
 };
-use frame_system::{EnsureNever, EnsureRoot, EnsureRootWithSuccess, EnsureSigned};
+use frame_system::{
+    pallet_prelude::BlockNumberFor, EnsureNever, EnsureRoot, EnsureRootWithSuccess, EnsureSigned,
+};
 use mock_helpers::ExtHelper;
 use scale_info::TypeInfo;
 use sp_core::{parameter_types, ByteArray};
@@ -20,10 +26,8 @@ use sp_runtime::{
     BuildStorage, MultiSignature, Percent,
 };
 
-#[cfg(feature = "runtime-benchmarks")]
-use fc_pallet_listings::InventoryId;
-
 pub type Block = frame_system::mocking::MockBlock<Test>;
+pub type BlockNumber = BlockNumberFor<Test>;
 pub type AccountPublic = <MultiSignature as Verify>::Signer;
 pub type AccountId = <AccountPublic as IdentifyAccount>::AccountId;
 pub type AssetId = <Test as pallet_assets::Config>::AssetId;
@@ -294,6 +298,12 @@ impl fc_pallet_payments::Config for Test {
     type CancelBufferBlockLength = ConstU64<10>;
 }
 
+parameter_types! {
+    pub const MaxLifetimeForCheckoutOrder: BlockNumber = 10;
+    pub const MaxCartLen: u32 = 4;
+    pub const MaxItemLen: u32 = 4;
+}
+
 pub struct LimitsPerAccountId;
 
 impl EnsureOrigin<RuntimeOrigin> for LimitsPerAccountId {
@@ -310,7 +320,11 @@ impl EnsureOrigin<RuntimeOrigin> for LimitsPerAccountId {
 
     #[cfg(feature = "runtime-benchmarks")]
     fn try_successful_origin() -> Result<RuntimeOrigin, ()> {
-        Ok(RuntimeOrigin::signed(AccountId::new([1u8; 32])))
+        Ok(RuntimeOrigin::signed(AccountId::new(
+            [MaxCartLen::get()
+                .try_into()
+                .expect("test `MaxCartLen` won't exceed 256"); 32],
+        )))
     }
 }
 
@@ -320,15 +334,33 @@ impl Config for Test {
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
     type CreateOrigin = LimitsPerAccountId;
-    type InventoryAdminOrigin = LimitsPerAccountId;
+    type OrderAdminOrigin = LimitsPerAccountId;
     type PaymentOrigin = EnsureSigned<AccountId>;
     type OrderId = u32;
     type Listings = Listings;
     type Payments = Payments;
     type Scheduler = Scheduler;
-    type MaxLifetimeForCheckoutOrder = ConstU64<10>;
-    type MaxCartLen = ConstU32<4>;
-    type MaxItemLen = ConstU32<4>;
+    type MaxLifetimeForCheckoutOrder = MaxLifetimeForCheckoutOrder;
+    type MaxCartLen = MaxCartLen;
+    type MaxItemLen = MaxItemLen;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = Self;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+impl fc_pallet_orders::BenchmarkHelper<Test> for Test {
+    type Balances = Balances;
+    type Assets = Assets;
+    type MerchantId = <Self as fc_pallet_listings::Config>::MerchantId;
+    type InventoryId = <Self as fc_pallet_listings::Config>::InventoryId;
+
+    fn inventory_id() -> (Self::MerchantId, Self::InventoryId) {
+        (AliceStore::get(), 1)
+    }
+
+    fn item_id(i: usize) -> ItemIdOf<Test> {
+        ItemType::Unit(i as u32)
+    }
 }
 
 // Test helpers: public accounts, assets, stores and `ExtBuilder`

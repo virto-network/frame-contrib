@@ -14,8 +14,9 @@ use frame_support::traits::schedule::{DispatchTime, Priority};
 use frame_support::traits::{schedule::v3::Named, Bounded, BoundedInline, Incrementable};
 use frame_system::pallet_prelude::*;
 use sp_runtime::traits::{Hash, TrailingZeroInput};
-// #[cfg(feature = "runtime-benchmarks")]
-// pub mod benchmarking;
+
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmarking;
 
 #[cfg(test)]
 mod mock;
@@ -25,14 +26,14 @@ mod tests;
 pub mod types;
 pub mod weights;
 
-pub use weights::*;
-
 pub use pallet::*;
-use types::*;
+pub use types::*;
+pub use weights::*;
 
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
+    use frame_contrib_traits::listings::InventoryLifecycle;
     use frame_support::dispatch::{GetDispatchInfo, PostDispatchInfo};
     use frame_support::traits::{CallerTrait, Incrementable};
     use sp_runtime::traits::Dispatchable;
@@ -70,10 +71,7 @@ pub mod pallet {
         ///
         /// While the maximum amount of items can be greater than [`MaxItemLen`][Self::MaxItemLen],
         /// this limit will be enforced at all times.
-        type InventoryAdminOrigin: EnsureOrigin<
-            Self::RuntimeOrigin,
-            Success = (Self::AccountId, u32),
-        >;
+        type OrderAdminOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = (Self::AccountId, u32)>;
         /// The origin to complete a payment. Returns an `AccountId`, representing the account
         /// which will pay for the order.
         type PaymentOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
@@ -86,7 +84,19 @@ pub mod pallet {
         // Dependencies: The external components this pallet depends on.
 
         /// The `Listings` component of a `Marketplace` system.
+        #[cfg(not(feature = "runtime-benchmarks"))]
         type Listings: InspectItem<
+                Self::AccountId,
+                Asset = PaymentAssetIdOf<Self, I>,
+                Balance = PaymentBalanceOf<Self, I>,
+            > + MutateItem<Self::AccountId>;
+        /// The `Listings` component of a `Marketplace` system.
+        #[cfg(feature = "runtime-benchmarks")]
+        type Listings: InventoryLifecycle<
+                MerchantIdOf<Self::BenchmarkHelper, Self, I>,
+                Id = InternalInventoryIdOf<Self::BenchmarkHelper, Self, I>,
+                AccountId = Self::AccountId,
+            > + InspectItem<
                 Self::AccountId,
                 Asset = PaymentAssetIdOf<Self, I>,
                 Balance = PaymentBalanceOf<Self, I>,
@@ -113,6 +123,12 @@ pub mod pallet {
         /// order can have.
         #[pallet::constant]
         type MaxItemLen: Get<u32>;
+
+        // Benchmarking: Types to handle benchmarks.
+
+        #[cfg(feature = "runtime-benchmarks")]
+        /// A helper trait to set up benchmark tests.
+        type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }
 
     #[pallet::pallet]
@@ -252,7 +268,7 @@ pub mod pallet {
 
         #[pallet::call_index(2)]
         pub fn checkout(origin: OriginFor<T>, order_id: T::OrderId) -> DispatchResult {
-            let (ref who, _) = T::InventoryAdminOrigin::ensure_origin(origin)?;
+            let (ref who, _) = T::OrderAdminOrigin::ensure_origin(origin)?;
 
             Order::<T, I>::try_mutate(order_id.clone(), |order| -> DispatchResult {
                 let Some((owner, details)) = order else {
@@ -285,7 +301,7 @@ pub mod pallet {
         #[pallet::call_index(3)]
         pub fn cancel(origin: OriginFor<T>, order_id: T::OrderId) -> DispatchResult {
             Order::<T, I>::try_mutate(order_id.clone(), |maybe_order| -> DispatchResult {
-                let ref maybe_who = T::InventoryAdminOrigin::ensure_origin_or_root(origin)?;
+                let ref maybe_who = T::OrderAdminOrigin::ensure_origin_or_root(origin)?;
                 let Some((ref owner, details)) = maybe_order else {
                     return Err(Error::<T, I>::OrderNotFound.into());
                 };
@@ -437,7 +453,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         items: impl Iterator<Item = (InventoryIdOf<T, I>, ItemIdOf<T, I>, Option<T::AccountId>)>,
     ) -> Result<(), DispatchError> {
         Order::<T, I>::try_mutate(order_id, |order_items| {
-            let (ref who, max_items) = T::InventoryAdminOrigin::ensure_origin(origin)?;
+            let (ref who, max_items) = T::OrderAdminOrigin::ensure_origin(origin)?;
             let Some((owner, details)) = order_items else {
                 return Err(Error::<T, I>::OrderNotFound.into());
             };
