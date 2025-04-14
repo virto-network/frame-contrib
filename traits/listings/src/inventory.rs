@@ -1,5 +1,4 @@
-use frame_support::pallet_prelude::DispatchResult;
-use frame_support::Parameter;
+use frame_support::{pallet_prelude::DispatchResult, Parameter};
 
 /// Methods to fetch the list of inventories.
 pub trait Inspect<MerchantId> {
