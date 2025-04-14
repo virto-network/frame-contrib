@@ -17,30 +17,20 @@ sp-io.workspace = true
 sp-runtime.workspace = true
 
 [features]
-default = [
-  "std",
-  "fc-pallet-listings",
-  "pallet-assets",
-]
+default = ["fc-pallet-listings", "pallet-assets", "std"]
 
 std = [
-  "fc-pallet-listings?/std",
-  "frame-support/std",
-  "pallet-assets?/std",
-  "pallet-balances?/std",
-  "sp-io/std",
-  "sp-runtime/std",
-  "frame-system/std",
+	"fc-pallet-listings?/std",
+	"frame-support/std",
+	"frame-system/std",
+	"pallet-assets?/std",
+	"pallet-balances?/std",
+	"sp-io/std",
+	"sp-runtime/std",
 ]
 
-fc-pallet-listings = [
-  "dep:fc-pallet-listings"
-]
+fc-pallet-listings = ["dep:fc-pallet-listings"]
 
-pallet-assets = [
-  "dep:pallet-assets"
-]
+pallet-assets = ["dep:pallet-assets"]
 
-pallet-balances = [
-  "dep:pallet-balances"
-]
+pallet-balances = ["dep:pallet-balances"]

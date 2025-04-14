@@ -50,15 +50,15 @@ std = [
 	"frame-support/std",
 	"frame-system/std",
 	"pallet-balances/std",
+	"pallet-preimage/std",
 	"pallet-referenda/std",
+	"pallet-scheduler/std",
 	"scale-info/std",
 	"serde",
 	"sp-core/std",
 	"sp-io/std",
 	"sp-runtime/std",
 	"sp-std/std",
-	"pallet-preimage/std",
-	"pallet-scheduler/std"
 ]
 try-runtime = [
 	"frame-support/try-runtime",

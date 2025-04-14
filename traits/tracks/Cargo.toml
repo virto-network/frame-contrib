@@ -21,6 +21,6 @@ std = [
 	"scale-info/std",
 ]
 runtime-benchmarks = [
+	"frame-support/runtime-benchmarks",
 	"pallet-referenda/runtime-benchmarks",
-	"frame-support/runtime-benchmarks"
 ]
