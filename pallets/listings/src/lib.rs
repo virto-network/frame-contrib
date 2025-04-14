@@ -8,6 +8,7 @@
 extern crate alloc;
 extern crate core;
 
+use alloc::{borrow::ToOwned, vec::Vec};
 use fc_traits_listings::*;
 use frame_support::{
     pallet_prelude::*,
