@@ -123,20 +123,22 @@ pub mod pallet {
         type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }
 
+    pub type GenesisConfigItem<T, I = ()> = (
+        (MerchantIdOf<T, I>, InternalInventoryIdOf<T, I>),
+        ItemIdOf<T, I>,
+        Vec<u8>,
+        Option<(AssetIdOf<T, I>, AssetBalanceOf<T, I>)>,
+        bool,
+        bool,
+    );
+
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config<I>, I: 'static = ()> {
         /// Genesis inventories: merchant, inventory_id, owner
         pub inventories: Vec<(T::MerchantId, T::InventoryId, T::AccountId)>,
         /// Genesis items: inventory_id, item_id, name, price, transferable, for_resale
-        pub items: Vec<(
-            (T::MerchantId, T::InventoryId),
-            ItemIdOf<T, I>,
-            Vec<u8>,
-            Option<(AssetIdOf<T, I>, AssetBalanceOf<T, I>)>,
-            bool,
-            bool,
-        )>,
+        pub items: Vec<GenesisConfigItem<T, I>>,
     }
 
     #[pallet::genesis_build]
@@ -176,7 +178,7 @@ pub mod pallet {
                 }
 
                 if !for_resale {
-                    let result = Pallet::<T, I>::disable_resell(&inventory_id, item_id);
+                    let result = Pallet::<T, I>::disable_resell(inventory_id, item_id);
                     assert!(result.is_ok());
                 }
             }

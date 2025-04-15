@@ -22,6 +22,7 @@ use sp_io::hashing::blake2_256;
 
 use alloc::vec::Vec;
 use fc_traits_payments::{OnPaymentStatusChanged, PaymentMutate};
+use frame_support::pallet_prelude::DispatchResult;
 use frame_support::{
     dispatch::{GetDispatchInfo, PostDispatchInfo},
     ensure, fail,
@@ -42,7 +43,7 @@ use frame_support::{
 };
 use sp_runtime::{
     traits::{CheckedAdd, CheckedSub, Dispatchable, StaticLookup},
-    ArithmeticError, DispatchError, DispatchResult, Percent, Saturating,
+    ArithmeticError, DispatchError, Percent, Saturating,
 };
 
 pub mod weights;
@@ -61,7 +62,7 @@ pub trait PaymentId<T: frame_system::Config>: Copy + Clone {
 pub mod pallet {
     use super::*;
     use frame_support::{
-        dispatch::DispatchResultWithPostInfo,
+        dispatch::DispatchResult,
         pallet_prelude::{StorageDoubleMap, *},
         PalletId,
     };
@@ -267,7 +268,7 @@ pub mod pallet {
         TransferPayment,
     }
 
-    #[pallet::call]
+    #[pallet::call(weight(<T as Config>::WeightInfo))]
     impl<T: Config> Pallet<T> {
         /// This allows any user to create a new payment, that releases only to
         /// specified recipient. The only action is to store the details of this
@@ -283,23 +284,19 @@ pub mod pallet {
             asset: AssetIdOf<T>,
             #[pallet::compact] amount: BalanceOf<T>,
             remark: Option<BoundedDataOf<T>>,
-        ) -> DispatchResultWithPostInfo {
+        ) -> DispatchResult {
             let sender = T::SenderOrigin::ensure_origin(origin)?;
             let beneficiary = T::Lookup::lookup(beneficiary)?;
 
             Self::create(&sender, asset, amount, &beneficiary, remark)?;
 
-            Ok(().into())
+            Ok(())
         }
 
         /// Release any created payment, this will transfer the reserved amount
         /// from the creator of the payment to the assigned recipient
         #[pallet::call_index(1)]
-        #[pallet::weight(<T as Config>::WeightInfo::release())]
-        pub fn release(
-            origin: OriginFor<T>,
-            payment_id: T::PaymentId,
-        ) -> DispatchResultWithPostInfo {
+        pub fn release(origin: OriginFor<T>, payment_id: T::PaymentId) -> DispatchResult {
             let sender = T::SenderOrigin::ensure_origin(origin)?;
 
             // ensure the payment is in Created state
@@ -326,18 +323,14 @@ pub mod pallet {
             T::OnPaymentStatusChanged::on_payment_released(&payment_id, fees, beneficiary_amount);
 
             Self::deposit_event(Event::PaymentReleased { payment_id });
-            Ok(().into())
+            Ok(())
         }
 
         /// Allow the creator of a payment to initiate a refund that will return
         /// the funds after a configured amount of time that the receiver has to
         /// react and opose the request
         #[pallet::call_index(2)]
-        #[pallet::weight(<T as Config>::WeightInfo::request_refund())]
-        pub fn request_refund(
-            origin: OriginFor<T>,
-            payment_id: T::PaymentId,
-        ) -> DispatchResultWithPostInfo {
+        pub fn request_refund(origin: OriginFor<T>, payment_id: T::PaymentId) -> DispatchResult {
             let sender = T::SenderOrigin::ensure_origin(origin)?;
 
             let expiry = Payment::<T>::try_mutate(
@@ -379,15 +372,11 @@ pub mod pallet {
 
             Self::deposit_event(Event::PaymentCreatorRequestedRefund { payment_id, expiry });
 
-            Ok(().into())
+            Ok(())
         }
 
         #[pallet::call_index(3)]
-        #[pallet::weight(<T as Config>::WeightInfo::accept_and_pay())]
-        pub fn accept_and_pay(
-            origin: OriginFor<T>,
-            payment_id: T::PaymentId,
-        ) -> DispatchResultWithPostInfo {
+        pub fn accept_and_pay(origin: OriginFor<T>, payment_id: T::PaymentId) -> DispatchResult {
             let sender = T::SenderOrigin::ensure_origin(origin)?;
             let (_, beneficiary) = PaymentParties::<T>::get(&payment_id)?;
 
@@ -459,18 +448,14 @@ pub mod pallet {
             )?;
 
             Self::deposit_event(Event::PaymentRequestCompleted { payment_id });
-            Ok(().into())
+            Ok(())
         }
 
         /// Cancel a payment in created state, this will release the reserved
         /// back to creator of the payment. This extrinsic can only be called by
         /// the recipient of the payment
         #[pallet::call_index(10)]
-        #[pallet::weight(<T as Config>::WeightInfo::cancel())]
-        pub fn cancel(
-            origin: OriginFor<T>,
-            payment_id: T::PaymentId,
-        ) -> DispatchResultWithPostInfo {
+        pub fn cancel(origin: OriginFor<T>, payment_id: T::PaymentId) -> DispatchResult {
             let beneficiary = T::BeneficiaryOrigin::ensure_origin(origin)?;
             let (sender, b) = PaymentParties::<T>::get(&payment_id)?;
             ensure!(beneficiary == b, Error::<T>::InvalidBeneficiary);
@@ -495,7 +480,7 @@ pub mod pallet {
             Payment::<T>::remove(&sender, &payment_id);
             PaymentParties::<T>::remove(payment_id);
 
-            Ok(().into())
+            Ok(())
         }
 
         /// Allow payment beneficiary to dispute the refund request from the
@@ -504,10 +489,7 @@ pub mod pallet {
         /// then change the state of the payment after review.
         #[pallet::call_index(11)]
         #[pallet::weight(<T as Config>::WeightInfo::dispute_refund())]
-        pub fn dispute_refund(
-            origin: OriginFor<T>,
-            payment_id: T::PaymentId,
-        ) -> DispatchResultWithPostInfo {
+        pub fn dispute_refund(origin: OriginFor<T>, payment_id: T::PaymentId) -> DispatchResult {
             let beneficiary = T::BeneficiaryOrigin::ensure_origin(origin)?;
             let (sender, b) = PaymentParties::<T>::get(&payment_id)?;
             ensure!(beneficiary == b, Error::<T>::InvalidBeneficiary);
@@ -547,7 +529,7 @@ pub mod pallet {
             )?;
 
             Self::deposit_event(Event::PaymentRefundDisputed { payment_id });
-            Ok(().into())
+            Ok(())
         }
 
         // Creates a new payment with the given details. This can be called by the
@@ -556,13 +538,12 @@ pub mod pallet {
         // PaymentRequested State and can only be modified by the `accept_and_pay`
         // extrinsic.
         #[pallet::call_index(12)]
-        #[pallet::weight(<T as Config>::WeightInfo::request_payment())]
         pub fn request_payment(
             origin: OriginFor<T>,
             sender: AccountIdLookupOf<T>,
             asset: AssetIdOf<T>,
             #[pallet::compact] amount: BalanceOf<T>,
-        ) -> DispatchResultWithPostInfo {
+        ) -> DispatchResult {
             let beneficiary = T::BeneficiaryOrigin::ensure_origin(origin)?;
             let sender = T::Lookup::lookup(sender)?;
             // create PaymentDetail and add to storage
@@ -578,16 +559,15 @@ pub mod pallet {
 
             Self::deposit_event(Event::PaymentRequestCreated { payment_id });
 
-            Ok(().into())
+            Ok(())
         }
 
         #[pallet::call_index(20)]
-        #[pallet::weight(<T as Config>::WeightInfo::resolve_dispute())]
         pub fn resolve_dispute(
             origin: OriginFor<T>,
             payment_id: T::PaymentId,
             dispute_result: DisputeResult,
-        ) -> DispatchResultWithPostInfo {
+        ) -> DispatchResult {
             let dispute_resolver = T::DisputeResolver::ensure_origin(origin)?;
             let (sender, beneficiary) = PaymentParties::<T>::get(&payment_id)?;
 
@@ -602,7 +582,7 @@ pub mod pallet {
             Self::settle_payment(&sender, &beneficiary, &payment_id, dispute)?;
 
             Self::deposit_event(Event::PaymentDisputeResolved { payment_id });
-            Ok(().into())
+            Ok(())
         }
     }
 }

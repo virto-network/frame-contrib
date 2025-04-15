@@ -10,6 +10,12 @@ pub(crate) type AssetIdOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountId
 pub(crate) type AssetBalanceOf<T, I> =
     <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::Balance;
 
+/// The `MerchantId` configuration parameter.
+pub(crate) type MerchantIdOf<T, I = ()> = <T as Config<I>>::MerchantId;
+
+/// The `InventoryId` configuration parameter.
+pub(crate) type InternalInventoryIdOf<T, I = ()> = <T as Config<I>>::InventoryId;
+
 /// The composite `InventoryId` bound to the pallet instance.
 pub type InventoryIdOf<T, I = ()> =
     InventoryId<<T as Config<I>>::MerchantId, <T as Config<I>>::InventoryId>;

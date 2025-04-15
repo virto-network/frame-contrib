@@ -212,6 +212,20 @@ pub mod subscriptions {
 
     pub use {Inspect as InspectSubscription, Mutate as MutateSubscription};
 
+    type MomentOf<T, AccountId> = <T as Inspect<AccountId>>::Moment;
+    type ItemPriceOf<T, AccountId> =
+        ItemPrice<<T as InspectItem<AccountId>>::Asset, <T as InspectItem<AccountId>>::Balance>;
+    type SubscriptionConditionsOf<T, AccountId> =
+        SubscriptionConditions<ItemPriceOf<T, AccountId>, MomentOf<T, AccountId>>;
+    type SubscriptionOf<T, AccountId> =
+        Subscription<ItemPriceOf<T, AccountId>, MomentOf<T, AccountId>>;
+    type SubscriptionTerminationOf<T, AccountId, Reason> = SubscriptionTermination<
+        AccountId,
+        ItemPriceOf<T, AccountId>,
+        MomentOf<T, AccountId>,
+        Reason,
+    >;
+
     pub trait Inspect<AccountId>: InspectItem<AccountId> {
         type Moment;
 
@@ -219,27 +233,20 @@ pub mod subscriptions {
         fn subscription_conditions(
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
-        ) -> Option<SubscriptionConditions<ItemPrice<Self::Asset, Self::Balance>, Self::Moment>>;
+        ) -> Option<SubscriptionConditionsOf<Self, AccountId>>;
 
         /// Retrieves the [Subscription] state for an item, if it has an active subscription.
         fn subscription(
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
-        ) -> Option<Subscription<ItemPrice<Self::Asset, Self::Balance>, Self::Moment>>;
+        ) -> Option<SubscriptionOf<Self, AccountId>>;
 
         /// If a subscription termination has been disputed, retrieves the [TerminationDispute]
         /// information of such subscription item.
         fn dispute<Reason: AsRef<[u8]>>(
             inventory_id: &Self::InventoryId,
             id: &Self::Id,
-        ) -> Option<
-            SubscriptionTermination<
-                AccountId,
-                ItemPrice<Self::Asset, Self::Balance>,
-                Self::Moment,
-                Reason,
-            >,
-        >;
+        ) -> Option<SubscriptionTerminationOf<Self, AccountId, Reason>>;
     }
 
     /// Methods to modify the state of a subscription item.

@@ -85,7 +85,7 @@ impl<T: Config<I>, I: 'static> ExtHelper for ListingsExtBuilder<T, I> {
                          id: (merchant_id, id),
                          owner,
                          ..
-                     }| (merchant_id.clone(), id.clone(), owner.clone()),
+                     }| (*merchant_id, *id, owner.clone()),
                 )
                 .collect(),
             items: self
@@ -106,8 +106,8 @@ impl<T: Config<I>, I: 'static> ExtHelper for ListingsExtBuilder<T, I> {
                                  for_resale: not_for_resale,
                              }| {
                                 (
-                                    inventory_id.clone(),
-                                    id.clone(),
+                                    *inventory_id,
+                                    *id,
                                     name.clone(),
                                     price
                                         .clone()

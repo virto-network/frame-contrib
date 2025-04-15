@@ -5,6 +5,8 @@
 //! A component, part of the `Marketplace` subsystem, that handles orders of items existing in a
 //! `Listings` component, which can be paid off using the `Payments` component.
 
+#[cfg(feature = "runtime-benchmarks")]
+use frame_contrib_traits::listings::InventoryLifecycle;
 use frame_contrib_traits::{
     listings::{item::Item, item::ItemPrice, InspectItem, MutateItem},
     payments::{OnPaymentStatusChanged, PaymentInspect, PaymentMutate},
@@ -33,7 +35,6 @@ pub use weights::*;
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_contrib_traits::listings::InventoryLifecycle;
     use frame_support::dispatch::{GetDispatchInfo, PostDispatchInfo};
     use frame_support::traits::{CallerTrait, Incrementable};
     use sp_runtime::traits::Dispatchable;
@@ -217,7 +218,7 @@ pub mod pallet {
         #[pallet::call_index(0)]
         pub fn create_cart(
             origin: OriginFor<T>,
-            maybe_items: Option<Vec<(InventoryIdOf<T, I>, ItemIdOf<T, I>, Option<T::AccountId>)>>,
+            maybe_items: Option<Vec<CartItemParameterOf<T, I>>>,
         ) -> DispatchResult {
             let (owner, max_carts) = T::CreateOrigin::ensure_origin(origin.clone())?;
 
@@ -261,7 +262,7 @@ pub mod pallet {
         pub fn set_cart_items(
             origin: OriginFor<T>,
             order_id: T::OrderId,
-            items: Vec<(InventoryIdOf<T, I>, ItemIdOf<T, I>, Option<T::AccountId>)>,
+            items: Vec<CartItemParameterOf<T, I>>,
         ) -> DispatchResult {
             Self::set_order_items(origin, &order_id, items.into_iter())
         }
@@ -301,7 +302,7 @@ pub mod pallet {
         #[pallet::call_index(3)]
         pub fn cancel(origin: OriginFor<T>, order_id: T::OrderId) -> DispatchResult {
             Order::<T, I>::try_mutate(order_id.clone(), |maybe_order| -> DispatchResult {
-                let ref maybe_who = T::OrderAdminOrigin::ensure_origin_or_root(origin)?;
+                let maybe_who = &T::OrderAdminOrigin::ensure_origin_or_root(origin)?;
                 let Some((ref owner, details)) = maybe_order else {
                     return Err(Error::<T, I>::OrderNotFound.into());
                 };
@@ -333,7 +334,7 @@ pub mod pallet {
 
         #[pallet::call_index(4)]
         pub fn pay(origin: OriginFor<T>, order_id: T::OrderId) -> DispatchResult {
-            let ref who = T::PaymentOrigin::ensure_origin(origin)?;
+            let who = &T::PaymentOrigin::ensure_origin(origin)?;
 
             Order::<T, I>::try_mutate(order_id.clone(), |order| -> DispatchResult {
                 let Some((owner, details)) = order else {
@@ -426,7 +427,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             if let Some(i) = carts
                 .iter()
                 .enumerate()
-                .find_map(|(i, id)| (id == order_id).then(|| i))
+                .find_map(|(i, id)| (id == order_id).then_some(i))
             {
                 carts.swap_remove(i);
             }
@@ -520,7 +521,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         }
         .into();
         let hash = T::Hashing::hash_of(&call).using_encoded(|bytes| {
-            Decode::decode(&mut TrailingZeroInput::new(&bytes))
+            Decode::decode(&mut TrailingZeroInput::new(bytes))
                 .expect("decode from TrailingZeroes onto [u8;32] is safe; qed")
         });
 

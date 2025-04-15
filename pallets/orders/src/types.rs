@@ -17,6 +17,8 @@ pub type OrderDetailsOf<T, I = ()> = OrderDetails<
     PaymentIdOf<T, I>,
     <T as Config<I>>::MaxItemLen,
 >;
+pub(crate) type CartItemParameterOf<T, I = ()> =
+    (InventoryIdOf<T, I>, ItemIdOf<T, I>, Option<AccountIdOf<T>>);
 
 #[derive(Clone, Debug, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo)]
 #[scale_info(skip_type_params(MaxItemLen))]
