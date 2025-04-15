@@ -10,8 +10,10 @@ fn assert_has_event<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>::R
     frame_system::Pallet::<T>::assert_has_event(generic_event.into())
 }
 
-fn inventory_info<T: Config<I>, I: 'static>(
-) -> Result<(OriginFor<T>, InventoryIdOf<T, I>, AccountIdOf<T>), DispatchError> {
+type InventoryInfoOf<T, I> = (OriginFor<T>, InventoryIdOf<T, I>, AccountIdOf<T>);
+type ItemSetupFor<T, I> = (OriginFor<T>, InventoryIdOf<T, I>, ItemIdOf<T, I>);
+
+fn inventory_info<T: Config<I>, I: 'static>() -> Result<InventoryInfoOf<T, I>, DispatchError> {
     let inventory_id = T::BenchmarkHelper::inventory_id();
     let origin = T::CreateInventoryOrigin::try_successful_origin(&inventory_id)
         .map_err(|_| DispatchError::BadOrigin)?;
@@ -32,8 +34,7 @@ fn setup_inventory<T: Config<I>, I: 'static>(
     Ok((origin, inventory_id))
 }
 
-fn setup_item<T: Config<I>, I: 'static>(
-) -> Result<(OriginFor<T>, InventoryIdOf<T, I>, ItemIdOf<T, I>), DispatchError> {
+fn setup_item<T: Config<I>, I: 'static>() -> Result<ItemSetupFor<T, I>, DispatchError> {
     let (origin, inventory_id) = setup_inventory::<T, I>()?;
     let item_id = T::BenchmarkHelper::item_id();
 

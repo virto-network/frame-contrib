@@ -17,23 +17,22 @@ fn prepare_named_account<T: Config<I>, I: 'static>(name: &'static str) -> Accoun
 
 fn prepare_account<T: Config<I>, I: 'static>(who: &AccountIdOf<T>) {
     <T::BenchmarkHelper as BenchmarkHelper<T, I>>::Balances::set_balance(
-        &who,
+        who,
         <T::BenchmarkHelper as BenchmarkHelper<T, I>>::Balances::minimum_balance(),
     );
 }
+
+type SetupFor<T, I> = (
+    PaymentAssetIdOf<T, I>,
+    <T as Config<I>>::OrderId,
+    Vec<CartItemParameterOf<T, I>>,
+);
 
 fn setup<T: Config<I>, I: 'static>(
     carts: u32,
     amount_items: u32,
     caller: T::RuntimeOrigin,
-) -> Result<
-    (
-        PaymentAssetIdOf<T, I>,
-        T::OrderId,
-        Vec<(InventoryIdOf<T, I>, ItemIdOf<T, I>, Option<T::AccountId>)>,
-    ),
-    DispatchError,
->
+) -> Result<SetupFor<T, I>, DispatchError>
 where
     PaymentAssetIdOf<T, I>: Default,
     InventoryIdOf<T, I>: From<(
@@ -82,10 +81,12 @@ fn prepare_asset_account<T: Config<I>, I: 'static>(
     Ok(())
 }
 
+type ItemIdentificationFor<T, I> = (InventoryIdOf<T, I>, ItemIdOf<T, I>);
+
 fn prepare_items<T: Config<I>, I: 'static>(
     asset_id: &PaymentAssetIdOf<T, I>,
     prices: impl Iterator<Item = PaymentBalanceOf<T, I>>,
-) -> Result<Vec<(InventoryIdOf<T, I>, ItemIdOf<T, I>)>, DispatchError>
+) -> Result<Vec<ItemIdentificationFor<T, I>>, DispatchError>
 where
     InventoryIdOf<T, I>: From<(
         MerchantIdOf<T::BenchmarkHelper, T, I>,
