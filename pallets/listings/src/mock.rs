@@ -1,6 +1,6 @@
 //! Test environment for template pallet.
 
-use crate::{self as pallet_listings, InventoryId, ItemPrice, ItemType};
+use crate::{self as pallet_listings, InventoryId, ItemType};
 
 use fc_traits_listings::InventoryLifecycle;
 use frame_support::traits::fungible::Unbalanced;
@@ -117,7 +117,6 @@ use core::marker::PhantomData;
 #[cfg(feature = "runtime-benchmarks")]
 pub struct OwnersCatalogBenchmarkHelper<T, I = ()>(PhantomData<(T, I)>);
 
-use crate::types::ItemPriceOf;
 #[cfg(feature = "runtime-benchmarks")]
 use crate::types::{InventoryIdOf, ItemIdOf};
 
@@ -218,27 +217,17 @@ impl pallet_listings::Config for Test {
     type InventoryId = u32;
     type ItemSKU = u32;
     #[cfg(feature = "runtime-benchmarks")]
-    type BenchmarkHelper = ListingsBenchmarkHelper;
+    type BenchmarkHelper = Self;
 }
 
 #[cfg(feature = "runtime-benchmarks")]
-pub struct ListingsBenchmarkHelper;
-
-#[cfg(feature = "runtime-benchmarks")]
-impl pallet_listings::BenchmarkHelper<Test> for ListingsBenchmarkHelper {
+impl pallet_listings::BenchmarkHelper<InventoryIdOf<Test>, ItemIdOf<Test>> for Test {
     fn inventory_id() -> InventoryIdOf<Test> {
         InventoryId([0u8; 32], 0)
     }
 
     fn item_id() -> ItemIdOf<Test> {
         ItemType::Unit(0)
-    }
-
-    fn item_price() -> ItemPriceOf<Test> {
-        ItemPrice {
-            asset: 0,
-            amount: 10,
-        }
     }
 }
 

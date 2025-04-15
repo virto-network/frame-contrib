@@ -115,9 +115,7 @@ pub enum ItemType<Id> {
 }
 
 #[cfg(feature = "runtime-benchmarks")]
-pub trait BenchmarkHelper<T: Config<I>, I: 'static = ()> {
-    fn inventory_id() -> InventoryIdOf<T, I>;
-    fn item_id() -> ItemIdOf<T, I>;
-
-    fn item_price() -> ItemPriceOf<T, I>;
+pub trait BenchmarkHelper<InventoryId, ItemId> {
+    fn inventory_id() -> InventoryId;
+    fn item_id() -> ItemId;
 }

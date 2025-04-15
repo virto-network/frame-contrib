@@ -120,7 +120,7 @@ pub mod pallet {
 
         #[cfg(feature = "runtime-benchmarks")]
         /// Helper for executing pallet benchmarks
-        type BenchmarkHelper: BenchmarkHelper<Self, I>;
+        type BenchmarkHelper: BenchmarkHelper<InventoryIdOf<Self, I>, ItemIdOf<Self, I>>;
     }
 
     pub type GenesisConfigItem<T, I = ()> = (

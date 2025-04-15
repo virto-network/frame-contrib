@@ -48,7 +48,10 @@ fn setup_item<T: Config<I>, I: 'static>(
     Ok((origin, inventory_id, item_id))
 }
 
-#[instance_benchmarks]
+#[instance_benchmarks(
+where
+    AssetIdOf<T, I>: Default
+)]
 mod benchmarks {
     use super::*;
 
@@ -104,7 +107,10 @@ mod benchmarks {
         let (origin, inventory_id) = setup_inventory::<T, I>()?;
         let id = T::BenchmarkHelper::item_id();
         let name = BoundedVec::truncate_from(vec![0u8; q as usize]);
-        let price = T::BenchmarkHelper::item_price();
+        let price = ItemPrice {
+            asset: Default::default(),
+            amount: 1u32.into(),
+        };
 
         #[extrinsic_call]
         _(
@@ -161,7 +167,10 @@ mod benchmarks {
     pub fn set_item_price() -> Result<(), BenchmarkError> {
         // Setup code
         let (origin, inventory_id, id) = setup_item::<T, I>()?;
-        let price = T::BenchmarkHelper::item_price();
+        let price = ItemPrice {
+            asset: Default::default(),
+            amount: 10u32.into(),
+        };
 
         #[extrinsic_call]
         _(origin as T::RuntimeOrigin, inventory_id, id, price.clone());
