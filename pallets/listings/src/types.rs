@@ -2,8 +2,7 @@ use super::*;
 use frame_support::traits::{fungibles::Inspect, Incrementable};
 pub use item::ItemPrice;
 
-#[cfg(feature = "std")]
-use sp_runtime::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 /// The AssetId type bound to the pallet instance.
 pub(crate) type AssetIdOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::AssetId;
@@ -97,8 +96,19 @@ impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
 }
 
 /// The type an item can be, part of its unique identification.
-#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
-#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    RuntimeDebug,
+    MaxEncodedLen,
+    TypeInfo,
+)]
 pub enum ItemType<Id> {
     Unit(Id),
     Subscription(Id),
