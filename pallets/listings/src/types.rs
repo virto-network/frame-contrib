@@ -114,6 +114,25 @@ pub enum ItemType<Id> {
     Subscription(Id),
 }
 
+impl<T: Default> Default for ItemType<T> {
+    fn default() -> Self {
+        ItemType::Unit(Default::default())
+    }
+}
+
+impl<T: Incrementable> Incrementable for ItemType<T> {
+    fn increment(&self) -> Option<Self> {
+        match self {
+            ItemType::Unit(v) => v.increment().map(ItemType::Unit),
+            ItemType::Subscription(v) => v.increment().map(ItemType::Subscription),
+        }
+    }
+
+    fn initial_value() -> Option<Self> {
+        T::initial_value().map(ItemType::Unit)
+    }
+}
+
 #[cfg(feature = "runtime-benchmarks")]
 pub trait BenchmarkHelper<InventoryId, ItemId> {
     fn inventory_id() -> InventoryId;
