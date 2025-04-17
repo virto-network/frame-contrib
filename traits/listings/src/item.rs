@@ -1,7 +1,6 @@
+use super::*;
+
 use alloc::vec::Vec;
-use codec::{Decode, Encode, MaxEncodedLen};
-use frame_support::dispatch::DispatchResult;
-use frame_support::Parameter;
 use scale_info::TypeInfo;
 
 #[derive(Encode, Decode, PartialEq, Clone, Debug, TypeInfo)]
@@ -17,96 +16,134 @@ pub struct ItemPrice<Asset, Balance> {
     pub amount: Balance,
 }
 
-pub type IdItemOf<T, AccountId> = (
-    (
-        <T as Inspect<AccountId>>::InventoryId,
-        <T as Inspect<AccountId>>::Id,
-    ),
-    Item<AccountId, <T as Inspect<AccountId>>::Asset, <T as Inspect<AccountId>>::Balance>,
+pub type InventoryIdOf<T, AccountId> = (
+    <T as Inspect<AccountId>>::MerchantId,
+    <T as Inspect<AccountId>>::InventoryId,
 );
+pub type ItemOf<T, AccountId> =
+    Item<AccountId, <T as Inspect<AccountId>>::Asset, <T as Inspect<AccountId>>::Balance>;
 
-pub use {Inspect as InspectItem, Mutate as MutateItem};
+pub use {
+    Inspect as InspectItem, InspectEnumerable as ItemInspectEnumerable, Mutate as MutateItem,
+};
 
 /// Methods for fetching information about a regular item from an inventory.
 pub trait Inspect<AccountId> {
-    type InventoryId: Parameter + MaxEncodedLen;
-    type Id: Parameter + MaxEncodedLen;
+    /// A listings merchant.
+    type MerchantId: ListingsIdentifier;
+    /// A type to uniquely identify an inventory from the same merchant.
+    type InventoryId: ListingsIdentifier;
+    /// A type to uniquely identify each item within an inventory.
+    type ItemId: ListingsIdentifier;
+    /// The type to represent an asset class used to set the price of an item.
     type Asset: Parameter + MaxEncodedLen;
+    /// The type to represent the amount in the price of an item.
     type Balance: frame_support::traits::tokens::Balance;
-
-    /// Returns an iterable list of the items published in an inventory.
-    fn items(inventory_id: &Self::InventoryId) -> impl Iterator<Item = IdItemOf<Self, AccountId>>;
-
-    /// Returns an iterable list of the items owned by an account.
-    fn owned(owner: &AccountId) -> impl Iterator<Item = IdItemOf<Self, AccountId>>;
 
     /// Returns the displayable name for an item.
     fn item(
-        inventory_id: &Self::InventoryId,
-        id: &Self::Id,
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
     ) -> Option<Item<AccountId, Self::Asset, Self::Balance>>;
+
+    /// Returns the creator of an item, if it exists.
+    fn creator(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
+    ) -> Option<AccountId>;
 
     /// Returns an attribute associated to the item.
     fn attribute<K: Encode, V: Decode>(
-        inventory_id: &Self::InventoryId,
-        id: &Self::Id,
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
         key: &K,
     ) -> Option<V>;
 
     /// Returns whether an item can be transferred.
-    fn transferable(inventory_id: &Self::InventoryId, id: &Self::Id) -> bool;
+    fn transferable(inventory_id: &InventoryIdOf<Self, AccountId>, id: &Self::ItemId) -> bool;
 
     /// Returns whether an item is available for resale.
-    fn can_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> bool;
+    fn can_resell(inventory_id: &InventoryIdOf<Self, AccountId>, id: &Self::ItemId) -> bool;
+}
+
+/// Methods to fetching lists of items.
+pub trait InspectEnumerable<AccountId>: Inspect<AccountId> {
+    /// Returns an iterable list of the items published in an inventory.
+    fn items(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+    ) -> impl Iterator<Item = (Self::ItemId, ItemOf<Self, AccountId>)>;
+
+    /// Returns an iterable list of the items owned by an account.
+    fn owned(
+        owner: &AccountId,
+    ) -> impl Iterator<
+        Item = (
+            impl Into<InventoryIdOf<Self, AccountId>>,
+            Self::ItemId,
+            ItemOf<Self, AccountId>,
+        ),
+    >;
 }
 
 pub trait Mutate<AccountId>: Inspect<AccountId> {
     /// Publish a new item in an active inventory.
     fn publish(
-        inventory_id: &Self::InventoryId,
-        id: &Self::Id,
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
         name: Vec<u8>,
         maybe_price: Option<ItemPrice<Self::Asset, Self::Balance>>,
     ) -> DispatchResult;
 
     /// Enables an existing item to be resold.
-    fn enable_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
+    fn enable_resell(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
+    ) -> DispatchResult;
 
     /// Disables an existing item to be resold.
-    fn disable_resell(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
+    fn disable_resell(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
+    ) -> DispatchResult;
 
     /// Marks an existing item as transferable
-    fn enable_transfer(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
+    fn enable_transfer(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
+    ) -> DispatchResult;
 
     /// Marks an existing item as non-transferable
-    fn disable_transfer(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
+    fn disable_transfer(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
+    ) -> DispatchResult;
 
     /// Forcefully transfers an item, even though is disabled for transfer.
     fn transfer(
-        inventory_id: &Self::InventoryId,
-        id: &Self::Id,
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
         beneficiary: &AccountId,
     ) -> DispatchResult;
 
     /// Sets the price on an existing item.
     fn set_price(
-        inventory_id: &Self::InventoryId,
-        id: &Self::Id,
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
         price: ItemPrice<Self::Asset, Self::Balance>,
     ) -> DispatchResult;
 
     /// Sets an arbitrary attribute on an existing item.
     fn set_attribute<K: Encode, V: Encode>(
-        inventory_id: &Self::InventoryId,
-        id: &Self::Id,
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
         key: &K,
         value: V,
     ) -> DispatchResult;
 
     /// Clears an arbitrary attribute on an existing item.
     fn clear_attribute<K: Encode>(
-        inventory_id: &Self::InventoryId,
-        id: &Self::Id,
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
         key: &K,
     ) -> DispatchResult;
 }
@@ -231,61 +268,70 @@ pub mod subscriptions {
 
         /// Retrieves the [SubscriptionConditions] on an item, if any.
         fn subscription_conditions(
-            inventory_id: &Self::InventoryId,
-            id: &Self::Id,
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
         ) -> Option<SubscriptionConditionsOf<Self, AccountId>>;
 
         /// Retrieves the [Subscription] state for an item, if it has an active subscription.
         fn subscription(
-            inventory_id: &Self::InventoryId,
-            id: &Self::Id,
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
         ) -> Option<SubscriptionOf<Self, AccountId>>;
 
         /// If a subscription termination has been disputed, retrieves the [TerminationDispute]
         /// information of such subscription item.
-        fn dispute<Reason: AsRef<[u8]>>(
-            inventory_id: &Self::InventoryId,
-            id: &Self::Id,
+        fn dispute<Reason: Encode>(
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
         ) -> Option<SubscriptionTerminationOf<Self, AccountId, Reason>>;
     }
 
     /// Methods to modify the state of a subscription item.
     pub trait Mutate<AccountId>: Inspect<AccountId> {
         /// Publish a new subscription item in an active inventory.
-        fn publish<Reason: AsRef<[u8]>>(
-            inventory_id: &Self::InventoryId,
-            id: &Self::Id,
+        fn publish<Reason: Encode>(
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
             name: Reason,
             conditions: SubscriptionConditions<ItemPrice<Self::Asset, Self::Balance>, Self::Moment>,
         ) -> DispatchResult;
 
         /// Set the [SubscriptionConditions] on an existing subscription item.
         fn set_conditions(
-            inventory_id: &Self::InventoryId,
-            id: &Self::Id,
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
             conditions: SubscriptionConditions<ItemPrice<Self::Asset, Self::Balance>, Self::Moment>,
         ) -> DispatchResult;
 
         /// Activates a [Subscription], given an item that contains some [SubscriptionConditions].
-        fn activate(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
+        fn activate(
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
+        ) -> DispatchResult;
 
         /// Cancels a [Subscription].
-        fn cancel(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
+        fn cancel(
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
+        ) -> DispatchResult;
 
         /// Terminates a [Subscription].
         ///
         /// The effects of terminating a subscription
-        fn terminate(inventory_id: &Self::InventoryId, id: &Self::Id) -> DispatchResult;
+        fn terminate(
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
+        ) -> DispatchResult;
 
-        fn dispute_termination<Reason: AsRef<[u8]>>(
-            inventory_id: &Self::InventoryId,
-            id: &Self::Id,
+        fn dispute_termination<Reason: Encode>(
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
             dispute_reason: Reason,
         ) -> DispatchResult;
 
-        fn resolve_termination_dispute<Reason: AsRef<[u8]>>(
-            inventory_id: &Self::InventoryId,
-            id: &Self::Id,
+        fn resolve_termination_dispute<Reason: Encode>(
+            inventory_id: &InventoryIdOf<Self, AccountId>,
+            id: &Self::ItemId,
             dispute_reason: Reason,
         ) -> DispatchResult;
     }

@@ -1,10 +1,10 @@
 use crate::ExtHelper;
-use fc_pallet_listings::{pallet::Config, GenesisConfig, ItemPrice, ItemPriceOf, ItemType};
+use fc_pallet_listings::{pallet::Config, GenesisConfig, ItemPrice, ItemPriceOf};
 use frame_support::DefaultNoBound;
 use sp_runtime::BuildStorage;
 
 pub struct Item<SKU, Price> {
-    id: ItemType<SKU>,
+    id: SKU,
     name: Vec<u8>,
     price: Option<Price>,
     transferable: bool,
@@ -12,7 +12,7 @@ pub struct Item<SKU, Price> {
 }
 
 impl<SKU, Price> Item<SKU, Price> {
-    pub fn new(id: ItemType<SKU>, name: Vec<u8>, price: Option<Price>) -> Self {
+    pub fn new(id: SKU, name: Vec<u8>, price: Option<Price>) -> Self {
         Self {
             id,
             name,
@@ -80,13 +80,7 @@ impl<T: Config<I>, I: 'static> ExtHelper for ListingsExtBuilder<T, I> {
             inventories: self
                 .inventories
                 .iter()
-                .map(
-                    |Inventory {
-                         id: (merchant_id, id),
-                         owner,
-                         ..
-                     }| (*merchant_id, *id, owner.clone()),
-                )
+                .map(|Inventory { id, owner, .. }| (*id, owner.clone()))
                 .collect(),
             items: self
                 .inventories

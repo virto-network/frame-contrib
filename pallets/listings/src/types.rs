@@ -15,24 +15,20 @@ pub(crate) type AssetBalanceOf<T, I> =
 pub(crate) type MerchantIdOf<T, I = ()> = <T as Config<I>>::MerchantId;
 
 /// The `InventoryId` configuration parameter.
-pub(crate) type InternalInventoryIdOf<T, I = ()> = <T as Config<I>>::InventoryId;
+pub(crate) type InventoryIdOf<T, I = ()> = <T as Config<I>>::InventoryId;
 
 /// The composite `InventoryId` bound to the pallet instance.
-pub type InventoryIdOf<T, I = ()> =
+pub type InventoryIdFor<T, I = ()> =
     InventoryId<<T as Config<I>>::MerchantId, <T as Config<I>>::InventoryId>;
 
 /// The overarching `AccountId` type.
 pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 
-/// The [`Item`][item::Item] type bound to the pallet instance.
-pub(crate) type ItemOf<T, I = ()> =
-    item::Item<AccountIdOf<T>, AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
-
 /// The [`ItemPrice`] type bound to the pallet instance.
 pub type ItemPriceOf<T, I = ()> = ItemPrice<AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
 
 /// The ID of every item inside the inventory.
-pub type ItemIdOf<T, I = ()> = ItemType<<T as Config<I>>::ItemSKU>;
+pub type ItemIdOf<T, I = ()> = <T as Config<I>>::ItemSKU;
 
 /// A `BoundedVec` limited by the overarching `KeyLimit`.
 pub(crate) type ItemKeyOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::NonfungiblesKeyLimit>;
@@ -54,11 +50,14 @@ pub enum InventoryAttribute {
 /// A set of attributes associated to an item.
 #[derive(Encode)]
 pub enum ItemAttribute {
-    /// The item basic info (name and price).
+    /// The item creator
     #[codec(index = 10)]
+    Creator,
+    /// The item basic info (name and price).
+    #[codec(index = 11)]
     Info,
     /// Whether an item cannot be resold.
-    #[codec(index = 11)]
+    #[codec(index = 12)]
     NotForResale,
 }
 
@@ -69,29 +68,39 @@ pub type ItemInfo<Name, Price> = (Name, Option<Price>);
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
 pub struct InventoryId<MerchantId, Id>(pub MerchantId, pub Id);
 
-impl<MerchantId, Id> From<(MerchantId, Id)> for InventoryId<MerchantId, Id> {
-    fn from(value: (MerchantId, Id)) -> Self {
-        Self(value.0, value.1)
+impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
+    fn from(InventoryId(merchant_id, inventory_id): InventoryId<MerchantId, Id>) -> Self {
+        (merchant_id, inventory_id)
     }
 }
 
-impl<MerchantId: Clone, Id: Clone + Incrementable> Incrementable for InventoryId<MerchantId, Id> {
+impl<MerchantId, Id> From<(MerchantId, Id)> for InventoryId<MerchantId, Id> {
+    fn from((merchant_id, inventory_id): (MerchantId, Id)) -> Self {
+        Self(merchant_id, inventory_id)
+    }
+}
+
+impl<MerchantId: Copy, Id: Copy> From<&InventoryId<MerchantId, Id>> for (MerchantId, Id) {
+    fn from(value: &InventoryId<MerchantId, Id>) -> Self {
+        (*value).into()
+    }
+}
+
+impl<MerchantId: Copy, Id: Copy> From<&(MerchantId, Id)> for InventoryId<MerchantId, Id> {
+    fn from(value: &(MerchantId, Id)) -> Self {
+        (*value).into()
+    }
+}
+
+impl<MerchantId: Copy, Id: Copy + Incrementable> Incrementable for InventoryId<MerchantId, Id> {
     fn increment(&self) -> Option<Self> {
         // Increment shouldn't happen for inventory, but
         // we'll implement it anyway.
-        self.1
-            .increment()
-            .map(|new_id| Self(self.0.clone(), new_id))
+        self.1.increment().map(|id| Self(self.0, id))
     }
 
     fn initial_value() -> Option<Self> {
         None
-    }
-}
-
-impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
-    fn from(value: InventoryId<MerchantId, Id>) -> Self {
-        (value.0, value.1)
     }
 }
 
@@ -109,7 +118,7 @@ impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
     MaxEncodedLen,
     TypeInfo,
 )]
-pub enum ItemType<Id> {
+enum ItemType<Id> {
     Unit(Id),
     Subscription(Id),
 }
@@ -134,7 +143,6 @@ impl<T: Incrementable> Incrementable for ItemType<T> {
 }
 
 #[cfg(feature = "runtime-benchmarks")]
-pub trait BenchmarkHelper<InventoryId, ItemId> {
+pub trait BenchmarkHelper<InventoryId> {
     fn inventory_id() -> InventoryId;
-    fn item_id() -> ItemId;
 }

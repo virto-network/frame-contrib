@@ -8,7 +8,7 @@ repository.workspace = true
 version = "0.1.0"
 
 [dependencies]
-fc-pallet-listings = { workspace = true, optional = true }
+fc-pallet-listings = { version = "1.0.0", workspace = true, optional = true }
 frame-support.workspace = true
 frame-system.workspace = true
 pallet-assets = { workspace = true, optional = true }

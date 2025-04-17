@@ -1,16 +1,13 @@
 //! Test environment for template pallet.
 
-use crate::{self as pallet_listings, InventoryId, ItemType};
+use crate::{self as pallet_listings, InventoryId, InventoryIdFor, ItemIdOf};
+use mock_helpers::ExtHelper;
 
-use fc_traits_listings::InventoryLifecycle;
-use frame_support::traits::fungible::Unbalanced;
-use frame_support::traits::tokens::Precision;
 use frame_support::{
     derive_impl,
-    dispatch::RawOrigin,
     traits::{EnsureOriginWithArg, Get},
 };
-use frame_system::{EnsureNever, EnsureRoot, EnsureSigned};
+use frame_system::{EnsureNever, EnsureRoot, EnsureSigned, RawOrigin};
 use sp_core::{parameter_types, ConstU32};
 use sp_io::TestExternalities;
 use sp_runtime::{
@@ -23,6 +20,7 @@ pub type AccountPublic = <MultiSignature as Verify>::Signer;
 pub type AccountId = <AccountPublic as IdentifyAccount>::AccountId;
 pub type AssetId = <Test as pallet_assets::Config>::AssetId;
 pub type Balance = <Test as pallet_balances::Config>::Balance;
+type ExistentialDeposit = <Test as pallet_balances::Config>::ExistentialDeposit;
 
 // Configure a mock runtime to test the pallet.
 #[frame_support::runtime]
@@ -85,8 +83,8 @@ parameter_types! {
 
 impl pallet_nfts::Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type CollectionId = InventoryId<AccountIdBytes, u32>;
-    type ItemId = ItemType<u32>;
+    type CollectionId = InventoryIdFor<Test>;
+    type ItemId = ItemIdOf<Test>;
     type Currency = Balances;
     type ForceOrigin = EnsureNever<AccountId>;
     type CreateOrigin = EnsureNever<AccountId>;
@@ -118,12 +116,9 @@ use core::marker::PhantomData;
 pub struct OwnersCatalogBenchmarkHelper<T, I = ()>(PhantomData<(T, I)>);
 
 #[cfg(feature = "runtime-benchmarks")]
-use crate::types::{InventoryIdOf, ItemIdOf};
-
-#[cfg(feature = "runtime-benchmarks")]
 impl<T, I: 'static>
     pallet_nfts::BenchmarkHelper<
-        InventoryIdOf<Test>,
+        InventoryIdFor<Test>,
         ItemIdOf<Test>,
         sp_runtime::MultiSigner,
         sp_runtime::AccountId32,
@@ -132,7 +127,7 @@ impl<T, I: 'static>
 where
     T: pallet_nfts::Config<I>,
 {
-    fn collection(i: u16) -> InventoryIdOf<Test> {
+    fn collection(i: u16) -> InventoryIdFor<Test> {
         fn convert(i: u16) -> [u8; 32] {
             let high = (i >> 8) as u8;
             let low = (i & 0xFF) as u8;
@@ -150,7 +145,7 @@ where
     }
 
     fn item(i: u16) -> ItemIdOf<Test> {
-        ItemType::Unit(i.into())
+        i.into()
     }
 
     fn signer() -> (sp_runtime::MultiSigner, sp_runtime::AccountId32) {
@@ -221,106 +216,61 @@ impl pallet_listings::Config for Test {
 }
 
 #[cfg(feature = "runtime-benchmarks")]
-impl pallet_listings::BenchmarkHelper<InventoryIdOf<Test>, ItemIdOf<Test>> for Test {
-    fn inventory_id() -> InventoryIdOf<Test> {
+impl pallet_listings::BenchmarkHelper<InventoryIdFor<Test>> for Test {
+    fn inventory_id() -> InventoryIdFor<Test> {
         InventoryId([0u8; 32], 0)
-    }
-
-    fn item_id() -> ItemIdOf<Test> {
-        ItemType::Unit(0)
     }
 }
 
 pub const ROOT: AccountId = AccountId::new([0u8; 32]);
 
+#[derive(Default)]
 pub struct ExtBuilder {
-    accounts: Vec<AccountId>,
-    assets: Vec<(AssetId, Balance)>,
-    inventories: Vec<(InventoryId<AccountIdBytes, u32>, AccountId)>,
-}
-
-impl Default for ExtBuilder {
-    fn default() -> Self {
-        Self {
-            accounts: Default::default(),
-            assets: Default::default(),
-            inventories: vec![],
-        }
-    }
+    balances: mock_helpers::BalancesExtBuilder<Test>,
+    assets: mock_helpers::AssetsExtBuilder<Test>,
 }
 
 impl ExtBuilder {
-    pub(crate) fn builder() -> ExtBuilder {
-        ExtBuilder::default()
-    }
-
-    pub(crate) fn with_accounts(mut self, accounts: Vec<AccountId>) -> Self {
-        self.accounts = accounts;
+    pub(crate) fn with_account(mut self, account: AccountId, balance: Balance) -> Self {
+        self.balances = self.balances.with_account(account, balance);
         self
     }
 
-    pub(crate) fn with_assets(mut self, assets: Vec<(AssetId, Balance)>) -> Self {
-        self.assets = assets;
-        self
-    }
-
-    pub(crate) fn with_inventories(
+    pub(crate) fn with_asset(
         mut self,
-        inventories: Vec<(InventoryId<AccountIdBytes, u32>, AccountId)>,
+        asset: mock_helpers::Asset<AccountId, AssetId, Balance>,
     ) -> Self {
-        self.inventories = inventories;
+        self.assets = self.assets.with_asset(asset);
         self
     }
 
-    pub(crate) fn build(self) -> TestExternalities {
+    pub(crate) fn build(&mut self) -> TestExternalities {
         let mut storage = frame_system::GenesisConfig::<Test>::default()
             .build_storage()
             .unwrap();
 
-        pallet_balances::GenesisConfig::<Test> {
-            balances: [
-                self.accounts
-                    .iter()
-                    .map(|who| {
-                        (
-                            who.clone(),
-                            2 * <<Test as pallet_balances::Config>::ExistentialDeposit as Get<
-                                Balance,
-                            >>::get(),
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-                vec![(ROOT, Balance::MAX / 2)],
-            ]
-            .concat(),
+        self.balances
+            .as_storage()
+            .assimilate_storage(&mut storage)
+            .unwrap();
+
+        self.assets
+            .as_storage()
+            .assimilate_storage(&mut storage)
+            .unwrap();
+
+        pallet_listings::GenesisConfig::<Test> {
+            inventories: vec![(([0u8; 32], 1), ROOT)],
+            items: vec![],
         }
         .assimilate_storage(&mut storage)
         .unwrap();
 
-        pallet_assets::GenesisConfig::<Test> {
-            assets: self
-                .assets
-                .iter()
-                .map(|(id, min_balance)| (*id, ROOT, false, *min_balance))
-                .collect(),
-            metadata: vec![],
-            accounts: vec![],
-            next_asset_id: None,
-        }
-        .assimilate_storage(&mut storage)
-        .unwrap();
-
-        let mut t: TestExternalities = storage.into();
-        t.execute_with(|| {
+        let mut ext = TestExternalities::new(storage);
+        ext.execute_with(|| {
             System::set_block_number(1);
-
-            for (InventoryId(ref merchant_id, ref id), ref owner) in self.inventories {
-                Balances::increase_balance(owner, CollectionDeposit::get(), Precision::Exact)
-                    .unwrap();
-                Listings::create(merchant_id, id, owner).unwrap();
-            }
         });
-        t
+        ext
     }
 }
 
@@ -328,9 +278,10 @@ pub const ALICE: AccountId = AccountId::new([1u8; 32]);
 pub const BOB: AccountId = AccountId::new([2u8; 32]);
 
 pub fn new_test_ext() -> TestExternalities {
-    ExtBuilder::builder()
-        .with_assets(vec![(1, 10)])
-        .with_accounts(vec![ALICE, BOB])
-        .with_inventories(vec![(InventoryId([0u8; 32], 1), ROOT)])
+    ExtBuilder::default()
+        .with_account(ROOT, Balance::MAX / 2)
+        .with_account(ALICE, 2 * <ExistentialDeposit as Get<Balance>>::get())
+        .with_account(BOB, 2 * <ExistentialDeposit as Get<Balance>>::get())
+        .with_asset(mock_helpers::Asset::new(1, ROOT, 10, false))
         .build()
 }

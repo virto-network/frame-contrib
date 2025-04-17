@@ -67,30 +67,30 @@ pub mod pallet {
         /// items.
         type Nonfungibles: nonfungibles_v2::Inspect<
                 Self::AccountId,
-                CollectionId = InventoryIdOf<Self, I>,
-                ItemId = ItemType<Self::ItemSKU>,
+                CollectionId = InventoryIdFor<Self, I>,
+                ItemId = Self::ItemSKU,
             > + nonfungibles_v2::InspectEnumerable<
                 Self::AccountId,
-                CollectionId = InventoryIdOf<Self, I>,
-                ItemId = ItemType<Self::ItemSKU>,
+                CollectionId = InventoryIdFor<Self, I>,
+                ItemId = Self::ItemSKU,
             > + nonfungibles_v2::Create<
                 Self::AccountId,
                 pallet_nfts::CollectionConfig<
                     NativeBalanceOf<Self, I>,
                     BlockNumberFor<Self>,
-                    InventoryIdOf<Self, I>,
+                    InventoryIdFor<Self, I>,
                 >,
-                CollectionId = InventoryIdOf<Self, I>,
-                ItemId = ItemType<Self::ItemSKU>,
+                CollectionId = InventoryIdFor<Self, I>,
+                ItemId = Self::ItemSKU,
             > + nonfungibles_v2::Mutate<
                 Self::AccountId,
                 pallet_nfts::ItemConfig,
-                CollectionId = InventoryIdOf<Self, I>,
-                ItemId = ItemType<Self::ItemSKU>,
+                CollectionId = InventoryIdFor<Self, I>,
+                ItemId = Self::ItemSKU,
             > + nonfungibles_v2::Transfer<
                 Self::AccountId,
-                CollectionId = InventoryIdOf<Self, I>,
-                ItemId = ItemType<Self::ItemSKU>,
+                CollectionId = InventoryIdFor<Self, I>,
+                ItemId = Self::ItemSKU,
             >;
 
         /// Limit size for attribute keys on the `Nonfungibles` system.
@@ -102,12 +102,12 @@ pub mod pallet {
         /// An origin authorized to create an inventory.
         type CreateInventoryOrigin: EnsureOriginWithArg<
             Self::RuntimeOrigin,
-            InventoryIdOf<Self, I>,
+            InventoryIdFor<Self, I>,
             Success = Self::AccountId,
         >;
 
         /// An origin authorized to manage a specific inventory.
-        type InventoryAdminOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, InventoryIdOf<Self, I>>;
+        type InventoryAdminOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, InventoryIdFor<Self, I>>;
 
         /// A type that represents the identification of a merchant.
         type MerchantId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
@@ -120,11 +120,11 @@ pub mod pallet {
 
         #[cfg(feature = "runtime-benchmarks")]
         /// Helper for executing pallet benchmarks
-        type BenchmarkHelper: BenchmarkHelper<InventoryIdOf<Self, I>, ItemIdOf<Self, I>>;
+        type BenchmarkHelper: BenchmarkHelper<InventoryIdFor<Self, I>>;
     }
 
     pub type GenesisConfigItem<T, I = ()> = (
-        (MerchantIdOf<T, I>, InternalInventoryIdOf<T, I>),
+        (MerchantIdOf<T, I>, InventoryIdOf<T, I>),
         ItemIdOf<T, I>,
         Vec<u8>,
         Option<(AssetIdOf<T, I>, AssetBalanceOf<T, I>)>,
@@ -136,7 +136,7 @@ pub mod pallet {
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config<I>, I: 'static = ()> {
         /// Genesis inventories: merchant, inventory_id, owner
-        pub inventories: Vec<(T::MerchantId, T::InventoryId, T::AccountId)>,
+        pub inventories: Vec<((T::MerchantId, T::InventoryId), T::AccountId)>,
         /// Genesis items: inventory_id, item_id, name, price, transferable, for_resale
         pub items: Vec<GenesisConfigItem<T, I>>,
     }
@@ -144,31 +144,19 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config<I>, I: 'static> BuildGenesisConfig for GenesisConfig<T, I> {
         fn build(&self) {
-            for (merchant_id, inventory_id, owner) in &self.inventories {
-                assert!(T::Nonfungibles::collection_owner(&InventoryId(
-                    *merchant_id,
-                    *inventory_id
-                ))
-                .is_none());
-                let result = Pallet::<T, I>::create(merchant_id, inventory_id, owner);
+            for (id, owner) in &self.inventories {
+                assert!(!Pallet::<T, I>::exists(id));
+                let result = Pallet::<T, I>::create(*id, owner);
                 assert!(result.is_ok());
             }
 
-            for (
-                (merchant_id, inventory_id),
-                item_id,
-                name,
-                maybe_price,
-                transferable,
-                for_resale,
-            ) in &self.items
+            for (inventory_id, item_id, name, maybe_price, transferable, for_resale) in &self.items
             {
-                let inventory_id = &InventoryId(*merchant_id, *inventory_id);
                 let price = maybe_price
                     .clone()
                     .map(|(asset, amount)| ItemPrice { asset, amount });
 
-                assert!(T::Nonfungibles::owner(inventory_id, item_id).is_none());
+                assert!(!Pallet::<T, I>::exists(inventory_id));
                 let result = Pallet::<T, I>::publish(inventory_id, item_id, name.to_owned(), price);
                 assert!(result.is_ok());
 
@@ -206,18 +194,18 @@ pub mod pallet {
         },
         /// A new item has been published.
         ItemPublished {
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
             id: ItemIdOf<T, I>,
         },
         /// The price for an item has been set.
         ItemPriceSet {
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
             id: ItemIdOf<T, I>,
             price: ItemPriceOf<T, I>,
         },
         /// An item has been marked either as _"not for resale"_ or not.
         MarkNotForResale {
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
             id: ItemIdOf<T, I>,
             not_for_resale: bool,
         },
@@ -253,21 +241,21 @@ pub mod pallet {
         #[pallet::call_index(0)]
         pub fn create_inventory(
             origin: OriginFor<T>,
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
         ) -> DispatchResult {
             let owner = T::CreateInventoryOrigin::ensure_origin(origin, &inventory_id)?;
-            let InventoryId(merchant, id) = &inventory_id;
-
             ensure!(
-                !Self::exists(merchant, id),
+                !Self::exists(&inventory_id.into()),
                 Error::<T, I>::AlreadyExistingInventory,
             );
-            Self::create(merchant, id, &owner)?;
 
+            Self::create(inventory_id.into(), &owner)?;
+
+            let InventoryId(merchant, id) = inventory_id;
             Self::deposit_event(Event::<T, I>::InventoryCreated {
-                merchant: *merchant,
-                id: *id,
-                owner: owner.clone(),
+                merchant,
+                id,
+                owner,
             });
             Ok(())
         }
@@ -279,18 +267,15 @@ pub mod pallet {
         #[pallet::call_index(1)]
         pub fn archive_inventory(
             origin: OriginFor<T>,
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
         ) -> DispatchResult {
             Self::ensure_active_inventory(&inventory_id)?;
-            let InventoryId(ref merchant, ref id) = inventory_id;
             T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
 
-            Self::archive(merchant, id)?;
+            Self::archive(&inventory_id.into())?;
 
-            Self::deposit_event(Event::<T, I>::InventoryArchived {
-                merchant: *merchant,
-                id: *id,
-            });
+            let InventoryId(merchant, id) = inventory_id;
+            Self::deposit_event(Event::<T, I>::InventoryArchived { merchant, id });
             Ok(())
         }
 
@@ -306,7 +291,7 @@ pub mod pallet {
         #[pallet::call_index(2)]
         pub fn publish_item(
             origin: OriginFor<T>,
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
             id: ItemIdOf<T, I>,
             name: ItemValueOf<T, I>,
             maybe_price: Option<ItemPriceOf<T, I>>,
@@ -314,7 +299,12 @@ pub mod pallet {
             Self::ensure_active_inventory(&inventory_id)?;
             T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
 
-            Self::publish(&inventory_id, &id, name.to_vec(), maybe_price.clone())?;
+            Self::publish(
+                &inventory_id.into(),
+                &id,
+                name.to_vec(),
+                maybe_price.clone(),
+            )?;
 
             Self::deposit_event(Event::ItemPublished { inventory_id, id });
             if let Some(price) = maybe_price {
@@ -343,7 +333,7 @@ pub mod pallet {
         #[pallet::call_index(3)]
         pub fn set_item_price(
             origin: OriginFor<T>,
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
             id: ItemIdOf<T, I>,
             price: ItemPriceOf<T, I>,
         ) -> DispatchResult {
@@ -351,24 +341,25 @@ pub mod pallet {
             match T::InventoryAdminOrigin::ensure_origin(origin.clone(), &inventory_id) {
                 Ok(_) => Self::ensure_item_owned_by_creator(&inventory_id, &id)?,
                 Err(_) => {
-                    let item = Self::item(&inventory_id, &id).ok_or(Error::<T, I>::UnknownItem)?;
+                    let item =
+                        Self::item(&inventory_id.into(), &id).ok_or(Error::<T, I>::UnknownItem)?;
                     let who = ensure_signed(origin)?;
 
                     // The owner of an item can set a price for an item, and the item must be
                     // transferable and enabled for resale.
                     ensure!(item.owner == who, Error::<T, I>::NoPermission);
                     ensure!(
-                        Self::transferable(&inventory_id, &id),
+                        Self::transferable(&inventory_id.into(), &id),
                         Error::<T, I>::ItemNonTransferable,
                     );
                     ensure!(
-                        Self::can_resell(&inventory_id, &id),
+                        Self::can_resell(&inventory_id.into(), &id),
                         Error::<T, I>::NotForResale
                     );
                 }
             }
 
-            Self::set_price(&inventory_id, &id, price.clone())?;
+            Self::set_price(&inventory_id.into(), &id, price.clone())?;
 
             Self::deposit_event(Event::ItemPriceSet {
                 inventory_id,
@@ -389,7 +380,7 @@ pub mod pallet {
         #[pallet::call_index(4)]
         pub fn mark_item_can_transfer(
             origin: OriginFor<T>,
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
             id: ItemIdOf<T, I>,
             can_transfer: bool,
         ) -> DispatchResult {
@@ -398,9 +389,9 @@ pub mod pallet {
             T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
 
             if can_transfer {
-                Self::enable_transfer(&inventory_id, &id)
+                Self::enable_transfer(&inventory_id.into(), &id)
             } else {
-                Self::disable_transfer(&inventory_id, &id)
+                Self::disable_transfer(&inventory_id.into(), &id)
             }
         }
 
@@ -418,7 +409,7 @@ pub mod pallet {
         #[pallet::call_index(5)]
         pub fn mark_item_not_for_resale(
             origin: OriginFor<T>,
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
             id: ItemIdOf<T, I>,
             not_for_resale: bool,
         ) -> DispatchResult {
@@ -427,9 +418,9 @@ pub mod pallet {
             T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
 
             if not_for_resale {
-                Self::disable_resell(&inventory_id, &id)
+                Self::disable_resell(&inventory_id.into(), &id)
             } else {
-                Self::enable_resell(&inventory_id, &id)
+                Self::enable_resell(&inventory_id.into(), &id)
             }?;
 
             Self::deposit_event(Event::MarkNotForResale {
@@ -459,22 +450,22 @@ pub mod pallet {
 		)]
         pub fn set_item_attribute(
             origin: OriginFor<T>,
-            inventory_id: InventoryIdOf<T, I>,
+            inventory_id: InventoryIdFor<T, I>,
             id: ItemIdOf<T, I>,
             key: ItemKeyOf<T, I>,
             maybe_value: Option<ItemValueOf<T, I>>,
         ) -> DispatchResult {
             Self::ensure_active_inventory(&inventory_id)?;
             ensure!(
-                Self::item(&inventory_id, &id).is_some(),
+                Self::item(&inventory_id.into(), &id).is_some(),
                 Error::<T, I>::UnknownItem
             );
             T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
 
             if let Some(value) = maybe_value {
-                Self::set_attribute(&inventory_id, &id, &key, value.to_vec())
+                Self::set_attribute(&inventory_id.into(), &id, &key, value.to_vec())
             } else {
-                Self::clear_attribute(&inventory_id, &id, &key)
+                Self::clear_attribute(&inventory_id.into(), &id, &key)
             }
         }
     }
@@ -482,23 +473,22 @@ pub mod pallet {
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
     fn ensure_item_owned_by_creator(
-        inventory_id: &InventoryIdOf<T, I>,
+        inventory_id: &InventoryIdFor<T, I>,
         id: &ItemIdOf<T, I>,
     ) -> DispatchResult {
         let creator = T::Nonfungibles::collection_owner(inventory_id)
             .ok_or(Error::<T, I>::UnknownInventory)?;
         let item::Item { owner, .. } =
-            Self::item(inventory_id, id).ok_or(Error::<T, I>::UnknownItem)?;
+            Self::item(&inventory_id.into(), id).ok_or(Error::<T, I>::UnknownItem)?;
 
         ensure!(owner == creator, Error::<T, I>::NoPermission);
         Ok(())
     }
 
-    fn ensure_active_inventory(inventory_id: &InventoryIdOf<T, I>) -> DispatchResult {
-        let InventoryId(merchant, id) = &inventory_id;
+    fn ensure_active_inventory(inventory_id: &InventoryIdFor<T, I>) -> DispatchResult {
         T::Nonfungibles::collection_owner(inventory_id).ok_or(Error::<T, I>::UnknownInventory)?;
         ensure!(
-            Self::is_active(merchant, id),
+            Self::is_active(&inventory_id.into()),
             Error::<T, I>::ArchivedInventory
         );
         Ok(())
