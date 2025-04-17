@@ -156,7 +156,7 @@ pub mod pallet {
                     .clone()
                     .map(|(asset, amount)| ItemPrice { asset, amount });
 
-                assert!(!Pallet::<T, I>::exists(inventory_id));
+                assert!(<Pallet::<T, I>>::item(inventory_id, item_id).is_none());
                 let result = Pallet::<T, I>::publish(inventory_id, item_id, name.to_owned(), price);
                 assert!(result.is_ok());
 

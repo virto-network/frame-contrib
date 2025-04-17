@@ -94,9 +94,9 @@ pub mod pallet {
         /// The `Listings` component of a `Marketplace` system.
         #[cfg(feature = "runtime-benchmarks")]
         type Listings: InventoryLifecycle<
-                MerchantIdOf<Self::BenchmarkHelper, Self, I>,
-                Id = InternalInventoryIdOf<Self::BenchmarkHelper, Self, I>,
-                AccountId = Self::AccountId,
+                Self::AccountId,
+                MerchantId = MerchantIdOf<Self, I>,
+                InventoryId = InventoryIdOf<Self, I>,
             > + InspectItem<
                 Self::AccountId,
                 Asset = PaymentAssetIdOf<Self, I>,
@@ -152,8 +152,7 @@ pub mod pallet {
         /// An item in an order has been delivered, and is now fully usable.
         ItemDelivered {
             order_id: T::OrderId,
-            inventory_id: InventoryIdOf<T, I>,
-            id: ItemIdOf<T, I>,
+            id: ItemFullIdOf<T, I>,
         },
         /// An order has been fully delivered.
         OrderCompleted { order_id: T::OrderId },
@@ -205,12 +204,8 @@ pub mod pallet {
     pub type NextOrderId<T: Config<I>, I: 'static = ()> = StorageValue<_, T::OrderId, ValueQuery>;
 
     #[pallet::storage]
-    pub type Payment<T: Config<I>, I: 'static = ()> = StorageMap<
-        _,
-        Blake2_128Concat,
-        PaymentIdOf<T, I>,
-        (T::OrderId, InventoryIdOf<T, I>, ItemIdOf<T, I>),
-    >;
+    pub type Payment<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, PaymentIdOf<T, I>, (T::OrderId, ItemFullIdOf<T, I>)>;
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
@@ -282,10 +277,11 @@ pub mod pallet {
                 ensure!(who == owner, Error::<T, I>::NoPermission);
 
                 for order_item in details.items.iter_mut() {
-                    let item = T::Listings::item(&order_item.inventory_id, &order_item.id)
+                    let (inventory_id, item_id) = order_item.id;
+                    let item = T::Listings::item(&inventory_id, &item_id)
                         .ok_or(Error::<T, I>::ItemNotFound)?;
                     ensure!(item.price.is_some(), Error::<T, I>::ItemNotForSale);
-                    Self::try_lock_item(&order_item.inventory_id, &order_item.id)?;
+                    Self::try_lock_item(&inventory_id, &item_id)?;
                 }
 
                 details.status = OrderStatus::Checkout;
@@ -316,10 +312,11 @@ pub mod pallet {
                 );
 
                 for OrderItem {
-                    inventory_id, id, ..
+                    id: (inventory_id, item_id),
+                    ..
                 } in &details.items
                 {
-                    Self::try_unlock_item(inventory_id, id)?;
+                    Self::try_unlock_item(inventory_id, item_id)?;
                 }
 
                 details.status = OrderStatus::Cancelled;
@@ -348,7 +345,8 @@ pub mod pallet {
                 for order_item in details.items.iter_mut() {
                     let beneficiary = order_item.beneficiary.clone().unwrap_or(owner.clone());
 
-                    let item = T::Listings::item(&order_item.inventory_id, &order_item.id)
+                    let (inventory_id, item_id) = order_item.id;
+                    let item = T::Listings::item(&inventory_id, &item_id)
                         .ok_or(Error::<T, I>::ItemNotFound)?;
                     let Some(ItemPrice { asset, amount }) = item.price else {
                         return Err(Error::<T, I>::ItemNotForSale.into());
@@ -366,14 +364,10 @@ pub mod pallet {
 
                     Payment::<T, I>::insert(
                         payment_id,
-                        (
-                            order_id.clone(),
-                            order_item.inventory_id.clone(),
-                            order_item.id.clone(),
-                        ),
+                        (order_id.clone(), (inventory_id, item_id)),
                     );
 
-                    Self::transfer_item(&order_item.inventory_id, &order_item.id, &beneficiary)?;
+                    Self::transfer_item(&inventory_id, &item_id, &beneficiary)?;
                 }
 
                 details.status = OrderStatus::InProgress;
@@ -400,7 +394,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         })
     }
 
-    fn try_lock_item(inventory_id: &InventoryIdOf<T, I>, id: &ItemIdOf<T, I>) -> DispatchResult {
+    fn try_lock_item(
+        inventory_id: &(MerchantIdOf<T, I>, InventoryIdOf<T, I>),
+        id: &ItemIdOf<T, I>,
+    ) -> DispatchResult {
         ensure!(
             T::Listings::transferable(inventory_id, id),
             Error::<T, I>::ItemAlreadyLocked
@@ -417,7 +414,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         T::Listings::disable_transfer(inventory_id, id)
     }
 
-    fn try_unlock_item(inventory_id: &InventoryIdOf<T, I>, id: &ItemIdOf<T, I>) -> DispatchResult {
+    fn try_unlock_item(
+        inventory_id: &(MerchantIdOf<T, I>, InventoryIdOf<T, I>),
+        id: &ItemIdOf<T, I>,
+    ) -> DispatchResult {
         T::Listings::enable_transfer(inventory_id, id)
     }
 
@@ -436,7 +436,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     }
 
     fn transfer_item(
-        inventory_id: &InventoryIdOf<T, I>,
+        inventory_id: &(MerchantIdOf<T, I>, InventoryIdOf<T, I>),
         id: &ItemIdOf<T, I>,
         beneficiary: &T::AccountId,
     ) -> DispatchResult {
@@ -451,7 +451,12 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     fn set_order_items(
         origin: OriginFor<T>,
         order_id: &T::OrderId,
-        items: impl Iterator<Item = (InventoryIdOf<T, I>, ItemIdOf<T, I>, Option<T::AccountId>)>,
+        items: impl Iterator<
+            Item = (
+                ((MerchantIdOf<T, I>, InventoryIdOf<T, I>), ItemIdOf<T, I>),
+                Option<T::AccountId>,
+            ),
+        >,
     ) -> Result<(), DispatchError> {
         Order::<T, I>::try_mutate(order_id, |order_items| {
             let (ref who, max_items) = T::OrderAdminOrigin::ensure_origin(origin)?;
@@ -466,13 +471,12 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             );
 
             let items = items
-                .map(|(inventory_id, id, beneficiary)| {
-                    let Item { owner, .. } =
-                        T::Listings::item(&inventory_id, &id).ok_or(Error::<T, I>::ItemNotFound)?;
+                .map(|((inventory_id, item_id), beneficiary)| {
+                    let Item { owner, .. } = T::Listings::item(&inventory_id, &item_id)
+                        .ok_or(Error::<T, I>::ItemNotFound)?;
 
                     Ok(OrderItem {
-                        inventory_id,
-                        id,
+                        id: (inventory_id, item_id),
                         seller: owner,
                         beneficiary,
                         payment_id: None,
@@ -533,7 +537,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         delivery_status: DeliveryStatus,
     ) -> DispatchResult {
         Payment::<T, I>::try_mutate(payment_id, |payment| {
-            let (order_id, inventory_id, id) =
+            let (order_id, (inventory_id, item_id)) =
                 &payment.clone().ok_or(Error::<T, I>::PaymentNotFound)?;
 
             Order::<T, I>::try_mutate(order_id.clone(), |maybe_order| {
@@ -544,31 +548,35 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
                 let item = details
                     .items
                     .iter_mut()
-                    .find(|order_item| {
-                        &order_item.inventory_id == inventory_id && &order_item.id == id
-                    })
+                    .find(
+                        |OrderItem {
+                             id: (o_inventory_id, o_item_id),
+                             ..
+                         }| {
+                            o_inventory_id == inventory_id && o_item_id == item_id
+                        },
+                    )
                     .ok_or(Error::<T, I>::ItemNotFound)?;
 
                 if delivery_status == DeliveryStatus::Cancelled {
                     let payment =
                         T::Payments::details(payment_id).ok_or(Error::<T, I>::OrderNotFound)?;
-                    Self::transfer_item(inventory_id, id, payment.beneficiary())?;
+                    Self::transfer_item(inventory_id, item_id, payment.beneficiary())?;
                 }
 
-                Self::try_unlock_item(inventory_id, id)?;
+                Self::try_unlock_item(inventory_id, item_id)?;
                 item.delivery = Some(delivery_status);
+
+                Self::deposit_event(Event::<T, I>::ItemDelivered {
+                    order_id: order_id.clone(),
+                    id: item.id,
+                });
 
                 let delivered_items = details
                     .items
                     .iter()
                     .filter(|order_item| order_item.delivery.is_some())
                     .count();
-
-                Self::deposit_event(Event::<T, I>::ItemDelivered {
-                    order_id: order_id.clone(),
-                    inventory_id: inventory_id.clone(),
-                    id: id.clone(),
-                });
 
                 if delivered_items == details.items.len() {
                     details.status = OrderStatus::Completed;

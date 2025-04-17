@@ -1,9 +1,13 @@
 use super::*;
 
 pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
+pub(crate) type MerchantIdOf<T, I = ()> =
+    <<T as Config<I>>::Listings as InspectItem<AccountIdOf<T>>>::MerchantId;
 pub type InventoryIdOf<T, I = ()> =
     <<T as Config<I>>::Listings as InspectItem<AccountIdOf<T>>>::InventoryId;
-pub type ItemIdOf<T, I = ()> = <<T as Config<I>>::Listings as InspectItem<AccountIdOf<T>>>::Id;
+pub type ItemIdOf<T, I = ()> = <<T as Config<I>>::Listings as InspectItem<AccountIdOf<T>>>::ItemId;
+pub type ItemFullIdOf<T, I = ()> =
+    ItemFullId<MerchantIdOf<T, I>, InventoryIdOf<T, I>, ItemIdOf<T, I>>;
 pub type PaymentIdOf<T, I = ()> =
     <<T as Config<I>>::Payments as PaymentInspect<AccountIdOf<T>>>::Id;
 pub type PaymentAssetIdOf<T, I = ()> =
@@ -12,25 +16,28 @@ pub type PaymentBalanceOf<T, I = ()> =
     <<T as Config<I>>::Payments as PaymentInspect<AccountIdOf<T>>>::Balance;
 pub type OrderDetailsOf<T, I = ()> = OrderDetails<
     AccountIdOf<T>,
+    MerchantIdOf<T, I>,
     InventoryIdOf<T, I>,
     ItemIdOf<T, I>,
     PaymentIdOf<T, I>,
     <T as Config<I>>::MaxItemLen,
 >;
-pub(crate) type CartItemParameterOf<T, I = ()> =
-    (InventoryIdOf<T, I>, ItemIdOf<T, I>, Option<AccountIdOf<T>>);
+pub(crate) type CartItemParameterOf<T, I = ()> = (ItemFullIdOf<T, I>, Option<AccountIdOf<T>>);
+
+type ItemFullId<MerchantId, InventoryId, ItemId> = ((MerchantId, InventoryId), ItemId);
 
 #[derive(Clone, Debug, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo)]
 #[scale_info(skip_type_params(MaxItemLen))]
-pub struct OrderDetails<AccountId, InventoryId, ItemId, PaymentId, MaxItemLen: Get<u32>> {
+pub struct OrderDetails<AccountId, MerchantId, InventoryId, ItemId, PaymentId, MaxItemLen: Get<u32>>
+{
     pub(crate) status: OrderStatus,
-    pub(crate) items: BoundedVec<OrderItem<AccountId, InventoryId, ItemId, PaymentId>, MaxItemLen>,
+    pub(crate) items:
+        BoundedVec<OrderItem<AccountId, MerchantId, InventoryId, ItemId, PaymentId>, MaxItemLen>,
 }
 
 #[derive(Clone, Debug, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo)]
-pub struct OrderItem<AccountId, InventoryId, ItemId, PaymentId> {
-    pub(crate) id: ItemId,
-    pub(crate) inventory_id: InventoryId,
+pub struct OrderItem<AccountId, MerchantId, InventoryId, ItemId, PaymentId> {
+    pub(crate) id: ItemFullId<MerchantId, InventoryId, ItemId>,
     pub(crate) seller: AccountId,
     pub(crate) beneficiary: Option<AccountId>,
     pub(crate) payment_id: Option<PaymentId>,
@@ -76,22 +83,15 @@ mod benchmarks {
         fungibles::{Create, Mutate},
     };
 
-    pub(crate) type MerchantIdOf<B, T, I> = <B as BenchmarkHelper<T, I>>::MerchantId;
-    pub(crate) type InternalInventoryIdOf<B, T, I> = <B as BenchmarkHelper<T, I>>::InventoryId;
-
     pub trait BenchmarkHelper<T: Config<I>, I: 'static = ()> {
         /// The native `Balances` system.
         type Balances: FunMutate<T::AccountId>;
         /// The `Assets` system bound to the configuration `Listings` system.
         type Assets: Create<T::AccountId, AssetId = PaymentAssetIdOf<T, I>, Balance = PaymentBalanceOf<T, I>>
             + Mutate<T::AccountId, AssetId = PaymentAssetIdOf<T, I>, Balance = PaymentBalanceOf<T, I>>;
-        /// The `MerchantId` that uniquely identifies which is the merchant an inventory belongs to.
-        type MerchantId: Parameter;
-        /// The `InventoryId` that uniquely identifies the ID of the inventory.
-        type InventoryId: Parameter;
 
         /// The identifier of the inventory created to gather the items for the order.
-        fn inventory_id() -> (Self::MerchantId, Self::InventoryId);
+        fn inventory_id() -> (MerchantIdOf<T, I>, InventoryIdOf<T, I>);
 
         /// An iterator for getting multiple `item_id`s. Used when trying to build many items to
         /// set up a benchmark test.

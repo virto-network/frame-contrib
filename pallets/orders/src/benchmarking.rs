@@ -35,15 +35,11 @@ fn setup<T: Config<I>, I: 'static>(
 ) -> Result<SetupFor<T, I>, DispatchError>
 where
     PaymentAssetIdOf<T, I>: Default,
-    InventoryIdOf<T, I>: From<(
-        MerchantIdOf<T::BenchmarkHelper, T, I>,
-        InternalInventoryIdOf<T::BenchmarkHelper, T, I>,
-    )>,
 {
     let asset_id = prepare_asset::<T, I>()?;
     let items = prepare_items::<T, I>(&asset_id, (0..amount_items).map(|_| 10u32.into()))?
         .into_iter()
-        .map(|(inventory_id, id)| (inventory_id, id, None))
+        .map(|full_id| (full_id, None))
         .collect::<Vec<_>>();
 
     for _ in 1..carts {
@@ -81,25 +77,17 @@ fn prepare_asset_account<T: Config<I>, I: 'static>(
     Ok(())
 }
 
-type ItemIdentificationFor<T, I> = (InventoryIdOf<T, I>, ItemIdOf<T, I>);
-
 fn prepare_items<T: Config<I>, I: 'static>(
     asset_id: &PaymentAssetIdOf<T, I>,
     prices: impl Iterator<Item = PaymentBalanceOf<T, I>>,
-) -> Result<Vec<ItemIdentificationFor<T, I>>, DispatchError>
+) -> Result<Vec<ItemFullIdOf<T, I>>, DispatchError>
 where
-    InventoryIdOf<T, I>: From<(
-        MerchantIdOf<T::BenchmarkHelper, T, I>,
-        InternalInventoryIdOf<T::BenchmarkHelper, T, I>,
-    )>,
     PaymentAssetIdOf<T, I>: Default,
 {
     let owner = &prepare_named_account::<T, I>("merchant_owner");
-    let (merchant_id, id) = T::BenchmarkHelper::inventory_id();
+    let inventory_id = T::BenchmarkHelper::inventory_id();
 
-    T::Listings::create(&merchant_id, &id, owner)?;
-
-    let inventory_id = (merchant_id, id).into();
+    T::Listings::create(inventory_id, owner)?;
 
     prices
         .into_iter()
@@ -124,7 +112,6 @@ where
 #[instance_benchmarks(
 where
     PaymentAssetIdOf<T, I>: Default,
-	InventoryIdOf<T, I>: From<(MerchantIdOf<T::BenchmarkHelper, T, I>, InternalInventoryIdOf<T::BenchmarkHelper, T, I>)>,
 )]
 mod benchmarks {
     use super::*;
@@ -141,7 +128,7 @@ mod benchmarks {
         let asset_id = &prepare_asset::<T, I>()?;
         let items = prepare_items::<T, I>(asset_id, (0..q).map(|_| 10u32.into()))?
             .into_iter()
-            .map(|(inventory_id, id)| (inventory_id, id, None))
+            .map(|full_id| (full_id, None))
             .collect::<Vec<_>>();
 
         let (owner, max_carts) =
@@ -236,11 +223,11 @@ mod benchmarks {
 
         let items = items
             .into_iter()
-            .map(|(inventory_id, id, _)| (inventory_id, id, Some(beneficiary.clone())));
+            .map(|(full_id, _)| (full_id, Some(beneficiary.clone())));
 
         let price = items.clone().fold(
             Into::<PaymentBalanceOf<T, I>>::into(1u32),
-            |price, (ref inventory_id, ref id, _)| {
+            |price, ((ref inventory_id, ref id), _)| {
                 let item = T::Listings::item(inventory_id, id).expect("item already created; qed");
                 let ItemPrice { amount, .. } =
                     item.price.expect("prices given for every item; qed");

@@ -3,7 +3,6 @@
 use super::{Error as ErrorT, Event as EventT, Order, Pallet};
 use crate::mock::*;
 use crate::NextOrderId;
-use fc_pallet_listings::{InventoryId, ItemType};
 use frame_support::{assert_noop, assert_ok, traits::schedule::v3::Named};
 
 type Orders = Pallet<Test>;
@@ -21,11 +20,7 @@ mod create_cart {
             assert_noop!(
                 Orders::create_cart(
                     RuntimeOrigin::signed(BOB),
-                    Some(vec![(
-                        InventoryId(AliceStore::get(), 2),
-                        ItemType::Unit(1),
-                        None
-                    )])
+                    Some(vec![(((AliceStore::get(), 2), 1), None)])
                 ),
                 Error::ItemNotFound
             );
@@ -33,11 +28,7 @@ mod create_cart {
             assert_noop!(
                 Orders::create_cart(
                     RuntimeOrigin::signed(BOB),
-                    Some(vec![(
-                        InventoryId(AliceStore::get(), 1),
-                        ItemType::Unit(4),
-                        None
-                    )])
+                    Some(vec![(((AliceStore::get(), 1), 4), None)])
                 ),
                 Error::ItemNotFound
             );
@@ -51,28 +42,16 @@ mod create_cart {
         new_test_ext().execute_with(|| {
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(BOB),
-                Some(vec![(
-                    InventoryId(AliceStore::get(), 1),
-                    ItemType::Unit(1),
-                    None
-                ),]),
+                Some(vec![(((AliceStore::get(), 1), 1), None),]),
             ));
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(BOB),
-                Some(vec![(
-                    InventoryId(AliceStore::get(), 1),
-                    ItemType::Unit(2),
-                    None
-                )]),
+                Some(vec![(((AliceStore::get(), 1), 2), None)]),
             ));
             assert_noop!(
                 Orders::create_cart(
                     RuntimeOrigin::signed(BOB),
-                    Some(vec![(
-                        InventoryId(AliceStore::get(), 1),
-                        ItemType::Unit(3),
-                        None
-                    )])
+                    Some(vec![(((AliceStore::get(), 1), 3), None)])
                 ),
                 Error::MaxCartsExceeded
             );
@@ -87,44 +66,24 @@ mod create_cart {
         new_test_ext().execute_with(|| {
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(EVE),
-                Some(vec![(
-                    InventoryId(AliceStore::get(), 1),
-                    ItemType::Unit(1),
-                    None
-                ),]),
+                Some(vec![(((AliceStore::get(), 1), 1), None),]),
             ));
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(EVE),
-                Some(vec![(
-                    InventoryId(AliceStore::get(), 1),
-                    ItemType::Unit(2),
-                    None
-                )]),
+                Some(vec![(((AliceStore::get(), 1), 2), None)]),
             ));
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(EVE),
-                Some(vec![(
-                    InventoryId(AliceStore::get(), 1),
-                    ItemType::Unit(3),
-                    None
-                ),]),
+                Some(vec![(((AliceStore::get(), 1), 3), None),]),
             ));
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(EVE),
-                Some(vec![(
-                    InventoryId(BobStore::get(), 1),
-                    ItemType::Unit(1),
-                    None
-                ),]),
+                Some(vec![(((BobStore::get(), 1), 1), None),]),
             ));
             assert_noop!(
                 Orders::create_cart(
                     RuntimeOrigin::signed(EVE),
-                    Some(vec![(
-                        InventoryId(BobStore::get(), 1),
-                        ItemType::Unit(2),
-                        None
-                    )])
+                    Some(vec![(((BobStore::get(), 1), 2), None)])
                 ),
                 Error::MaxCartsExceeded
             );
@@ -141,9 +100,9 @@ mod create_cart {
                 Orders::create_cart(
                     RuntimeOrigin::signed(BOB),
                     Some(vec![
-                        (InventoryId(AliceStore::get(), 1), ItemType::Unit(1), None),
-                        (InventoryId(AliceStore::get(), 1), ItemType::Unit(2), None),
-                        (InventoryId(AliceStore::get(), 1), ItemType::Unit(3), None)
+                        (((AliceStore::get(), 1), 1), None),
+                        (((AliceStore::get(), 1), 2), None),
+                        (((AliceStore::get(), 1), 3), None)
                     ])
                 ),
                 Error::MaxItemsExceeded
@@ -157,11 +116,7 @@ mod create_cart {
         new_test_ext().execute_with(|| {
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(BOB),
-                Some(vec![(
-                    InventoryId(AliceStore::get(), 1),
-                    ItemType::Unit(1),
-                    None
-                )])
+                Some(vec![(((AliceStore::get(), 1), 1), None)])
             ));
 
             System::assert_has_event(
@@ -196,7 +151,7 @@ mod set_cart_items {
                 Orders::set_cart_items(
                     RuntimeOrigin::signed(BOB),
                     1,
-                    vec![(InventoryId(AliceStore::get(), 2), ItemType::Unit(1), None)]
+                    vec![(((AliceStore::get(), 2), 1), None)]
                 ),
                 Error::OrderNotFound
             );
@@ -212,7 +167,7 @@ mod set_cart_items {
                 Orders::set_cart_items(
                     RuntimeOrigin::signed(BOB),
                     order_id,
-                    vec![(InventoryId(AliceStore::get(), 2), ItemType::Unit(1), None)]
+                    vec![(((AliceStore::get(), 2), 1), None)]
                 ),
                 Error::NoPermission
             );
@@ -228,7 +183,7 @@ mod set_cart_items {
                 Orders::set_cart_items(
                     RuntimeOrigin::signed(BOB),
                     order_id,
-                    vec![(InventoryId(AliceStore::get(), 2), ItemType::Unit(1), None)]
+                    vec![(((AliceStore::get(), 2), 1), None)]
                 ),
                 Error::ItemNotFound
             );
@@ -246,8 +201,8 @@ mod set_cart_items {
                     RuntimeOrigin::signed(ALICE),
                     order_id,
                     vec![
-                        (InventoryId(BobStore::get(), 1), ItemType::Unit(1), None),
-                        (InventoryId(BobStore::get(), 1), ItemType::Unit(2), None)
+                        (((BobStore::get(), 1), 1), None),
+                        (((BobStore::get(), 1), 2), None)
                     ]
                 ),
                 Error::MaxItemsExceeded
@@ -266,11 +221,11 @@ mod set_cart_items {
                     RuntimeOrigin::signed(EVE),
                     order_id,
                     vec![
-                        (InventoryId(AliceStore::get(), 1), ItemType::Unit(1), None),
-                        (InventoryId(AliceStore::get(), 1), ItemType::Unit(2), None),
-                        (InventoryId(AliceStore::get(), 1), ItemType::Unit(3), None),
-                        (InventoryId(BobStore::get(), 1), ItemType::Unit(1), None),
-                        (InventoryId(BobStore::get(), 1), ItemType::Unit(2), None)
+                        (((AliceStore::get(), 1), 1), None),
+                        (((AliceStore::get(), 1), 2), None),
+                        (((AliceStore::get(), 1), 3), None),
+                        (((BobStore::get(), 1), 1), None),
+                        (((BobStore::get(), 1), 2), None)
                     ]
                 ),
                 Error::MaxItemsExceeded
@@ -285,7 +240,7 @@ mod set_cart_items {
             assert_ok!(Orders::set_cart_items(
                 RuntimeOrigin::signed(ALICE),
                 order_id,
-                vec![(InventoryId(AliceStore::get(), 1), ItemType::Unit(1), None)]
+                vec![(((AliceStore::get(), 1), 1), None)]
             ));
         })
     }
@@ -301,11 +256,7 @@ mod checkout {
             let order_id = NextOrderId::<Test>::get();
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(who).into(),
-                Some(vec![(
-                    InventoryId(AliceStore::get(), 1),
-                    ItemType::Unit(1),
-                    None
-                )])
+                Some(vec![(((AliceStore::get(), 1), 1), None)])
             ));
             f(order_id)
         })
@@ -341,8 +292,8 @@ mod checkout {
     fn fails_if_the_item_is_not_for_sale() {
         super::new_test_ext().execute_with(|| {
             assert_ok!(Listings::publish(
-                &InventoryId(AliceStore::get(), 1),
-                &ItemType::Unit(4),
+                &(AliceStore::get(), 1),
+                &4,
                 b"Alice Flowers - White Tulips".to_vec(),
                 None
             ));
@@ -351,8 +302,8 @@ mod checkout {
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(BOB),
                 Some(vec![
-                    (InventoryId(AliceStore::get(), 1), ItemType::Unit(3), None),
-                    (InventoryId(AliceStore::get(), 1), ItemType::Unit(4), None)
+                    (((AliceStore::get(), 1), 3), None),
+                    (((AliceStore::get(), 1), 4), None)
                 ])
             ));
             assert_noop!(
@@ -403,11 +354,7 @@ mod checkout {
             let order_id = NextOrderId::<Test>::get();
             assert_ok!(Orders::create_cart(
                 RuntimeOrigin::signed(BOB),
-                Some(vec![(
-                    InventoryId(AliceStore::get(), 1),
-                    ItemType::Unit(1),
-                    None
-                )])
+                Some(vec![(((AliceStore::get(), 1), 1), None)])
             ));
             assert_noop!(
                 Orders::checkout(RuntimeOrigin::signed(BOB), order_id),
@@ -506,8 +453,9 @@ mod cancel {
 
 mod pay {
     use super::*;
-    use crate::types::{OrderDetails, OrderStatus};
-    use fc_pallet_listings::{InventoryIdOf, ItemIdOf, ItemPrice};
+    use crate::types::{MerchantIdOf, OrderDetails, OrderStatus};
+    use crate::InventoryIdOf;
+    use fc_pallet_listings::{ItemIdOf, ItemPrice};
     use frame_contrib_traits::listings::item::Item;
     use frame_contrib_traits::listings::InspectItem;
     use frame_support::pallet_prelude::Get;
@@ -518,7 +466,10 @@ mod pay {
 
     fn new_test_ext<T>(
         who: AccountId,
-        items: Vec<(InventoryIdOf<Test>, ItemIdOf<Test>, Option<AccountId>)>,
+        items: Vec<(
+            ((MerchantIdOf<Test>, InventoryIdOf<Test>), ItemIdOf<Test>),
+            Option<AccountId>,
+        )>,
         f: impl FnOnce(u32) -> T,
     ) -> T {
         ExtBuilder::default()
@@ -541,7 +492,7 @@ mod pay {
             .with_inventory(
                 mock_helpers::Inventory::new((AliceStore::get(), 1), ALICE)
                     .with_item(mock_helpers::Item::new(
-                        ItemType::Unit(1),
+                        1,
                         b"Item 1 (ASSET_A)".to_vec(),
                         Some(ItemPrice {
                             asset: ASSET_A,
@@ -549,7 +500,7 @@ mod pay {
                         }),
                     ))
                     .with_item(mock_helpers::Item::new(
-                        ItemType::Unit(2),
+                        2,
                         b"Item 1 (ASSET_B)".to_vec(),
                         Some(ItemPrice {
                             asset: ASSET_B,
@@ -557,7 +508,7 @@ mod pay {
                         }),
                     ))
                     .with_item(mock_helpers::Item::new(
-                        ItemType::Unit(3),
+                        3,
                         b"Item 2 (ASSET_A)".to_vec(),
                         Some(ItemPrice {
                             asset: ASSET_A,
@@ -565,7 +516,7 @@ mod pay {
                         }),
                     ))
                     .with_item(mock_helpers::Item::new(
-                        ItemType::Unit(4),
+                        4,
                         b"Item 3 (ASSET_A)".to_vec(),
                         Some(ItemPrice {
                             asset: ASSET_A,
@@ -573,7 +524,7 @@ mod pay {
                         }),
                     ))
                     .with_item(mock_helpers::Item::new(
-                        ItemType::Unit(10),
+                        10,
                         b"Special Item (Not For Sale)".to_vec(),
                         None,
                     )),
@@ -596,7 +547,7 @@ mod pay {
     fn fails_if_the_caller_is_not_signed() {
         new_test_ext(
             CHARLIE,
-            vec![(InventoryId(AliceStore::get(), 1), ItemType::Unit(2), None)],
+            vec![(((AliceStore::get(), 1), 2), None)],
             |order_id| {
                 assert_noop!(
                     Orders::pay(RuntimeOrigin::root(), order_id),
@@ -609,16 +560,12 @@ mod pay {
     /// An order can be paid if it exists. Otherwise, return [`Error::OrderNotFound`]
     #[test]
     fn fails_if_the_order_does_not_exist() {
-        new_test_ext(
-            BOB,
-            vec![(InventoryId(AliceStore::get(), 1), ItemType::Unit(2), None)],
-            |_| {
-                assert_noop!(
-                    Orders::pay(RuntimeOrigin::signed(CHARLIE), 1),
-                    Error::OrderNotFound
-                );
-            },
-        )
+        new_test_ext(BOB, vec![(((AliceStore::get(), 1), 2), None)], |_| {
+            assert_noop!(
+                Orders::pay(RuntimeOrigin::signed(CHARLIE), 1),
+                Error::OrderNotFound
+            );
+        })
     }
 
     /// The caller must have enough funds to pay for the entire order. Otherwise, return
@@ -627,7 +574,7 @@ mod pay {
     fn fails_if_the_caller_does_not_have_enough_funds() {
         new_test_ext(
             ALICE,
-            vec![(InventoryId(AliceStore::get(), 1), ItemType::Unit(1), None)],
+            vec![(((AliceStore::get(), 1), 1), None)],
             |order_id| {
                 assert_noop!(
                     Orders::pay(RuntimeOrigin::signed(CHARLIE), order_id),
@@ -638,7 +585,7 @@ mod pay {
 
         new_test_ext(
             ALICE,
-            vec![(InventoryId(AliceStore::get(), 1), ItemType::Unit(2), None)],
+            vec![(((AliceStore::get(), 1), 2), None)],
             |order_id| {
                 assert_noop!(
                     Orders::pay(RuntimeOrigin::signed(BOB), order_id),
@@ -650,8 +597,8 @@ mod pay {
         new_test_ext(
             BOB,
             vec![
-                (InventoryId(AliceStore::get(), 1), ItemType::Unit(1), None),
-                (InventoryId(AliceStore::get(), 1), ItemType::Unit(3), None),
+                (((AliceStore::get(), 1), 1), None),
+                (((AliceStore::get(), 1), 3), None),
             ],
             |order_id| {
                 assert_noop!(
@@ -676,7 +623,7 @@ mod pay {
         // If already paid, cannot pay for it again.
         new_test_ext(
             CHARLIE,
-            vec![(InventoryId(AliceStore::get(), 1), ItemType::Unit(3), None)],
+            vec![(((AliceStore::get(), 1), 3), None)],
             |order_id| {
                 assert_ok!(Orders::pay(RuntimeOrigin::signed(ALICE), order_id));
                 assert_noop!(
@@ -694,10 +641,10 @@ mod pay {
         // articles, so they belong to CHARLIE now. Additionally, ALICE should be able to release
         // the funds BOB transferred as part of the payment.
 
-        let inventory_id = InventoryId(AliceStore::get(), 1);
-        let item_id = ItemType::Unit(3);
+        let inventory_id = (AliceStore::get(), 1);
+        let item_id = 3;
 
-        new_test_ext(CHARLIE, vec![(inventory_id, item_id, None)], |order_id| {
+        new_test_ext(CHARLIE, vec![((inventory_id, item_id), None)], |order_id| {
             let bob_asset_b_balance = Assets::balance(ASSET_A, &BOB);
 
             assert_ok!(Orders::pay(RuntimeOrigin::signed(BOB), order_id));
@@ -764,12 +711,12 @@ mod pay {
         // of the payment.
         //
         // ALICE cancels the sale, hence returning the item back to them.
-        let inventory_id = InventoryId(AliceStore::get(), 1);
-        let item_id = ItemType::Unit(3);
+        let inventory_id = (AliceStore::get(), 1);
+        let item_id = 3;
 
         new_test_ext(
             CHARLIE,
-            vec![(inventory_id, item_id, Some(EVE))],
+            vec![((inventory_id, item_id), Some(EVE))],
             |order_id| {
                 let bob_asset_b_balance = Assets::balance(ASSET_A, BOB);
                 assert_ok!(Orders::pay(RuntimeOrigin::signed(BOB), order_id));
