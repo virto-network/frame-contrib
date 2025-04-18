@@ -7,6 +7,7 @@ use frame_support::pallet_prelude::{DispatchResult, MaybeSerializeDeserialize, P
 
 pub mod inventory;
 pub mod item;
+pub mod test_utils;
 
 pub trait ListingsIdentifier: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize {}
 
