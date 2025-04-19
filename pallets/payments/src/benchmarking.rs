@@ -55,38 +55,37 @@ fn create_and_mint_asset<T: Config>(
         true,
         <BalanceOf<T>>::from(1u32),
     );
-    T::Assets::mint_into(asset.clone(), &sender, <BalanceOf<T>>::from(10000000u32))?;
+    T::Assets::mint_into(asset.clone(), sender, <BalanceOf<T>>::from(10000000u32))?;
     T::Assets::mint_into(
         asset.clone(),
-        &beneficiary,
+        beneficiary,
         <BalanceOf<T>>::from(10000000u32),
     )?;
 
     Ok(())
 }
 
+type BenchmarkPaymentFor<T> = (
+    <T as Config>::PaymentId,
+    AccountIdOf<T>,
+    AccountIdOf<T>,
+    AccountIdLookupOf<T>,
+    AccountIdLookupOf<T>,
+);
+
 fn create_payment<T: Config>(
     amount: &BalanceOf<T>,
     asset: &AssetIdOf<T>,
     remark: Option<BoundedDataOf<T>>,
-) -> Result<
-    (
-        T::PaymentId,
-        T::AccountId,
-        T::AccountId,
-        AccountIdLookupOf<T>,
-        AccountIdLookupOf<T>,
-    ),
-    BenchmarkError,
-> {
+) -> Result<BenchmarkPaymentFor<T>, BenchmarkError> {
     let (sender, beneficiary, sender_lookup, beneficiary_lookup) = create_accounts::<T>();
-    create_and_mint_asset::<T>(&sender, &beneficiary, &asset)?;
+    create_and_mint_asset::<T>(&sender, &beneficiary, asset)?;
 
     let (payment_id, payment_detail) = Payments::<T>::do_create_payment(
         &sender,
         beneficiary.clone(),
         asset.clone(),
-        amount.clone(),
+        *amount,
         PaymentState::Created,
         T::IncentivePercentage::get(),
         remark.as_ref().map(|x| x.as_slice()),
@@ -125,7 +124,7 @@ mod benchmarks {
         let order_remark: Option<BoundedDataOf<T>> = if q == 0 {
             None
         } else {
-            Some(BoundedVec::try_from(vec![1 as u8; q as usize]).unwrap())
+            Some(BoundedVec::try_from(vec![1u8; q as usize]).unwrap())
         };
 
         #[extrinsic_call]
@@ -270,7 +269,7 @@ mod benchmarks {
             &sender,
             beneficiary,
             asset.clone(),
-            amount.clone(),
+            amount,
             PaymentState::PaymentRequested,
             T::IncentivePercentage::get(),
             None,

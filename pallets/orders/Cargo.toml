@@ -1,9 +1,9 @@
 [package]
 authors.workspace = true
-description = "Handles listings of exchangable goods and services"
+description = "A system to handle orders of items that exist in the `Listings` subsystem, which can be paid off using the `Payments` subsystem"
 edition.workspace = true
 license.workspace = true
-name = "fc-pallet-listings"
+name = "fc-pallet-orders"
 repository.workspace = true
 version = "1.0.0"
 
@@ -12,54 +12,74 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 codec.workspace = true
-scale-info.workspace = true
-fc-traits-listings.workspace = true
-frame-benchmarking.workspace = true
+frame-contrib-traits.workspace = true
+frame-benchmarking = { workspace = true, optional = true }
 frame-support.workspace = true
 frame-system.workspace = true
-pallet-nfts.workspace = true
-sp-io.workspace = true
+scale-info.workspace = true
 sp-core.workspace = true
+sp-io.workspace = true
 sp-runtime.workspace = true
-serde.workspace = true
+sp-std.workspace = true
 
 [dev-dependencies]
-mock-helpers = { version = "0.1.0", workspace = true, features = ["pallet-assets", "pallet-balances"] }
+fc-pallet-listings.workspace = true
+fc-pallet-payments.workspace = true
+mock-helpers = { workspace = true, features = ["pallet-assets", "pallet-balances", "fc-pallet-listings"] }
 pallet-assets.workspace = true
 pallet-balances.workspace = true
+pallet-nfts.workspace = true
+pallet-preimage.workspace = true
+pallet-scheduler.workspace = true
 
 [features]
 default = ["std"]
+
 runtime-benchmarks = [
+  "fc-pallet-listings/runtime-benchmarks",
+  "fc-pallet-payments/runtime-benchmarks",
   "frame-benchmarking/runtime-benchmarks",
+  "frame-contrib-traits/runtime-benchmarks",
   "frame-support/runtime-benchmarks",
   "frame-system/runtime-benchmarks",
   "pallet-assets/runtime-benchmarks",
   "pallet-balances/runtime-benchmarks",
   "pallet-nfts/runtime-benchmarks",
+  "pallet-preimage/runtime-benchmarks",
+  "pallet-scheduler/runtime-benchmarks",
   "sp-runtime/runtime-benchmarks",
 ]
+
 std = [
   "codec/std",
-  "fc-traits-listings/std",
+  "fc-pallet-listings/std",
+  "fc-pallet-payments/std",
   "frame-benchmarking/std",
+  "frame-contrib-traits/std",
   "frame-support/std",
   "frame-system/std",
   "mock-helpers/std",
   "pallet-assets/std",
   "pallet-balances/std",
   "pallet-nfts/std",
+  "pallet-preimage/std",
+  "pallet-scheduler/std",
   "scale-info/std",
   "sp-core/std",
   "sp-io/std",
   "sp-runtime/std",
-  "serde/std",
+  "sp-std/std",
 ]
+
 try-runtime = [
+  "fc-pallet-listings/try-runtime",
+  "fc-pallet-payments/try-runtime",
   "frame-support/try-runtime",
   "frame-system/try-runtime",
   "pallet-assets/try-runtime",
   "pallet-balances/try-runtime",
   "pallet-nfts/try-runtime",
+  "pallet-preimage/try-runtime",
+  "pallet-scheduler/try-runtime",
   "sp-runtime/try-runtime",
 ]

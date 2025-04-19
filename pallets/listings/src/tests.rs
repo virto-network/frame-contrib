@@ -1,7 +1,7 @@
 //! Tests for listings pallet
 
 use crate as fc_pallet_listings;
-use crate::{mock::*, InventoryId, ItemPrice, ItemType};
+use crate::{mock::*, InventoryId, ItemPrice};
 use frame_support::{assert_noop, assert_ok};
 use sp_runtime::{BoundedVec, DispatchError};
 
@@ -15,7 +15,7 @@ type CatalogEvent = pallet_nfts::Event<Test>;
 
 mod create_inventory {
     use super::*;
-    use frame_support::traits::{fungible::Unbalanced, tokens::Precision};
+    use frame_support::traits::{fungible, fungible::Unbalanced, tokens::Precision};
 
     #[test]
     fn fails_if_create_origin_is_invalid() {
@@ -30,6 +30,7 @@ mod create_inventory {
     #[test]
     fn fails_if_cannot_deposit() {
         new_test_ext().execute_with(|| {
+            <Balances as fungible::Mutate<AccountId>>::set_balance(&ALICE, 2);
             assert_noop!(
                 Listings::create_inventory(RuntimeOrigin::signed(ALICE), InventoryId([1u8; 32], 1)),
                 pallet_balances::Error::<Test>::InsufficientBalance
@@ -145,7 +146,7 @@ mod publish_item {
                 Listings::publish_item(
                     RuntimeOrigin::signed(ALICE),
                     InventoryId([0u8; 32], 2),
-                    ItemType::Unit(1),
+                    1,
                     BoundedVec::truncate_from(b"Item name".to_vec()),
                     None,
                 ),
@@ -166,7 +167,7 @@ mod publish_item {
                 Listings::publish_item(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     BoundedVec::truncate_from(b"Item name".to_vec()),
                     None,
                 ),
@@ -182,7 +183,7 @@ mod publish_item {
                 Listings::publish_item(
                     RuntimeOrigin::signed(ALICE),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     BoundedVec::truncate_from(b"Item name".to_vec()),
                     None,
                 ),
@@ -198,7 +199,7 @@ mod publish_item {
             assert_ok!(Listings::publish_item(
                 RuntimeOrigin::signed(ROOT),
                 InventoryId([0u8; 32], 1),
-                ItemType::Unit(1),
+                1,
                 BoundedVec::truncate_from(b"Item name".to_vec()),
                 None,
             ));
@@ -206,7 +207,7 @@ mod publish_item {
             System::assert_has_event(
                 ListingsEvent::ItemPublished {
                     inventory_id: InventoryId([0u8; 32], 1),
-                    id: ItemType::Unit(1),
+                    id: 1,
                 }
                 .into(),
             )
@@ -217,7 +218,7 @@ mod publish_item {
             assert_ok!(Listings::publish_item(
                 RuntimeOrigin::signed(ROOT),
                 InventoryId([0u8; 32], 1),
-                ItemType::Unit(1),
+                1,
                 BoundedVec::truncate_from(b"Item name".to_vec()),
                 Some(ItemPrice {
                     asset: 1,
@@ -228,7 +229,7 @@ mod publish_item {
             System::assert_has_event(
                 ListingsEvent::ItemPriceSet {
                     inventory_id: InventoryId([0u8; 32], 1),
-                    id: ItemType::Unit(1),
+                    id: 1,
                     price: ItemPrice {
                         asset: 1,
                         amount: 1,
@@ -246,7 +247,7 @@ mod publish_item {
             assert_ok!(Listings::publish_item(
                 RuntimeOrigin::signed(ROOT),
                 InventoryId([0u8; 32], 1),
-                ItemType::Unit(1),
+                1,
                 BoundedVec::truncate_from(b"Item name".to_vec()),
                 None,
             ));
@@ -255,7 +256,7 @@ mod publish_item {
                 Listings::publish_item(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     BoundedVec::truncate_from(b"Item name".to_vec()),
                     None,
                 ),
@@ -271,7 +272,7 @@ fn new_test_ext_with_item() -> sp_io::TestExternalities {
         assert_ok!(Listings::publish_item(
             RuntimeOrigin::signed(ROOT),
             InventoryId([0u8; 32], 1),
-            ItemType::Unit(1),
+            1,
             BoundedVec::truncate_from(b"Item name".to_vec()),
             None,
         ));
@@ -289,7 +290,7 @@ mod set_item_price {
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 2),
-                    ItemType::Unit(1),
+                    1,
                     ItemPrice {
                         asset: 1,
                         amount: 1,
@@ -302,7 +303,7 @@ mod set_item_price {
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(2),
+                    2,
                     ItemPrice {
                         asset: 1,
                         amount: 1,
@@ -325,7 +326,7 @@ mod set_item_price {
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     ItemPrice {
                         asset: 1,
                         amount: 1,
@@ -343,7 +344,7 @@ mod set_item_price {
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ALICE),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     ItemPrice {
                         asset: 1,
                         amount: 1,
@@ -360,7 +361,7 @@ mod set_item_price {
             assert_ok!(Catalog::transfer(
                 RuntimeOrigin::signed(ROOT),
                 InventoryId([0u8; 32], 1),
-                ItemType::Unit(1),
+                1,
                 BOB,
             ));
 
@@ -368,7 +369,7 @@ mod set_item_price {
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     ItemPrice {
                         asset: 1,
                         amount: 1,
@@ -385,13 +386,13 @@ mod set_item_price {
             assert_ok!(Catalog::transfer(
                 RuntimeOrigin::signed(ROOT),
                 InventoryId([0u8; 32], 1),
-                ItemType::Unit(1),
+                1,
                 BOB,
             ));
             assert_ok!(Listings::mark_item_can_transfer(
                 RuntimeOrigin::signed(ROOT),
                 InventoryId([0u8; 32], 1),
-                ItemType::Unit(1),
+                1,
                 false,
             ));
 
@@ -399,7 +400,7 @@ mod set_item_price {
                 Listings::set_item_price(
                     RuntimeOrigin::signed(BOB),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     ItemPrice {
                         asset: 1,
                         amount: 1,
@@ -416,13 +417,13 @@ mod set_item_price {
             assert_ok!(Listings::mark_item_not_for_resale(
                 RuntimeOrigin::signed(ROOT),
                 InventoryId([0u8; 32], 1),
-                ItemType::Unit(1),
+                1,
                 true
             ));
             assert_ok!(Catalog::transfer(
                 RuntimeOrigin::signed(ROOT),
                 InventoryId([0u8; 32], 1),
-                ItemType::Unit(1),
+                1,
                 BOB,
             ));
 
@@ -430,7 +431,7 @@ mod set_item_price {
                 Listings::set_item_price(
                     RuntimeOrigin::signed(BOB),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     ItemPrice {
                         asset: 1,
                         amount: 1,
@@ -447,7 +448,7 @@ mod set_item_price {
             assert_ok!(Listings::set_item_price(
                 RuntimeOrigin::signed(ROOT),
                 InventoryId([0u8; 32], 1),
-                ItemType::Unit(1),
+                1,
                 ItemPrice {
                     asset: 1,
                     amount: 1,
@@ -457,7 +458,7 @@ mod set_item_price {
             System::assert_has_event(
                 ListingsEvent::ItemPriceSet {
                     inventory_id: InventoryId([0u8; 32], 1),
-                    id: ItemType::Unit(1),
+                    id: 1,
                     price: ItemPrice {
                         asset: 1,
                         amount: 1,
@@ -480,7 +481,7 @@ mod mark_item_can_transfer {
                 Listings::mark_item_can_transfer(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 2),
-                    ItemType::Unit(1),
+                    1,
                     false
                 ),
                 ListingsError::UnknownInventory,
@@ -490,7 +491,7 @@ mod mark_item_can_transfer {
                 Listings::mark_item_can_transfer(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(2),
+                    2,
                     false
                 ),
                 ListingsError::UnknownItem,
@@ -510,7 +511,7 @@ mod mark_item_can_transfer {
                 Listings::mark_item_can_transfer(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     false,
                 ),
                 ListingsError::ArchivedInventory
@@ -525,7 +526,7 @@ mod mark_item_can_transfer {
                 Listings::mark_item_can_transfer(
                     RuntimeOrigin::signed(ALICE),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     false,
                 ),
                 DispatchError::BadOrigin,
@@ -538,7 +539,7 @@ mod mark_item_can_transfer {
         new_test_ext().execute_with(|| {
             let caller = RuntimeOrigin::signed(ROOT);
             let inventory_id = InventoryId([0u8; 32], 1);
-            let id = ItemType::Unit(1);
+            let id = 1;
 
             assert_ok!(Listings::mark_item_can_transfer(
                 caller.clone(),
@@ -547,7 +548,7 @@ mod mark_item_can_transfer {
                 false,
             ));
 
-            assert!(!Listings::transferable(&inventory_id, &id));
+            assert!(!Listings::transferable(&inventory_id.into(), &id));
 
             assert_ok!(Listings::mark_item_can_transfer(
                 caller,
@@ -556,7 +557,7 @@ mod mark_item_can_transfer {
                 true,
             ));
 
-            assert!(Listings::transferable(&inventory_id, &id));
+            assert!(Listings::transferable(&inventory_id.into(), &id));
         })
     }
 }
@@ -572,7 +573,7 @@ mod mark_item_not_for_resale {
                 Listings::mark_item_not_for_resale(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 2),
-                    ItemType::Unit(1),
+                    1,
                     true
                 ),
                 ListingsError::UnknownInventory,
@@ -582,7 +583,7 @@ mod mark_item_not_for_resale {
                 Listings::mark_item_not_for_resale(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(2),
+                    2,
                     true
                 ),
                 ListingsError::UnknownItem,
@@ -602,7 +603,7 @@ mod mark_item_not_for_resale {
                 Listings::mark_item_not_for_resale(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     false,
                 ),
                 ListingsError::ArchivedInventory
@@ -617,7 +618,7 @@ mod mark_item_not_for_resale {
                 Listings::mark_item_not_for_resale(
                     RuntimeOrigin::signed(ALICE),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     true,
                 ),
                 DispatchError::BadOrigin,
@@ -630,7 +631,7 @@ mod mark_item_not_for_resale {
         new_test_ext().execute_with(|| {
             let caller = RuntimeOrigin::signed(ROOT);
             let inventory_id = InventoryId([0u8; 32], 1);
-            let id = ItemType::Unit(1);
+            let id = 1;
 
             assert_ok!(Listings::mark_item_not_for_resale(
                 caller.clone(),
@@ -639,7 +640,7 @@ mod mark_item_not_for_resale {
                 true,
             ));
 
-            assert!(!Listings::can_resell(&inventory_id, &id));
+            assert!(!Listings::can_resell(&inventory_id.into(), &id));
 
             assert_ok!(Listings::mark_item_not_for_resale(
                 caller,
@@ -648,7 +649,7 @@ mod mark_item_not_for_resale {
                 false,
             ));
 
-            assert!(Listings::can_resell(&inventory_id, &id));
+            assert!(Listings::can_resell(&inventory_id.into(), &id));
         })
     }
 }
@@ -665,7 +666,7 @@ mod set_item_attribute {
                 Listings::set_item_attribute(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 2),
-                    ItemType::Unit(1),
+                    1,
                     BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec()),
                     Some(BoundedVec::truncate_from(b"ATTRIBUTE_VALUE".to_vec())),
                 ),
@@ -678,7 +679,7 @@ mod set_item_attribute {
                 Listings::set_item_attribute(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 2),
-                    ItemType::Unit(1),
+                    1,
                     BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec()),
                     Some(BoundedVec::truncate_from(b"ATTRIBUTE_VALUE".to_vec())),
                 ),
@@ -699,7 +700,7 @@ mod set_item_attribute {
                 Listings::set_item_attribute(
                     RuntimeOrigin::signed(ROOT),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec()),
                     Some(BoundedVec::truncate_from(b"ATTRIBUTE_VALUE".to_vec())),
                 ),
@@ -715,7 +716,7 @@ mod set_item_attribute {
                 Listings::set_item_attribute(
                     RuntimeOrigin::signed(ALICE),
                     InventoryId([0u8; 32], 1),
-                    ItemType::Unit(1),
+                    1,
                     BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec()),
                     Some(BoundedVec::truncate_from(b"ATTRIBUTE_VALUE".to_vec())),
                 ),
@@ -729,7 +730,7 @@ mod set_item_attribute {
         new_test_ext().execute_with(|| {
             let caller = RuntimeOrigin::signed(ROOT);
             let inventory_id = InventoryId([0u8; 32], 1);
-            let id = ItemType::Unit(1);
+            let id = 1;
 
             let key = BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec());
             let value = BoundedVec::truncate_from(b"ATTRIBUTE_VALUE".to_vec());

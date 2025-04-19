@@ -1,5 +1,7 @@
 use super::*;
+
 use crate::Pallet;
+use alloc::vec;
 use frame_benchmarking::v2::*;
 use frame_support::traits::{fungible::Unbalanced, tokens::Precision};
 use sp_runtime::traits::Bounded;
@@ -8,8 +10,10 @@ fn assert_has_event<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>::R
     frame_system::Pallet::<T>::assert_has_event(generic_event.into())
 }
 
-fn inventory_info<T: Config<I>, I: 'static>(
-) -> Result<(OriginFor<T>, InventoryIdOf<T, I>, AccountIdOf<T>), DispatchError> {
+type InventoryInfoOf<T, I> = (OriginFor<T>, InventoryIdFor<T, I>, AccountIdOf<T>);
+type ItemSetupFor<T, I> = (OriginFor<T>, InventoryIdFor<T, I>, ItemIdOf<T, I>);
+
+fn inventory_info<T: Config<I>, I: 'static>() -> Result<InventoryInfoOf<T, I>, DispatchError> {
     let inventory_id = T::BenchmarkHelper::inventory_id();
     let origin = T::CreateInventoryOrigin::try_successful_origin(&inventory_id)
         .map_err(|_| DispatchError::BadOrigin)?;
@@ -24,16 +28,18 @@ fn inventory_info<T: Config<I>, I: 'static>(
 }
 
 fn setup_inventory<T: Config<I>, I: 'static>(
-) -> Result<(OriginFor<T>, InventoryIdOf<T, I>), DispatchError> {
+) -> Result<(OriginFor<T>, InventoryIdFor<T, I>), DispatchError> {
     let (origin, inventory_id, _) = inventory_info::<T, I>()?;
     Pallet::<T, I>::create_inventory(origin.clone(), inventory_id)?;
     Ok((origin, inventory_id))
 }
 
-fn setup_item<T: Config<I>, I: 'static>(
-) -> Result<(OriginFor<T>, InventoryIdOf<T, I>, ItemIdOf<T, I>), DispatchError> {
+fn setup_item<T: Config<I>, I: 'static>() -> Result<ItemSetupFor<T, I>, DispatchError>
+where
+    ItemIdOf<T, I>: Default,
+{
     let (origin, inventory_id) = setup_inventory::<T, I>()?;
-    let item_id = T::BenchmarkHelper::item_id();
+    let item_id = Default::default();
 
     Pallet::<T, I>::publish_item(
         origin.clone(),
@@ -46,7 +52,11 @@ fn setup_item<T: Config<I>, I: 'static>(
     Ok((origin, inventory_id, item_id))
 }
 
-#[instance_benchmarks]
+#[instance_benchmarks(
+where
+    AssetIdOf<T, I>: Default,
+    ItemIdOf<T, I>: Default,
+)]
 mod benchmarks {
     use super::*;
 
@@ -100,9 +110,12 @@ mod benchmarks {
     ) -> Result<(), BenchmarkError> {
         // Setup code
         let (origin, inventory_id) = setup_inventory::<T, I>()?;
-        let id = T::BenchmarkHelper::item_id();
+        let id = Default::default();
         let name = BoundedVec::truncate_from(vec![0u8; q as usize]);
-        let price = T::BenchmarkHelper::item_price();
+        let price = ItemPrice {
+            asset: Default::default(),
+            amount: 1u32.into(),
+        };
 
         #[extrinsic_call]
         _(
@@ -136,7 +149,7 @@ mod benchmarks {
         _(origin as T::RuntimeOrigin, inventory_id, id, false);
 
         // Verification code
-        assert!(!Pallet::<T, I>::transferable(&inventory_id, &id));
+        assert!(!Pallet::<T, I>::transferable(&inventory_id.into(), &id));
 
         Ok(())
     }
@@ -150,7 +163,7 @@ mod benchmarks {
         _(origin as T::RuntimeOrigin, inventory_id, id, true);
 
         // Verification code
-        assert!(!Pallet::<T, I>::can_resell(&inventory_id, &id));
+        assert!(!Pallet::<T, I>::can_resell(&inventory_id.into(), &id));
 
         Ok(())
     }
@@ -159,7 +172,10 @@ mod benchmarks {
     pub fn set_item_price() -> Result<(), BenchmarkError> {
         // Setup code
         let (origin, inventory_id, id) = setup_item::<T, I>()?;
-        let price = T::BenchmarkHelper::item_price();
+        let price = ItemPrice {
+            asset: Default::default(),
+            amount: 10u32.into(),
+        };
 
         #[extrinsic_call]
         _(origin as T::RuntimeOrigin, inventory_id, id, price.clone());
@@ -211,7 +227,7 @@ mod benchmarks {
 
         // Verification code
         assert_eq!(
-            Pallet::<T, I>::attribute(&inventory_id, &id, &key),
+            Pallet::<T, I>::attribute(&inventory_id.into(), &id, &key),
             Some(value)
         );
 
@@ -260,7 +276,7 @@ mod benchmarks {
 
         // Verification code
         assert_eq!(
-            Pallet::<T, I>::attribute(&inventory_id, &id, &key),
+            Pallet::<T, I>::attribute(&inventory_id.into(), &id, &key),
             None::<Vec<u8>>
         );
 
