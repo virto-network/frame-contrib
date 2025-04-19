@@ -24,6 +24,15 @@ type ItemIdOf<T, I> = <T as Config<I>>::ItemId;
 type ItemOf<T, I> =
     item::Item<AccountIdOf<T>, <T as Config<I>>::AssetId, <T as Config<I>>::Balance>;
 
+/// A map of storing attributes.
+///
+/// Each map supports up to 256 attributes. This should be more than enough for test purposes.
+type AttributesMapOf<T, I> = BoundedBTreeMap<
+    BoundedVec<u8, <T as Config<I>>::MaxKeyLen>,
+    BoundedVec<u8, <T as Config<I>>::MaxValueLen>,
+    ConstU32<256>,
+>;
+
 /// A test inventory. This is the simplest structure we can handle without incurring in multiple
 /// storage types.
 #[derive(DebugNoBound, Encode, Decode, PartialEqNoBound, MaxEncodedLen, TypeInfo)]
@@ -35,12 +44,8 @@ struct Inventory<T: Config<I>, I: 'static = ()> {
     active: bool,
     /// The limit of items
     items_limit: Option<u32>,
-    /// The inventory supports up to 256 attributes. This should be more than enough for test purposes.
-    attributes: BoundedBTreeMap<
-        BoundedVec<u8, <T as Config<I>>::MaxKeyLen>,
-        BoundedVec<u8, <T as Config<I>>::MaxValueLen>,
-        ConstU32<256>,
-    >,
+    /// The map of attributes for the inventory.
+    attributes: AttributesMapOf<T, I>,
 }
 
 /// A test item. This is the simplest structure we can handle without incurring in multiple
@@ -60,12 +65,8 @@ struct Item<T: Config<I>, I: 'static = ()> {
     transferable: bool,
     /// The item can be resold.
     can_resell: bool,
-    /// Each item supports up to 256 attributes. This should be more than enough for test purposes.
-    attributes: BoundedBTreeMap<
-        BoundedVec<u8, <T as Config<I>>::MaxKeyLen>,
-        BoundedVec<u8, <T as Config<I>>::MaxValueLen>,
-        ConstU32<256>,
-    >,
+    /// The map of attributes for the item.
+    attributes: AttributesMapOf<T, I>,
 }
 
 /// The inventories, grouped by [`MerchantId`][T::MerchantId]
@@ -118,7 +119,7 @@ impl<T: Config<I>, I: 'static> InspectInventory for MockListings<T, I> {
         let Inventory { attributes, .. } = Inventories::<T, I>::get(merchant_id, inventory_id)?;
         attributes
             .get(&key.using_encoded(|b| BoundedVec::truncate_from(b.to_vec())))
-            .and_then(|v| Decode::decode(&mut TrailingZeroInput::new(&v)).ok())
+            .and_then(|v| Decode::decode(&mut TrailingZeroInput::new(v)).ok())
     }
 }
 
@@ -130,7 +131,7 @@ impl<T: Config<I>, I: 'static> InventoryInspectEnumerable for MockListings<T, I>
     fn owned(
         who: &Self::MerchantId,
     ) -> impl Iterator<Item = impl Into<(Self::MerchantId, Self::InventoryId)>> {
-        Inventories::<T, I>::iter_prefix(who).map(|(i, _)| (who.clone(), i))
+        Inventories::<T, I>::iter_prefix(who).map(|(i, _)| (*who, i))
     }
 }
 
@@ -258,7 +259,7 @@ impl<T: Config<I>, I: 'static> InspectItem<T::AccountId> for MockListings<T, I> 
         let Item { attributes, .. } = Items::<T, I>::get(inventory_id, id)?;
         attributes
             .get(&key.using_encoded(|b| BoundedVec::truncate_from(b.to_vec())))
-            .and_then(|v| Decode::decode(&mut TrailingZeroInput::new(&v)).ok())
+            .and_then(|v| Decode::decode(&mut TrailingZeroInput::new(v)).ok())
     }
 
     fn transferable(

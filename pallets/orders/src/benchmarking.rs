@@ -104,7 +104,7 @@ where
                 }),
             )?;
 
-            Ok((inventory_id.clone(), item_id))
+            Ok((inventory_id, item_id))
         })
         .collect::<Result<Vec<_>, _>>()
 }

@@ -123,6 +123,9 @@ pub mod pallet {
         type BenchmarkHelper: BenchmarkHelper<InventoryIdFor<Self, I>>;
     }
 
+    pub type GenesisConfigInventories<T, I = ()> =
+        ((MerchantIdOf<T, I>, InventoryIdOf<T, I>), AccountIdOf<T>);
+
     pub type GenesisConfigItem<T, I = ()> = (
         (MerchantIdOf<T, I>, InventoryIdOf<T, I>),
         ItemIdOf<T, I>,
@@ -136,7 +139,7 @@ pub mod pallet {
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config<I>, I: 'static = ()> {
         /// Genesis inventories: merchant, inventory_id, owner
-        pub inventories: Vec<((T::MerchantId, T::InventoryId), T::AccountId)>,
+        pub inventories: Vec<GenesisConfigInventories<T, I>>,
         /// Genesis items: inventory_id, item_id, name, price, transferable, for_resale
         pub items: Vec<GenesisConfigItem<T, I>>,
     }

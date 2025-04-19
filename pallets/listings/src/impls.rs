@@ -88,8 +88,7 @@ mod inventory {
             id: &InventoryIdTuple<T, I>,
             key: &K,
         ) -> DispatchResult {
-            T::Nonfungibles::clear_typed_collection_attribute(&(*id).into(), key)
-                .or_else(|_| Ok(()))
+            T::Nonfungibles::clear_typed_collection_attribute(&(*id).into(), key).or(Ok(()))
         }
     }
 }
@@ -162,7 +161,7 @@ mod item {
             T::Nonfungibles::items(&inventory_id.into()).map(move |item_id| {
                 (
                     item_id,
-                    Self::item(&inventory_id, &item_id)
+                    Self::item(inventory_id, &item_id)
                         .expect("item exists, given it's being iterated; qed"),
                 )
             })
