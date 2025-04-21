@@ -185,9 +185,28 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
         }
     });
 
+    let prelude_crate = {
+        let fc_name = proc_macro_crate::crate_name("fc-traits-authn");
+        match fc_name
+            // if “fc_traits_authn” is a dependency of the caller, we get its import name
+            .or_else(|_| proc_macro_crate::crate_name("frame-contrib-traits"))
+            .expect("neither `fc_traits_authn` nor `frame_contrib_traits` in Cargo.toml")
+        {
+            proc_macro_crate::FoundCrate::Itself => {
+                // the macro is being compiled _inside_ that same crate
+                Ident::new("crate", Span::call_site().into())
+            }
+            proc_macro_crate::FoundCrate::Name(n) => {
+                // we found "fc-traits-authn" (or something renamed out of it), so we pick up the
+                // right identifier.
+                Ident::new(&n, Span::call_site().into())
+            }
+        }
+    };
+
     // Generate the full struct and impl code
     let expanded = quote! {
-        use fc_traits_authn::composite_prelude::*;
+        use #prelude_crate::composite_prelude::*;
 
         #vis struct #auth_struct;
 

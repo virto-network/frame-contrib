@@ -8,15 +8,15 @@ repository = "https://github.com/virto-network/frame-contrib.git"
 codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = [
   "derive",
 ] }
-env_logger = { version = "0.11.3" }
-impl-trait-for-tuples = { version = "0.2.2" }
-log = { version = "0.4.22", default-features = false }
-scale-info = { version = "2.11.3", default-features = false, features = [
+impl-trait-for-tuples = { version = "0.2.3" }
+log = { version = "0.4.27", default-features = false }
+scale-info = { version = "2.11.6", default-features = false, features = [
   "derive",
 ] }
-serde = { version = "1.0.203" }
-syn = { version = "2" }
-quote = { version = "1" }
+serde = { version = "1.0.219", default-features = false }
+syn = { version = "2.0.100" }
+quote = { version = "1.0.40" }
+proc-macro-crate = { version = "3.3.0" }
 
 frame-contrib-traits = { path = "./traits", default-features = false }
 fc-traits-authn = { path = "./traits/authn", default-features = false }
@@ -28,9 +28,14 @@ fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", defau
 fc-traits-payments = { path = "./traits/payments", default-features = false }
 fc-traits-tracks = { path = "./traits/tracks", default-features = false }
 
+fc-pallet-listings = { path = "./pallets/listings", default-features = false }
+fc-pallet-payments = { path = "./pallets/payments", default-features = false }
+
 frame-benchmarking = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 frame-support = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 frame-system = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
+
+mock-helpers = { path = "./mock-helpers", default-features = false }
 
 sp-core = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
 sp-io = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409", default-features = false }
@@ -52,8 +57,10 @@ pallet-utility = { git = "https://github.com/virto-network/polkadot-sdk", branch
 [workspace]
 resolver = "2"
 members = [
+  "mock-helpers",
   "pallets/gas-transaction-payment",
   "pallets/listings",
+  "pallets/orders",
   "pallets/pass",
   "pallets/payments",
   "pallets/referenda-tracks",

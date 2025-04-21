@@ -15,11 +15,12 @@ pallet-referenda.workspace = true
 [features]
 default = ["std"]
 std = [
-  "codec/std",
-  "scale-info/std",
-  "frame-support/std",
-  "pallet-referenda/std",
+	"codec/std",
+	"frame-support/std",
+	"pallet-referenda/std",
+	"scale-info/std",
 ]
 runtime-benchmarks = [
-  "pallet-referenda/runtime-benchmarks"
+	"frame-support/runtime-benchmarks",
+	"pallet-referenda/runtime-benchmarks",
 ]

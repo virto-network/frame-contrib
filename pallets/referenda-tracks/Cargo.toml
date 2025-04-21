@@ -33,13 +33,14 @@ pallet-balances.workspace = true
 [features]
 default = ["std"]
 runtime-benchmarks = [
+	"fc-traits-tracks/runtime-benchmarks",
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
 	"pallet-balances/runtime-benchmarks",
-	"pallet-scheduler/runtime-benchmarks",
 	"pallet-preimage/runtime-benchmarks",
 	"pallet-referenda/runtime-benchmarks",
+	"pallet-scheduler/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
 ]
 std = [
@@ -49,20 +50,23 @@ std = [
 	"frame-support/std",
 	"frame-system/std",
 	"pallet-balances/std",
+	"pallet-preimage/std",
 	"pallet-referenda/std",
+	"pallet-scheduler/std",
 	"scale-info/std",
 	"serde",
 	"sp-core/std",
 	"sp-io/std",
 	"sp-runtime/std",
 	"sp-std/std",
+	"serde?/std"
 ]
 try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
 	"pallet-balances/try-runtime",
-	"pallet-scheduler/try-runtime",
 	"pallet-preimage/try-runtime",
 	"pallet-referenda/try-runtime",
+	"pallet-scheduler/try-runtime",
 	"sp-runtime/try-runtime",
 ]

@@ -1,28 +1,34 @@
 use super::*;
-use frame_support::traits::fungibles::Inspect;
-use frame_support::traits::Incrementable;
+use frame_support::traits::{fungibles::Inspect, Incrementable};
+pub use item::ItemPrice;
+
+use serde::{Deserialize, Serialize};
 
 /// The AssetId type bound to the pallet instance.
-type AssetIdOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::AssetId;
+pub(crate) type AssetIdOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::AssetId;
 
 /// The asset Balance type bound to the pallet instance.
-type AssetBalanceOf<T, I> = <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::Balance;
+pub(crate) type AssetBalanceOf<T, I> =
+    <<T as Config<I>>::Assets as Inspect<AccountIdOf<T>>>::Balance;
+
+/// The `MerchantId` configuration parameter.
+pub(crate) type MerchantIdOf<T, I = ()> = <T as Config<I>>::MerchantId;
+
+/// The `InventoryId` configuration parameter.
+pub(crate) type InventoryIdOf<T, I = ()> = <T as Config<I>>::InventoryId;
 
 /// The composite `InventoryId` bound to the pallet instance.
-pub type InventoryIdOf<T, I = ()> =
+pub type InventoryIdFor<T, I = ()> =
     InventoryId<<T as Config<I>>::MerchantId, <T as Config<I>>::InventoryId>;
 
 /// The overarching `AccountId` type.
 pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 
-/// The [`Item`][item::Item] type bound to the pallet instance.
-pub(crate) type ItemOf<T, I = ()> = item::Item<AccountIdOf<T>, ItemPriceOf<T, I>>;
-
 /// The [`ItemPrice`] type bound to the pallet instance.
-pub(crate) type ItemPriceOf<T, I = ()> = ItemPrice<AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
+pub type ItemPriceOf<T, I = ()> = ItemPrice<AssetIdOf<T, I>, AssetBalanceOf<T, I>>;
 
 /// The ID of every item inside the inventory.
-pub type ItemIdOf<T, I = ()> = ItemType<<T as Config<I>>::ItemSKU>;
+pub type ItemIdOf<T, I = ()> = <T as Config<I>>::ItemSKU;
 
 /// A `BoundedVec` limited by the overarching `KeyLimit`.
 pub(crate) type ItemKeyOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::NonfungiblesKeyLimit>;
@@ -44,11 +50,14 @@ pub enum InventoryAttribute {
 /// A set of attributes associated to an item.
 #[derive(Encode)]
 pub enum ItemAttribute {
-    /// The item basic info (name and price).
+    /// The item creator
     #[codec(index = 10)]
+    Creator,
+    /// The item basic info (name and price).
+    #[codec(index = 11)]
     Info,
     /// Whether an item cannot be resold.
-    #[codec(index = 11)]
+    #[codec(index = 12)]
     NotForResale,
 }
 
@@ -59,19 +68,35 @@ pub type ItemInfo<Name, Price> = (Name, Option<Price>);
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
 pub struct InventoryId<MerchantId, Id>(pub MerchantId, pub Id);
 
-impl<MerchantId, Id> From<(MerchantId, Id)> for InventoryId<MerchantId, Id> {
-    fn from(value: (MerchantId, Id)) -> Self {
-        Self(value.0, value.1)
+impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
+    fn from(InventoryId(merchant_id, inventory_id): InventoryId<MerchantId, Id>) -> Self {
+        (merchant_id, inventory_id)
     }
 }
 
-impl<MerchantId: Clone, Id: Clone + Incrementable> Incrementable for InventoryId<MerchantId, Id> {
+impl<MerchantId, Id> From<(MerchantId, Id)> for InventoryId<MerchantId, Id> {
+    fn from((merchant_id, inventory_id): (MerchantId, Id)) -> Self {
+        Self(merchant_id, inventory_id)
+    }
+}
+
+impl<MerchantId: Copy, Id: Copy> From<&InventoryId<MerchantId, Id>> for (MerchantId, Id) {
+    fn from(value: &InventoryId<MerchantId, Id>) -> Self {
+        (*value).into()
+    }
+}
+
+impl<MerchantId: Copy, Id: Copy> From<&(MerchantId, Id)> for InventoryId<MerchantId, Id> {
+    fn from(value: &(MerchantId, Id)) -> Self {
+        (*value).into()
+    }
+}
+
+impl<MerchantId: Copy, Id: Copy + Incrementable> Incrementable for InventoryId<MerchantId, Id> {
     fn increment(&self) -> Option<Self> {
         // Increment shouldn't happen for inventory, but
         // we'll implement it anyway.
-        self.1
-            .increment()
-            .map(|new_id| Self(self.0.clone(), new_id))
+        self.1.increment().map(|id| Self(self.0, id))
     }
 
     fn initial_value() -> Option<Self> {
@@ -79,30 +104,45 @@ impl<MerchantId: Clone, Id: Clone + Incrementable> Incrementable for InventoryId
     }
 }
 
-impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
-    fn from(value: InventoryId<MerchantId, Id>) -> Self {
-        (value.0, value.1)
-    }
-}
-
 /// The type an item can be, part of its unique identification.
-#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
-pub enum ItemType<Id> {
+#[derive(
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    RuntimeDebug,
+    MaxEncodedLen,
+    TypeInfo,
+)]
+enum ItemType<Id> {
     Unit(Id),
     Subscription(Id),
 }
 
-/// The sale asset price for an item. Not related to the native sale price of an NFT.
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
-pub struct ItemPrice<A, B> {
-    pub asset: A,
-    pub amount: B,
+impl<T: Default> Default for ItemType<T> {
+    fn default() -> Self {
+        ItemType::Unit(Default::default())
+    }
+}
+
+impl<T: Incrementable> Incrementable for ItemType<T> {
+    fn increment(&self) -> Option<Self> {
+        match self {
+            ItemType::Unit(v) => v.increment().map(ItemType::Unit),
+            ItemType::Subscription(v) => v.increment().map(ItemType::Subscription),
+        }
+    }
+
+    fn initial_value() -> Option<Self> {
+        T::initial_value().map(ItemType::Unit)
+    }
 }
 
 #[cfg(feature = "runtime-benchmarks")]
-pub trait BenchmarkHelper<T: Config<I>, I: 'static = ()> {
-    fn inventory_id() -> InventoryIdOf<T, I>;
-    fn item_id() -> ItemIdOf<T, I>;
-
-    fn item_price() -> ItemPriceOf<T, I>;
+pub trait BenchmarkHelper<InventoryId> {
+    fn inventory_id() -> InventoryId;
 }

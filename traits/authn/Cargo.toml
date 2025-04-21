@@ -15,4 +15,4 @@ scale-info.workspace = true
 
 [features]
 default = ["std"]
-std = ["codec/std", "frame-support/std", "scale-info/std"]
+std = ["codec/std", "frame-support/std", "log/std", "scale-info/std"]

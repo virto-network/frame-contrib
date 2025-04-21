@@ -8,16 +8,12 @@ impl<T: Config> Inspect<AccountIdOf<T>> for Pallet<T> {
     type AssetId = AssetIdOf<T>;
     type Balance = BalanceOf<T>;
 
-    fn details(id: Self::Id) -> Option<Payment<AccountIdOf<T>, Self::AssetId, Self::Balance>> {
-        let (creator, _) = PaymentParties::<T>::get(id).ok()?;
-        let PaymentDetail {
-            asset,
-            amount,
-            beneficiary,
-            ..
-        } = PaymentDetails::<T>::get(creator, id).ok()?;
+    fn details(id: &Self::Id) -> Option<Payment<AccountIdOf<T>, Self::AssetId, Self::Balance>> {
+        let (creator, beneficiary) = PaymentParties::<T>::get(id).ok()?;
+        let PaymentDetail { asset, amount, .. } =
+            PaymentDetails::<T>::get(creator.clone(), id).ok()?;
 
-        Some(Payment::new(beneficiary, asset, amount))
+        Some(Payment::new(creator, beneficiary, asset, amount))
     }
 }
 
@@ -38,11 +34,11 @@ impl<T: Config> Mutate<AccountIdOf<T>> for Pallet<T> {
             amount,
             PaymentState::Created,
             T::IncentivePercentage::get(),
-            remark.as_ref().map(|r| r.as_slice()),
+            remark.as_deref(),
         )?;
 
         // reserve funds for payment
-        Self::reserve_payment_amount(&sender, &payment_detail)?;
+        Self::reserve_payment_amount(sender, &payment_detail)?;
 
         let (_, total_beneficiary_fee_amount_mandatory, total_beneficiary_fee_amount_optional) =
             payment_detail.fees.summary_for(Role::Beneficiary, false)?;
@@ -64,7 +60,7 @@ impl<T: Config> Mutate<AccountIdOf<T>> for Pallet<T> {
             payment_id,
             asset,
             amount,
-            remark: remark.map(|r| BoundedVec::truncate_from(r)),
+            remark: remark.map(BoundedVec::truncate_from),
         });
 
         Ok(payment_id)
