@@ -996,6 +996,7 @@ dependencies = [
 name = "fc-traits-authn-proc"
 version = "0.1.0"
 dependencies = [
+ "proc-macro-crate",
  "quote",
  "syn 2.0.100",
 ]
