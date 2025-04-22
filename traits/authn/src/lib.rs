@@ -13,7 +13,7 @@ const LOG_TARGET: &str = "authn";
 pub mod composite_prelude {
     pub use crate::{
         Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
-        HashedUserId, UserAuthenticator, UserChallengeResponse,
+        ExtrinsicContext, HashedUserId, UserAuthenticator, UserChallengeResponse,
     };
     pub use codec::{Decode, Encode, MaxEncodedLen};
     pub use frame_support::{pallet_prelude::TypeInfo, traits::Get, DebugNoBound, EqNoBound};
@@ -48,15 +48,27 @@ pub type AuthorityId = [u8; 32];
 pub const HASHED_USER_ID_LEN: usize = 32;
 pub type HashedUserId = [u8; HASHED_USER_ID_LEN];
 
+/// An extrinsic context, provided by the Authenticator verification call. The type cannot be
+/// known by the challenger implementation, so the content would be handled as a slice of bytes.
+pub trait ExtrinsicContext: AsRef<[u8]> {}
+
+impl<T> ExtrinsicContext for T where T: AsRef<[u8]> {}
+
 /// Given some context it deterministically generates a "challenge" used by authenticators
 pub trait Challenger {
+    /// An intrinsic context, provided by the challenger implementation. Usually, something that
+    /// comes from the system.
     type Context;
 
-    fn generate(cx: &Self::Context) -> Challenge;
+    fn generate<Xtc: ExtrinsicContext>(cx: &Self::Context, xtc: &Xtc) -> Challenge;
 
     /// Ensure that given the context produces the same challenge
-    fn check_challenge(cx: &Self::Context, challenge: &[u8]) -> Option<()> {
-        Self::generate(cx).eq(challenge).then_some(())
+    fn check_challenge<Xtc: ExtrinsicContext>(
+        cx: &Self::Context,
+        xtc: &Xtc,
+        challenge: &[u8],
+    ) -> Option<()> {
+        Self::generate(cx, xtc).eq(challenge).then_some(())
     }
 }
 
@@ -67,7 +79,10 @@ pub trait Authenticator {
     type DeviceAttestation: DeviceChallengeResponse<CxOf<Self::Challenger>>;
     type Device: UserAuthenticator<Challenger = Self::Challenger>;
 
-    fn verify_device(attestation: Self::DeviceAttestation) -> Option<Self::Device> {
+    fn verify_device(
+        attestation: Self::DeviceAttestation,
+        xtc: &impl ExtrinsicContext,
+    ) -> Option<Self::Device> {
         log::trace!(target: LOG_TARGET, "Verifying device with attestation: {:?}", attestation);
 
         log::trace!(target: LOG_TARGET, "Assert authority {:?}", attestation.authority());
@@ -79,7 +94,7 @@ pub trait Authenticator {
 
         let (cx, challenge) = attestation.used_challenge();
         log::trace!(target: LOG_TARGET, "Check challenge {:?}", &challenge);
-        Self::Challenger::check_challenge(&cx, &challenge)?;
+        Self::Challenger::check_challenge(&cx, xtc, &challenge)?;
         log::trace!(target: LOG_TARGET, "Challenge checked");
 
         log::trace!(target: LOG_TARGET, "Validate attestation");
@@ -99,7 +114,11 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
     type Challenger: Challenger;
     type Credential: UserChallengeResponse<CxOf<Self::Challenger>>;
 
-    fn verify_user(&self, credential: &Self::Credential) -> Option<()> {
+    fn verify_user(
+        &self,
+        credential: &Self::Credential,
+        xtc: &impl ExtrinsicContext,
+    ) -> Option<()> {
         log::trace!(target: LOG_TARGET, "Verifying user for credential: {:?}", credential);
 
         log::trace!(target: LOG_TARGET, "Assert authority {:?}", credential.authority());
@@ -111,7 +130,7 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
 
         let (cx, challenge) = credential.used_challenge();
         log::trace!(target: LOG_TARGET, "Check challenge {:?}", &challenge);
-        Self::Challenger::check_challenge(&cx, &challenge)?;
+        Self::Challenger::check_challenge(&cx, xtc, &challenge)?;
         log::trace!(target: LOG_TARGET, "Challenge checked");
 
         log::trace!(target: LOG_TARGET, "Credential verified");

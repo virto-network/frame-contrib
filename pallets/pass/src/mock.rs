@@ -144,19 +144,19 @@ impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
     fn device_attestation(device_id: DeviceId) -> DeviceAttestationOf<Test, ()> {
         PassDeviceAttestation::AuthenticatorAAuthenticator(authenticator_a::DeviceAttestation {
             device_id,
-            challenge: authenticator_a::Authenticator::generate(&()),
+            challenge: authenticator_a::Authenticator::generate(&(), &[]),
         })
     }
 
-    fn credential(user_id: HashedUserId) -> CredentialOf<Test, ()> {
+    fn credential(user_id: HashedUserId, xtc: &impl ExtrinsicContext) -> CredentialOf<Test, ()> {
         PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
             user_id,
-            challenge: authenticator_a::Authenticator::generate(&()),
+            challenge: authenticator_a::Authenticator::generate(&(), xtc),
         })
     }
 }
 
-pub fn new_test_ext() -> sp_io::TestExternalities {
+pub fn new_test_ext() -> TestExternalities {
     let mut ext = TestExternalities::new(Default::default());
     ext.execute_with(|| {
         System::set_block_number(1);

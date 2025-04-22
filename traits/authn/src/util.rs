@@ -64,12 +64,12 @@ where
     type Challenger = Ch;
     type Credential = Cred;
 
-    fn device_id(&self) -> &DeviceId {
-        self.0.as_ref()
-    }
-
     fn verify_credential(&self, credential: &Self::Credential) -> Option<()> {
         self.0.verify(credential)
+    }
+
+    fn device_id(&self) -> &DeviceId {
+        self.0.as_ref()
     }
 }
 
@@ -136,19 +136,19 @@ mod pass_key {
 }
 
 pub mod dummy {
-    use core::marker::PhantomData;
-
-    use codec::{Decode, Encode, MaxEncodedLen};
-    use frame_support::{
-        parameter_types, sp_runtime::str_array as s, traits::Get, DebugNoBound, EqNoBound,
-        PartialEqNoBound,
-    };
-    use scale_info::TypeInfo;
-
     use crate::{
-        AuthorityId, Challenger, DeviceChallengeResponse, DeviceId, HashedUserId,
+        AuthorityId, Challenger, DeviceChallengeResponse, DeviceId, ExtrinsicContext, HashedUserId,
         UserChallengeResponse,
     };
+    use codec::{Decode, Encode, MaxEncodedLen};
+    use core::marker::PhantomData;
+    use frame_support::{
+        parameter_types,
+        sp_runtime::{app_crypto::sp_core::blake2_256, str_array as s},
+        traits::Get,
+        DebugNoBound, EqNoBound, PartialEqNoBound,
+    };
+    use scale_info::TypeInfo;
 
     use super::{Auth, Dev, VerifyCredential};
 
@@ -199,8 +199,8 @@ pub mod dummy {
 
     impl Challenger for DummyChallenger {
         type Context = Self;
-        fn generate(cx: &Self::Context) -> crate::Challenge {
-            [*cx; 32]
+        fn generate<Xtc: ExtrinsicContext>(cx: &Self::Context, xtc: &Xtc) -> crate::Challenge {
+            blake2_256(&[&[*cx; 16], xtc.as_ref()].concat())
         }
     }
 

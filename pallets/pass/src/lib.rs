@@ -163,8 +163,11 @@ pub mod pallet {
         }
 
         #[pallet::feeless_if(
-            |_: &OriginFor<T>, device_id: &DeviceId, credential: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
-                Pallet::<T, I>::try_authenticate(device_id, credential).is_ok()
+            |origin: &OriginFor<T>, device_id: &DeviceId, credential: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
+                let Ok(who) = ensure_signed(origin.clone()) else {
+                    return false;
+                };
+                Pallet::<T, I>::try_authenticate(&who, device_id, credential).is_ok()
             }
 		)]
         #[pallet::call_index(3)]
@@ -175,7 +178,7 @@ pub mod pallet {
             duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            let account_id = Self::try_authenticate(&device_id, &credential)?;
+            let account_id = Self::try_authenticate(&who, &device_id, &credential)?;
             Self::try_add_session(&who, &account_id, duration)?;
             Ok(())
         }
@@ -200,7 +203,7 @@ pub mod pallet {
         ) -> DispatchResult {
             let account_id = if let Some((device_id, credential)) = maybe_credential {
                 let account_id = Self::account_id_for(credential.user_id())?;
-                Self::do_authenticate(credential, device_id)?;
+                Self::try_authenticate_for_dispatch(credential, device_id, &call)?;
                 account_id
             } else {
                 Self::ensure_signer_is_valid_session(origin)?
@@ -269,6 +272,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     }
 
     pub(crate) fn try_authenticate(
+        session_key: &T::AccountId,
         device_id: &DeviceId,
         credential: &CredentialOf<T, I>,
     ) -> Result<T::AccountId, DispatchError> {
@@ -280,9 +284,27 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let device =
             Devices::<T, I>::get(&account_id, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
         device
-            .verify_user(credential)
+            .verify_user(credential, &session_key.encode())
             .ok_or(Error::<T, I>::CredentialInvalid)?;
 
+        Ok(account_id)
+    }
+
+    pub(crate) fn try_authenticate_for_dispatch(
+        credential: CredentialOf<T, I>,
+        device_id: DeviceId,
+        call: &RuntimeCallFor<T>,
+    ) -> Result<T::AccountId, DispatchError> {
+        let account_id = Self::account_id_for(credential.user_id())?;
+        ensure!(
+            Self::account_exists(&account_id),
+            Error::<T, I>::AccountNotFound
+        );
+        let device =
+            Devices::<T, I>::get(&account_id, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
+        device
+            .verify_user(&credential, &call.encode())
+            .ok_or(Error::<T, I>::CredentialInvalid)?;
         Ok(account_id)
     }
 
@@ -291,7 +313,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         attestation: DeviceAttestationOf<T, I>,
     ) -> DispatchResult {
         let device_id = attestation.device_id();
-        let device = T::Authenticator::verify_device(attestation.clone())
+        let device = T::Authenticator::verify_device(attestation.clone(), &[])
             .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
 
         Devices::<T, I>::insert(who, device_id, device);
@@ -330,23 +352,6 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         }
     }
 
-    pub(crate) fn do_authenticate(
-        credential: CredentialOf<T, I>,
-        device_id: DeviceId,
-    ) -> Result<T::AccountId, DispatchError> {
-        let account_id = Self::account_id_for(credential.user_id())?;
-        ensure!(
-            Self::account_exists(&account_id),
-            Error::<T, I>::AccountNotFound
-        );
-        let device =
-            Devices::<T, I>::get(&account_id, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
-        device
-            .verify_user(&credential)
-            .ok_or(Error::<T, I>::CredentialInvalid)?;
-        Ok(account_id)
-    }
-
     fn do_remove_session(session_key: &T::AccountId) {
         Self::cancel_scheduled_session_key_removal(session_key);
         // Decrements the provider reference of this `Session` key account once it's expired.
@@ -380,7 +385,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             .min(T::MaxSessionDuration::get());
         let until = block_number + session_duration;
 
-        Sessions::<T, I>::insert(session_key.clone(), (account_id.clone(), until));
+        Sessions::<T, I>::insert(session_key.clone(), (account_id.clone(), until.clone()));
         Self::schedule_next_removal(session_key, duration)?;
 
         Self::deposit_event(Event::<T, I>::SessionCreated {

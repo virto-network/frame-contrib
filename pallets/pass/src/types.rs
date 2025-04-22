@@ -4,7 +4,6 @@ use frame_system::EnsureSigned;
 use sp_core::TypedGet;
 use sp_runtime::{morph_types, traits::StaticLookup};
 
-// pub type HashedUserId<T> = <T as frame_system::Config>::Hash;
 type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 pub type ContextOf<T, I> =
 <<<T as Config<I>>::Authenticator as fc_traits_authn::Authenticator>::Challenger as fc_traits_authn::Challenger>::Context;
@@ -36,14 +35,20 @@ pub type EnsureSignedPays<T, Amount, Beneficiary> =
     MapSuccess<EnsureSigned<AccountIdOf<T>>, PaymentForCreate<AccountIdOf<T>, Amount, Beneficiary>>;
 
 #[cfg(feature = "runtime-benchmarks")]
-use ::{fc_traits_authn::HashedUserId, frame_system::pallet_prelude::OriginFor};
+pub use benchmarks::*;
 #[cfg(feature = "runtime-benchmarks")]
-pub trait BenchmarkHelper<T, I = ()>
-where
-    T: Config<I>,
-    I: 'static,
-{
-    fn register_origin() -> OriginFor<T>;
-    fn device_attestation(device_id: fc_traits_authn::DeviceId) -> DeviceAttestationOf<T, I>;
-    fn credential(user_id: HashedUserId) -> CredentialOf<T, I>;
+mod benchmarks {
+    use super::*;
+    use fc_traits_authn::{ExtrinsicContext, HashedUserId};
+    use frame_system::pallet_prelude::OriginFor;
+
+    pub trait BenchmarkHelper<T, I = ()>
+    where
+        T: Config<I>,
+        I: 'static,
+    {
+        fn register_origin() -> OriginFor<T>;
+        fn device_attestation(device_id: fc_traits_authn::DeviceId) -> DeviceAttestationOf<T, I>;
+        fn credential(user_id: HashedUserId, xtc: &impl ExtrinsicContext) -> CredentialOf<T, I>;
+    }
 }

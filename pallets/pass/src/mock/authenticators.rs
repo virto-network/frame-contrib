@@ -59,8 +59,8 @@ pub mod authenticator_a {
     impl Challenger for Authenticator {
         type Context = ();
 
-        fn generate(_: &Self::Context) -> Challenge {
-            let (hash, _) = RandomnessFromBlockNumber::random_seed();
+        fn generate<Xtc: ExtrinsicContext>(_: &Self::Context, xtc: &Xtc) -> Challenge {
+            let (hash, _) = RandomnessFromBlockNumber::random(xtc.as_ref());
             hash.0
         }
     }
@@ -178,8 +178,8 @@ pub mod authenticator_b {
     impl Challenger for AuthenticatorB {
         type Context = DeviceId;
 
-        fn generate(context: &Self::Context) -> Challenge {
-            let (hash, _) = RandomnessFromBlockNumber::random(context);
+        fn generate<Xtc: ExtrinsicContext>(context: &Self::Context, xtc: &Xtc) -> Challenge {
+            let (hash, _) = RandomnessFromBlockNumber::random(&[context, xtc.as_ref()].concat());
             hash.0
         }
     }
