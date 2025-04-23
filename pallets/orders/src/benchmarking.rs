@@ -1,4 +1,5 @@
 use super::*;
+
 use crate::Pallet;
 use frame_benchmarking::v2::*;
 use frame_contrib_traits::listings::InventoryLifecycle;

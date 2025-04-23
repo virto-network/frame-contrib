@@ -5,8 +5,9 @@
 //! A component, part of the `Marketplace` subsystem, that handles orders of items existing in a
 //! `Listings` component, which can be paid off using the `Payments` component.
 
-#[cfg(feature = "runtime-benchmarks")]
-use frame_contrib_traits::listings::InventoryLifecycle;
+extern crate alloc;
+
+use alloc::vec::Vec;
 use frame_contrib_traits::{
     listings::{item::Item, item::ItemPrice, InspectItem, MutateItem},
     payments::{OnPaymentStatusChanged, PaymentInspect, PaymentMutate},
@@ -16,6 +17,9 @@ use frame_support::traits::schedule::{DispatchTime, Priority};
 use frame_support::traits::{schedule::v3::Named, Bounded, BoundedInline, Incrementable};
 use frame_system::pallet_prelude::*;
 use sp_runtime::traits::{Hash, TrailingZeroInput};
+
+#[cfg(feature = "runtime-benchmarks")]
+use frame_contrib_traits::listings::InventoryLifecycle;
 
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
@@ -459,7 +463,8 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         >,
     ) -> Result<(), DispatchError> {
         Order::<T, I>::try_mutate(order_id, |order_items| {
-            let (ref who, max_items) = T::OrderAdminOrigin::ensure_origin(origin)?;
+            let (who, max_items): &(T::AccountId, u32) =
+                &T::OrderAdminOrigin::ensure_origin(origin)?;
             let Some((owner, details)) = order_items else {
                 return Err(Error::<T, I>::OrderNotFound.into());
             };
@@ -486,7 +491,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
                 .collect::<Result<Vec<_>, DispatchError>>()?;
 
             ensure!(
-                items.len() <= max_items as usize,
+                (items.len() as u32).cmp(max_items).is_le(),
                 Error::<T, I>::MaxItemsExceeded
             );
             details.items =
