@@ -27,6 +27,7 @@ fc-pallet-listings.workspace = true
 fc-pallet-payments.workspace = true
 mock-helpers = { workspace = true, features = ["pallet-assets", "pallet-balances", "fc-pallet-listings"] }
 pallet-assets.workspace = true
+pallet-assets-holder.workspace = true
 pallet-balances.workspace = true
 pallet-nfts.workspace = true
 pallet-preimage.workspace = true
@@ -48,6 +49,7 @@ runtime-benchmarks = [
   "pallet-preimage/runtime-benchmarks",
   "pallet-scheduler/runtime-benchmarks",
   "sp-runtime/runtime-benchmarks",
+  "pallet-assets-holder/runtime-benchmarks"
 ]
 
 std = [
@@ -69,6 +71,7 @@ std = [
   "sp-io/std",
   "sp-runtime/std",
   "sp-std/std",
+  "pallet-assets-holder/std"
 ]
 
 try-runtime = [
@@ -82,4 +85,5 @@ try-runtime = [
   "pallet-preimage/try-runtime",
   "pallet-scheduler/try-runtime",
   "sp-runtime/try-runtime",
+  "pallet-assets-holder/try-runtime"
 ]

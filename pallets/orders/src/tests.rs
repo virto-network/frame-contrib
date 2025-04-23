@@ -679,7 +679,7 @@ mod pay {
             // The balances hold (pun intended).
             let price = 15;
             assert_eq!(Assets::balance(ASSET_A, &BOB), bob_asset_b_balance - price);
-            assert_eq!(Assets::total_balance_on_hold(ASSET_A, &ALICE), price);
+            assert_eq!(AssetsHolder::total_balance_on_hold(ASSET_A, &ALICE), price);
 
             // Once BOB releases the payment (since CHARLIE received the payment), the item will be
             // unlocked.
@@ -690,7 +690,7 @@ mod pay {
             ));
             assert!(Listings::transferable(&inventory_id, &item_id));
             assert_eq!(Assets::balance(ASSET_A, &ALICE), alice_balance + price);
-            assert_eq!(Assets::total_balance_on_hold(ASSET_A, &ALICE), 0);
+            assert_eq!(AssetsHolder::total_balance_on_hold(ASSET_A, &ALICE), 0);
 
             // Since all the items have been delivered, the order is now completed
             assert!(matches!(
