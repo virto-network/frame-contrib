@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use core::fmt::Debug;
 use frame_support::dispatch::DispatchResult;
 use pallet_referenda::{TrackInfo, TracksInfo};
 
@@ -7,8 +8,8 @@ pub use crate::Mutate as MutateTracks;
 
 pub trait Mutate<Balance, Moment>: TracksInfo<Balance, Moment>
 where
-    Balance: Clone + 'static,
-    Moment: Clone + 'static,
+    Balance: Clone + Debug + Eq + 'static,
+    Moment: Clone + Debug + Eq + 'static,
 {
     /// Inserts a new track into the tracks storage.
     fn insert(

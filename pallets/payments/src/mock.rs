@@ -72,6 +72,9 @@ mod runtime {
     pub type Balances = pallet_balances;
     #[runtime::pallet_index(11)]
     pub type Assets = pallet_assets;
+    #[runtime::pallet_index(12)]
+    pub type AssetsHolder = pallet_assets_holder;
+
     #[runtime::pallet_index(20)]
     pub type Payments = pallet_payments;
 }
@@ -99,10 +102,15 @@ impl pallet_balances::Config for Test {
 #[derive_impl(pallet_assets::config_preludes::TestDefaultConfig as pallet_assets::DefaultConfig)]
 impl pallet_assets::Config for Test {
     type Currency = Balances;
-    type CreateOrigin = AsEnsureOriginWithArg<frame_system::EnsureSigned<u64>>;
-    type ForceOrigin = frame_system::EnsureRoot<u64>;
+    type CreateOrigin = AsEnsureOriginWithArg<EnsureSigned<u64>>;
+    type ForceOrigin = EnsureRoot<u64>;
     type Freezer = ();
+    type Holder = AssetsHolder;
+}
+
+impl pallet_assets_holder::Config for Test {
     type RuntimeHoldReason = RuntimeHoldReason;
+    type RuntimeEvent = RuntimeEvent;
 }
 
 impl pallet_preimage::Config for Test {
@@ -243,7 +251,7 @@ impl Config for Test {
     type PalletsOrigin = OriginCaller;
     type RuntimeCall = RuntimeCall;
     type Assets = Assets;
-    type AssetsHold = Assets;
+    type AssetsHold = AssetsHolder;
     type FeeHandler = MockFeeHandler;
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;

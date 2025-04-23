@@ -1,13 +1,15 @@
 //! Test environment for template pallet.
 
-use crate::{self as fc_pallet_orders, Config, InventoryIdOf};
+use crate::{self as fc_pallet_orders, Config};
 use codec::{Decode, Encode, MaxEncodedLen};
 use core::cell::Cell;
 
 #[cfg(feature = "runtime-benchmarks")]
-use fc_pallet_listings::InventoryId;
+use {
+    crate::types::{InventoryIdOf, MerchantIdOf},
+    fc_pallet_listings::InventoryId,
+};
 
-use crate::types::MerchantIdOf;
 use fc_pallet_listings::{InventoryIdFor, ItemIdOf, ItemPrice};
 use frame_support::{
     derive_impl,
@@ -60,6 +62,8 @@ mod runtime {
     pub type Balances = pallet_balances;
     #[runtime::pallet_index(11)]
     pub type Assets = pallet_assets;
+    #[runtime::pallet_index(12)]
+    pub type AssetsHolder = pallet_assets_holder;
     #[runtime::pallet_index(20)]
     pub type Listings = fc_pallet_listings;
     #[runtime::pallet_index(21)]
@@ -115,6 +119,12 @@ impl pallet_assets::Config for Test {
     type ForceOrigin = EnsureRoot<AccountId>;
     type CreateOrigin = EnsureSigned<AccountId>;
     type Freezer = ();
+    type Holder = AssetsHolder;
+}
+
+impl pallet_assets_holder::Config for Test {
+    type RuntimeHoldReason = RuntimeHoldReason;
+    type RuntimeEvent = RuntimeEvent;
 }
 
 pub type AccountIdBytes = [u8; 32];
@@ -266,7 +276,7 @@ impl fc_pallet_payments::Config for Test {
     type PalletsOrigin = OriginCaller;
     type RuntimeCall = RuntimeCall;
     type Assets = Assets;
-    type AssetsHold = Assets;
+    type AssetsHold = AssetsHolder;
     type FeeHandler = ();
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;
