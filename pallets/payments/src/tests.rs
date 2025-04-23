@@ -54,7 +54,7 @@ fn build_payment(assert_payment_creation: bool) -> Fees<Test> {
         );
 
         assert_eq!(
-            <Assets as fungibles::InspectHold<_>>::balance_on_hold(
+            <AssetsHolder as fungibles::InspectHold<_>>::balance_on_hold(
                 ASSET_ID,
                 reason,
                 &PAYMENT_BENEFICIARY
@@ -62,7 +62,7 @@ fn build_payment(assert_payment_creation: bool) -> Fees<Test> {
             PAYMENT_AMOUNT
         );
         assert_eq!(
-            <Assets as fungibles::InspectHold<_>>::balance_on_hold(
+            <AssetsHolder as fungibles::InspectHold<_>>::balance_on_hold(
                 ASSET_ID,
                 reason,
                 &SENDER_ACCOUNT
