@@ -313,6 +313,27 @@ mod item {
             )
         }
 
+        fn clear_price(
+            inventory_id: &fc_traits_listings::item::InventoryIdOf<Self, AccountIdOf<T>>,
+            id: &Self::ItemId,
+        ) -> DispatchResult {
+            let inventory_id: &InventoryIdFor<T, I> = &inventory_id.into();
+            let (name, _): ItemInfo<Vec<u8>, ItemPriceOf<T, I>> =
+                T::Nonfungibles::typed_system_attribute(
+                    inventory_id,
+                    Some(id),
+                    &ItemAttribute::Info,
+                )
+                .ok_or(Error::<T, I>::UnknownItem)?;
+
+            T::Nonfungibles::set_typed_attribute(
+                inventory_id,
+                id,
+                &ItemAttribute::Info,
+                &(name, None::<ItemPriceOf<T, I>>),
+            )
+        }
+
         fn set_attribute<K: Encode, V: Encode>(
             inventory_id: &InventoryIdTuple<T, I>,
             id: &Self::ItemId,
