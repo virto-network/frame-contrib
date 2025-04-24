@@ -41,7 +41,6 @@ sp-core = { git = "https://github.com/virto-network/polkadot-sdk", branch = "rel
 sp-io = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 sp-keystore = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 sp-runtime = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
-sp-std = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 
 pallet-assets = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 pallet-assets-holder = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
