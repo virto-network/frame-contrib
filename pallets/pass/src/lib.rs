@@ -4,6 +4,10 @@
 //!
 //! > TODO: Update with [spec](https://hackmd.io/@pandres95/pallet-pass) document once complete
 
+extern crate alloc;
+
+use alloc::boxed::Box;
+use core::fmt::Debug;
 use fc_traits_authn::{
     util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId,
     UserAuthenticator, UserChallengeResponse, HASHED_USER_ID_LEN,
@@ -25,7 +29,6 @@ use sp_runtime::{
     traits::{Dispatchable, TrailingZeroInput},
     DispatchResult,
 };
-use sp_std::{boxed::Box, fmt::Debug};
 
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;

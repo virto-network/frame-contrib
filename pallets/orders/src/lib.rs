@@ -407,14 +407,6 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Error::<T, I>::ItemAlreadyLocked
         );
 
-        // TODO: Ensure that I can get the address of the original seller before
-        // checking whether an item is attempted to be resold.
-
-        // ensure!(
-        //     T::Listings::can_resell(inventory_id, id),
-        //     Error::<T, I>::ItemAlreadyLocked
-        // );
-
         T::Listings::disable_transfer(inventory_id, id)
     }
 
@@ -563,13 +555,21 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
                     )
                     .ok_or(Error::<T, I>::ItemNotFound)?;
 
-                if delivery_status == DeliveryStatus::Cancelled {
-                    let payment =
-                        T::Payments::details(payment_id).ok_or(Error::<T, I>::OrderNotFound)?;
-                    Self::transfer_item(inventory_id, item_id, payment.beneficiary())?;
+                match delivery_status {
+                    DeliveryStatus::Cancelled => {
+                        // The item is cancelled, and should be returned to the seller.
+                        let payment =
+                            T::Payments::details(payment_id).ok_or(Error::<T, I>::OrderNotFound)?;
+                        Self::transfer_item(inventory_id, item_id, payment.beneficiary())?;
+                    }
+                    DeliveryStatus::Delivered => {
+                        // The item is delivered, hence is not for sale anymore.
+                        T::Listings::clear_price(inventory_id, item_id)?;
+                    }
                 }
 
                 Self::try_unlock_item(inventory_id, item_id)?;
+
                 item.delivery = Some(delivery_status);
 
                 Self::deposit_event(Event::<T, I>::ItemDelivered {

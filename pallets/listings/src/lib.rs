@@ -346,6 +346,9 @@ pub mod pallet {
                 Err(_) => {
                     let item =
                         Self::item(&inventory_id.into(), &id).ok_or(Error::<T, I>::UnknownItem)?;
+                    let creator = Self::creator(&inventory_id.into(), &id)
+                        .ok_or(Error::<T, I>::UnknownItem)?;
+
                     let who = ensure_signed(origin)?;
 
                     // The owner of an item can set a price for an item, and the item must be
@@ -356,7 +359,7 @@ pub mod pallet {
                         Error::<T, I>::ItemNonTransferable,
                     );
                     ensure!(
-                        Self::can_resell(&inventory_id.into(), &id),
+                        Self::can_resell(&inventory_id.into(), &id) || item.owner == creator,
                         Error::<T, I>::NotForResale
                     );
                 }

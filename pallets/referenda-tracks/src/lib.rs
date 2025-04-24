@@ -34,6 +34,8 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
 mod impls;
@@ -44,11 +46,11 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+use alloc::{borrow::Cow, vec::Vec};
 use frame_support::traits::OriginTrait;
 use frame_system::pallet_prelude::BlockNumberFor;
 use pallet_referenda::{BalanceOf, PalletsOriginOf, Track};
 use sp_core::Get;
-use sp_std::{borrow::Cow, vec::Vec};
 
 pub use pallet::*;
 pub use weights::WeightInfo;
