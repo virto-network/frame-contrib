@@ -132,6 +132,12 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
         price: ItemPrice<Self::Asset, Self::Balance>,
     ) -> DispatchResult;
 
+    /// Clears the price on an existing item.
+    fn clear_price(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
+    ) -> DispatchResult;
+
     /// Sets an arbitrary attribute on an existing item.
     fn set_attribute<K: Encode, V: Encode>(
         inventory_id: &InventoryIdOf<Self, AccountId>,

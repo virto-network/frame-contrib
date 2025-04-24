@@ -390,6 +390,19 @@ impl<T: Config<I>, I: 'static> MutateItem<T::AccountId> for MockListings<T, I> {
         })
     }
 
+    fn clear_price(
+        inventory_id: &item::InventoryIdOf<Self, T::AccountId>,
+        id: &Self::ItemId,
+    ) -> DispatchResult {
+        Items::<T, I>::try_mutate(inventory_id, id, |maybe_item| {
+            let Some(Item { price, .. }) = maybe_item else {
+                Err(DispatchError::Other("UnknownItem"))?
+            };
+            *price = None;
+            Ok(())
+        })
+    }
+
     fn set_attribute<K: Encode, V: Encode>(
         inventory_id: &item::InventoryIdOf<Self, T::AccountId>,
         id: &Self::ItemId,
