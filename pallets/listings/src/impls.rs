@@ -291,6 +291,15 @@ mod item {
             T::Nonfungibles::transfer(inventory_id, id, beneficiary)
         }
 
+        fn creator_transfer(
+            inventory_id: &fc_traits_listings::item::InventoryIdOf<Self, AccountIdOf<T>>,
+            id: &Self::ItemId,
+            beneficiary: &AccountIdOf<T>,
+        ) -> DispatchResult {
+            Self::transfer(inventory_id, id, beneficiary)?;
+            Self::set_attribute(&inventory_id, id, &ItemAttribute::Creator, beneficiary)
+        }
+
         fn set_price(
             inventory_id: &InventoryIdTuple<T, I>,
             id: &Self::ItemId,

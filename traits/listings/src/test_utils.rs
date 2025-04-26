@@ -376,6 +376,21 @@ impl<T: Config<I>, I: 'static> MutateItem<T::AccountId> for MockListings<T, I> {
         })
     }
 
+    fn creator_transfer(
+        inventory_id: &item::InventoryIdOf<Self, T::AccountId>,
+        id: &Self::ItemId,
+        beneficiary: &T::AccountId,
+    ) -> DispatchResult {
+        Items::<T, I>::try_mutate(inventory_id, id, |maybe_item| {
+            let Some(Item { creator, owner, .. }) = maybe_item else {
+                Err(DispatchError::Other("UnknownItem"))?
+            };
+            *owner = beneficiary.clone();
+            *creator = beneficiary.clone();
+            Ok(())
+        })
+    }
+
     fn set_price(
         inventory_id: &item::InventoryIdOf<Self, T::AccountId>,
         id: &Self::ItemId,

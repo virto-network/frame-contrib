@@ -125,6 +125,13 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
         beneficiary: &AccountId,
     ) -> DispatchResult;
 
+    /// Transfers an item, marking the beneficiary as the item creator.
+    fn creator_transfer(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
+        beneficiary: &AccountId,
+    ) -> DispatchResult;
+
     /// Sets the price on an existing item.
     fn set_price(
         inventory_id: &InventoryIdOf<Self, AccountId>,
