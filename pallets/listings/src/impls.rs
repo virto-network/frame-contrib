@@ -29,7 +29,7 @@ mod inventory {
             id: &InventoryIdTuple<T, I>,
             key: &K,
         ) -> Option<V> {
-            T::Nonfungibles::typed_collection_attribute(&(*id).into(), &key)
+            T::Nonfungibles::typed_system_attribute(&(*id).into(), None, &key)
         }
     }
 
