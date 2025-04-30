@@ -19,6 +19,7 @@ quote = { version = "1.0.40" }
 proc-macro-crate = { version = "3.3.0" }
 
 frame-contrib-traits = { path = "./traits", default-features = false }
+
 fc-traits-authn = { path = "./traits/authn", default-features = false }
 fc-traits-authn-proc = { path = "./traits/authn/proc", default-features = false }
 fc-traits-gas-tank = { path = "./traits/gas-tank", default-features = false }
@@ -30,6 +31,7 @@ fc-traits-tracks = { path = "./traits/tracks", default-features = false }
 
 fc-pallet-listings = { path = "./pallets/listings", default-features = false }
 fc-pallet-payments = { path = "./pallets/payments", default-features = false }
+fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", default-features = false }
 
 frame-benchmarking = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 frame-support = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
@@ -44,6 +46,7 @@ sp-runtime = { git = "https://github.com/virto-network/polkadot-sdk", branch = "
 
 pallet-assets = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 pallet-assets-holder = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
+pallet-assets-freezer = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 pallet-babe = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 pallet-balances = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 pallet-nfts = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
@@ -53,18 +56,13 @@ pallet-scheduler = { git = "https://github.com/virto-network/polkadot-sdk", bran
 pallet-timestamp = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 pallet-transaction-payment = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
 pallet-utility = { git = "https://github.com/virto-network/polkadot-sdk", branch = "release-virto-stable2409-6", default-features = false }
+xcm = { git = "https://github.com/virto-network/polkadot-sdk", package = "staging-xcm", branch = "release-virto-stable2409-6", default-features = false }
 
 [workspace]
 resolver = "2"
 members = [
   "mock-helpers",
-  "pallets/gas-transaction-payment",
-  "pallets/listings",
-  "pallets/orders",
-  "pallets/pass",
-  "pallets/payments",
-  "pallets/referenda-tracks",
-  "pallets/template",
+  "pallets/*",
   "traits",
   "traits/authn",
   "traits/authn/proc",
