@@ -114,6 +114,7 @@
 
 extern crate alloc;
 
+use core::num::NonZeroU8;
 use frame_contrib_traits::memberships::{self as membership, Inspect, Manager, Rank};
 use frame_support::{
     dispatch::{DispatchResultWithPostInfo, GetDispatchInfo, PostDispatchInfo},

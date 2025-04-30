@@ -10,7 +10,6 @@ use crate::{
     Call, DecisionMethod,
 };
 use frame_support::assert_noop;
-use mock::MembershipId;
 use pallet_referenda::TrackInfo;
 use sp_runtime::Perbill;
 

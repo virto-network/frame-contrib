@@ -2,7 +2,6 @@ use super::*;
 use crate::types::CommunityState::Blocked;
 use frame_support::assert_noop;
 use frame_system::RawOrigin::Root;
-use mock::MembershipId;
 use sp_runtime::{traits::BadOrigin, DispatchError};
 
 const COMMUNITY_NON_MEMBER: AccountId = AccountId::new([0; 32]);
@@ -59,8 +58,8 @@ mod add_member {
 
     #[test]
     fn can_add_member_twice() {
-        // As memberships could be transfered there is no use in restricting adding the
-        // same member twice
+        // As memberships could be transferred there is no use in restricting adding the same member
+        // twice.
         new_test_ext(&[COMMUNITY_MEMBER_1], &[MEMBERSHIP_1, MEMBERSHIP_2]).execute_with(|| {
             // Fails to add a member twice
             assert_ok!(Communities::add_member(
@@ -69,7 +68,7 @@ mod add_member {
             ));
             assert_eq!(
                 Communities::get_memberships(COMMUNITY, &COMMUNITY_MEMBER_1),
-                vec![MEMBERSHIP_2, MEMBERSHIP_1]
+                vec![MEMBERSHIP_1, MEMBERSHIP_2]
             );
         });
     }
@@ -134,6 +133,8 @@ mod remove_member {
 }
 
 mod member_rank {
+    use super::*;
+
     mod promote_member {
         use super::*;
 

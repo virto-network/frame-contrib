@@ -90,7 +90,7 @@ mod runtime {
     #[runtime::pallet_index(31)]
     pub type Communities = pallet_communities;
     #[runtime::pallet_index(32)]
-    pub type Tracks = pallet_referenda_tracks;
+    pub type Tracks = fc_pallet_referenda_tracks;
     #[runtime::pallet_index(33)]
     pub type Nfts = pallet_nfts;
 }
@@ -152,7 +152,7 @@ impl
         (public.into(), account)
     }
     fn sign(signer: &AccountPublic, message: &[u8]) -> MultiSignature {
-        sp_runtime::MultiSignature::Sr25519(
+        MultiSignature::Sr25519(
             sp_io::crypto::sr25519_sign(0.into(), &signer.clone().try_into().unwrap(), message)
                 .unwrap(),
         )
@@ -259,7 +259,7 @@ use sp_runtime::SaturatedConversion;
 pub struct TracksBenchmarkHelper;
 
 #[cfg(feature = "runtime-benchmarks")]
-impl pallet_referenda_tracks::BenchmarkHelper<Test> for TracksBenchmarkHelper {
+impl fc_pallet_referenda_tracks::BenchmarkHelper<Test> for TracksBenchmarkHelper {
     fn track_id(id: u32) -> TrackIdOf<Test, ()> {
         id.saturated_into()
     }
@@ -268,7 +268,7 @@ impl pallet_referenda_tracks::BenchmarkHelper<Test> for TracksBenchmarkHelper {
 parameter_types! {
     pub const MaxTracks: u32 = u32::MAX;
 }
-impl pallet_referenda_tracks::Config for Test {
+impl fc_pallet_referenda_tracks::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type TrackId = CommunityId;
     type MaxTracks = MaxTracks;
@@ -289,7 +289,7 @@ impl pallet_referenda::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type Scheduler = Scheduler;
     type Currency = pallet_balances::Pallet<Self>;
-    type SubmitOrigin = frame_system::EnsureSigned<AccountId>;
+    type SubmitOrigin = EnsureSigned<AccountId>;
     type CancelOrigin = EnsureRoot<AccountId>;
     type KillOrigin = EnsureRoot<AccountId>;
     type Slash = ();
@@ -475,10 +475,7 @@ pub const COMMUNITY_ORIGIN: OriginCaller =
     OriginCaller::Communities(pallet_communities::Origin::<Test>::new(COMMUNITY));
 
 // Build genesis storage according to the mock runtime.
-pub fn new_test_ext(
-    members: &[AccountId],
-    memberships: &[MembershipId],
-) -> sp_io::TestExternalities {
+pub fn new_test_ext(members: &[AccountId], memberships: &[MembershipId]) -> TestExternalities {
     TestEnvBuilder::new()
         .add_community(
             COMMUNITY,
