@@ -841,6 +841,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-pallet-communities"
+version = "1.0.0"
+dependencies = [
+ "fc-pallet-referenda-tracks",
+ "frame-benchmarking",
+ "frame-contrib-traits",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-assets",
+ "pallet-assets-freezer",
+ "pallet-balances",
+ "pallet-nfts",
+ "pallet-preimage",
+ "pallet-referenda",
+ "pallet-scheduler",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "staging-xcm",
+]
+
+[[package]]
 name = "fc-pallet-gas-transaction-payment"
 version = "1.0.0"
 dependencies = [
@@ -1953,6 +1979,21 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sp-core",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-assets-freezer"
+version = "0.5.0"
+source = "git+https://github.com/virto-network/polkadot-sdk?branch=release-virto-stable2409-6#d93cd013a45b96c9be233efc0aaaf75d020fe53f"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-assets",
+ "parity-scale-codec",
+ "scale-info",
  "sp-runtime",
 ]
 
@@ -3365,6 +3406,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "staging-xcm"
+version = "14.2.1"
+source = "git+https://github.com/virto-network/polkadot-sdk?branch=release-virto-stable2409-6#d93cd013a45b96c9be233efc0aaaf75d020fe53f"
+dependencies = [
+ "array-bytes",
+ "bounded-collections",
+ "derivative",
+ "environmental",
+ "impl-trait-for-tuples",
+ "log",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-runtime",
+ "sp-weights",
+ "xcm-procedural",
+]
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3865,6 +3925,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
 dependencies = [
  "tap",
+]
+
+[[package]]
+name = "xcm-procedural"
+version = "10.1.0"
+source = "git+https://github.com/virto-network/polkadot-sdk?branch=release-virto-stable2409-6#d93cd013a45b96c9be233efc0aaaf75d020fe53f"
+dependencies = [
+ "Inflector",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
 ]
 
 [[package]]
