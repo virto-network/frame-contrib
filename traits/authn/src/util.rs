@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use codec::{Decode, Encode, FullCodec, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, FullCodec, MaxEncodedLen};
 use frame_support::{sp_runtime::traits::TrailingZeroInput, traits::Get, PalletId};
 use scale_info::TypeInfo;
 
@@ -81,18 +81,14 @@ impl<T: MaxEncodedLen, A, Ch, Cr> MaxEncodedLen for Dev<T, A, Ch, Cr> {
 
 // TODO implement here
 mod pass_key {
-    use codec::{Decode, Encode};
-    use scale_info::TypeInfo;
-
-    use super::{Auth, Dev};
-    use crate::{DeviceChallengeResponse, DeviceId, UserChallengeResponse};
+    use super::*;
 
     #[allow(dead_code)]
     pub type PassKey<A> = Dev<(), A, (), PassKeyAssertion>;
     #[allow(dead_code)]
     pub type PassKeyManager<A> = Auth<PassKey<A>, PassKeyAttestation>;
 
-    #[derive(Clone, Debug, Decode, Encode, TypeInfo, PartialEq, Eq)]
+    #[derive(Clone, Debug, Decode, DecodeWithMemTracking, Encode, TypeInfo, PartialEq, Eq)]
     pub struct PassKeyAttestation;
 
     impl<Cx> DeviceChallengeResponse<Cx> for PassKeyAttestation {
@@ -113,7 +109,7 @@ mod pass_key {
         }
     }
 
-    #[derive(Clone, Debug, Encode, Decode, TypeInfo, PartialEq, Eq)]
+    #[derive(Clone, Debug, Decode, DecodeWithMemTracking, Encode, TypeInfo, PartialEq, Eq)]
     pub struct PassKeyAssertion;
 
     impl<Cx> UserChallengeResponse<Cx> for PassKeyAssertion {
@@ -136,11 +132,9 @@ mod pass_key {
 }
 
 pub mod dummy {
-    use core::marker::PhantomData;
-
-    use codec::{Decode, Encode, MaxEncodedLen};
+    use super::*;
     use frame_support::{
-        parameter_types, sp_runtime::str_array as s, traits::Get, DebugNoBound, EqNoBound,
+        parameter_types, sp_runtime::str_array as s, CloneNoBound, DebugNoBound, EqNoBound,
         PartialEqNoBound,
     };
     use scale_info::TypeInfo;
@@ -153,7 +147,14 @@ pub mod dummy {
     use super::{Auth, Dev, VerifyCredential};
 
     #[derive(
-        PartialEqNoBound, EqNoBound, DebugNoBound, Encode, Decode, MaxEncodedLen, TypeInfo,
+        CloneNoBound,
+        DebugNoBound,
+        Decode,
+        DecodeWithMemTracking,
+        Encode,
+        TypeInfo,
+        PartialEqNoBound,
+        EqNoBound,
     )]
     #[scale_info(skip_type_params(A))]
     pub struct DummyAttestation<A>(bool, PhantomData<A>);
@@ -164,23 +165,18 @@ pub mod dummy {
         }
     }
 
-    impl<A> Clone for DummyAttestation<A> {
-        fn clone(&self) -> Self {
-            Self(self.0, PhantomData)
-        }
-    }
-
     #[derive(
-        PartialEqNoBound, EqNoBound, DebugNoBound, Encode, Decode, MaxEncodedLen, TypeInfo,
+        CloneNoBound,
+        DebugNoBound,
+        Decode,
+        DecodeWithMemTracking,
+        Encode,
+        TypeInfo,
+        PartialEqNoBound,
+        EqNoBound,
     )]
     #[scale_info(skip_type_params(A))]
     pub struct DummyCredential<A>(bool, PhantomData<A>);
-
-    impl<A> Clone for DummyCredential<A> {
-        fn clone(&self) -> Self {
-            Self(self.0, PhantomData)
-        }
-    }
 
     impl<A> DummyCredential<A> {
         pub fn new(value: bool) -> Self {

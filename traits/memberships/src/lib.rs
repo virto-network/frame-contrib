@@ -5,6 +5,7 @@ extern crate alloc;
 mod tests;
 
 use alloc::boxed::Box;
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use core::{
     num::NonZeroU8,
     ops::{Add, Sub},
@@ -84,9 +85,10 @@ where
     Ord,
     PartialEq,
     PartialOrd,
-    codec::Decode,
-    codec::Encode,
-    codec::MaxEncodedLen,
+    Decode,
+    DecodeWithMemTracking,
+    Encode,
+    MaxEncodedLen,
     scale_info::TypeInfo,
 )]
 pub struct GenericRank(u8);
