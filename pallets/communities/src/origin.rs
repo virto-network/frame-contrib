@@ -95,7 +95,9 @@ where
 
 /// Origin to represent the voice of a community or a subset of its members
 /// as well as the voting preference of said group.
-#[derive(TypeInfo, Encode, Decode, MaxEncodedLen, Clone, Eq, PartialEq, Debug)]
+#[derive(
+    TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, Clone, Eq, PartialEq, Debug,
+)]
 pub struct RawOrigin<T: Config> {
     community_id: CommunityIdOf<T>,
     subset: Option<Subset<T>>,
@@ -119,7 +121,9 @@ impl<T: Config> RawOrigin<T> {
 }
 
 /// Subsets of the community can also have a voice
-#[derive(Clone, Debug, Decode, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo)]
+#[derive(
+    Clone, Debug, Decode, DecodeWithMemTracking, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo,
+)]
 pub enum Subset<T: Config> {
     Member(MembershipIdOf<T>),
     Members { count: u32 },
