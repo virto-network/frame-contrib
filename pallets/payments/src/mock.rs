@@ -8,7 +8,7 @@ use frame_support::{
     PalletId,
 };
 
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_system::{EnsureRoot, EnsureSigned};
 use scale_info::TypeInfo;
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
@@ -19,7 +19,18 @@ type AccountId = u64;
 #[allow(unused)]
 type AssetId = u32;
 
-#[derive(Clone, Copy, Debug, Decode, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Encode,
+    Eq,
+    MaxEncodedLen,
+    PartialEq,
+    TypeInfo,
+)]
 pub struct PaymentId(pub u32);
 
 pub const SENDER_ACCOUNT: AccountId = 10;
@@ -132,6 +143,7 @@ impl pallet_scheduler::Config for Test {
     type MaxScheduledPerBlock = ConstU32<100>;
     type WeightInfo = ();
     type Preimages = Preimage;
+    type BlockNumberProvider = System;
 }
 
 pub struct MockFeeHandler;
@@ -284,6 +296,7 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
             (FEE_SYSTEM_ACCOUNT, INITIAL_BALANCE),
             (PAYMENT_BENEFICIARY, INITIAL_BALANCE),
         ],
+        dev_accounts: None,
     }
     .assimilate_storage(&mut t)
     .unwrap();
