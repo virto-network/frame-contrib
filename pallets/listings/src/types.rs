@@ -65,7 +65,18 @@ pub enum ItemAttribute {
 pub type ItemInfo<Name, Price> = (Name, Option<Price>);
 
 /// The internal representation of a listings inventory ID.
-#[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    RuntimeDebug,
+    MaxEncodedLen,
+    TypeInfo,
+)]
 pub struct InventoryId<MerchantId, Id>(pub MerchantId, pub Id);
 
 impl<MerchantId, Id> From<InventoryId<MerchantId, Id>> for (MerchantId, Id) {
@@ -110,6 +121,7 @@ impl<MerchantId: Copy, Id: Copy + Incrementable> Incrementable for InventoryId<M
     Deserialize,
     Encode,
     Decode,
+    DecodeWithMemTracking,
     Clone,
     Copy,
     PartialEq,

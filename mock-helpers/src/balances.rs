@@ -19,6 +19,7 @@ impl<T: Config> ExtHelper for BalancesExtBuilder<T> {
     fn as_storage(&self) -> impl BuildStorage {
         GenesisConfig::<T> {
             balances: self.balances.clone(),
+            dev_accounts: None,
         }
     }
 }

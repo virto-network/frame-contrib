@@ -1,7 +1,7 @@
 //! Test environment for template pallet.
 
 use crate::{self as fc_pallet_orders, Config};
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use core::cell::Cell;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -97,6 +97,7 @@ impl pallet_scheduler::Config for Test {
     type MaxScheduledPerBlock = ConstU32<100>;
     type WeightInfo = ();
     type Preimages = Preimage;
+    type BlockNumberProvider = System;
 }
 
 impl pallet_preimage::Config for Test {
@@ -157,6 +158,7 @@ impl pallet_nfts::Config for Test {
     #[cfg(feature = "runtime-benchmarks")]
     type Helper = OwnersCatalogBenchmarkHelper<Self>;
     type WeightInfo = ();
+    type BlockNumberProvider = System;
 }
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -241,7 +243,18 @@ impl fc_pallet_listings::BenchmarkHelper<InventoryIdFor<Test>> for Test {
     }
 }
 
-#[derive(Clone, Copy, MaxEncodedLen, Encode, Decode, TypeInfo, Eq, PartialEq, Debug)]
+#[derive(
+    Clone,
+    Copy,
+    MaxEncodedLen,
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    TypeInfo,
+    Eq,
+    PartialEq,
+    Debug,
+)]
 pub struct PaymentId(u32);
 
 thread_local! {

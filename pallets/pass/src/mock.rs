@@ -1,15 +1,17 @@
 //! Test environment for pallet pass.
 
-use crate::{self as pallet_pass, Config};
+use crate::{self as pallet_pass, ChargeTransactionToPassAccount, Config};
 pub use authenticators::*;
 use codec::{Decode, Encode, MaxEncodedLen};
 use fc_traits_authn::{composite_authenticators, util::AuthorityFromPalletId, Challenger};
+use frame_support::weights::FixedFee;
 use frame_support::{
     derive_impl, parameter_types,
-    traits::{ConstU32, ConstU64, EitherOf, EqualPrivilegeOnly, OnInitialize},
+    traits::{ConstU64, EitherOf, EqualPrivilegeOnly, OnInitialize},
     weights::Weight,
     DebugNoBound, EqNoBound, PalletId,
 };
+use frame_system::mocking::MockUncheckedExtrinsic;
 use frame_system::{EnsureRoot, EnsureRootWithSuccess};
 use scale_info::TypeInfo;
 use sp_core::{blake2_256, H256};
@@ -21,10 +23,20 @@ use sp_runtime::{
 
 mod authenticators;
 
-pub type Block = frame_system::mocking::MockBlock<Test>;
+pub type Extension = ChargeTransactionToPassAccount<
+    pallet_transaction_payment::ChargeTransactionPayment<Test>,
+    Test,
+>;
+pub type CheckedExtrinsic =
+    sp_runtime::generic::CheckedExtrinsic<AccountId, RuntimeCall, Extension>;
+pub type Block = sp_runtime::generic::Block<
+    sp_runtime::generic::Header<u64, sp_runtime::traits::BlakeTwo256>,
+    MockUncheckedExtrinsic<Test, (), Extension>,
+>;
 
 pub type AccountPublic = <MultiSignature as Verify>::Signer;
 pub type AccountId = <AccountPublic as IdentifyAccount>::AccountId;
+pub type Balance = <Test as pallet_balances::Config>::Balance;
 
 // Configure a mock runtime to test the pallet.
 #[frame_support::runtime]
@@ -45,35 +57,32 @@ mod runtime {
     pub type System = frame_system;
     #[runtime::pallet_index(1)]
     pub type Scheduler = pallet_scheduler;
+    #[runtime::pallet_index(2)]
+    pub type TransactionPayment = pallet_transaction_payment;
     #[runtime::pallet_index(10)]
     pub type Balances = pallet_balances;
     #[runtime::pallet_index(11)]
     pub type Pass = pallet_pass;
 }
 
-#[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl frame_system::Config for Test {
-    type BaseCallFilter = frame_support::traits::Everything;
     type AccountId = AccountId;
     type Lookup = IdentityLookup<AccountId>;
     type Block = Block;
-    type AccountData = pallet_balances::AccountData<u64>;
+    type AccountData = pallet_balances::AccountData<Balance>;
 }
 
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig)]
 impl pallet_balances::Config for Test {
-    type MaxReserves = ();
-    type ReserveIdentifier = [u8; 8];
-    type MaxLocks = ConstU32<10>;
-    type Balance = u64;
-    type RuntimeEvent = RuntimeEvent;
-    type DustRemoval = ();
-    type ExistentialDeposit = ConstU64<1>;
     type AccountStore = System;
-    type WeightInfo = ();
-    type FreezeIdentifier = ();
-    type MaxFreezes = ();
-    type RuntimeHoldReason = ();
-    type RuntimeFreezeReason = ();
+}
+
+#[derive_impl(pallet_transaction_payment::config_preludes::TestDefaultConfig)]
+impl pallet_transaction_payment::Config for Test {
+    type OnChargeTransaction = pallet_transaction_payment::FungibleAdapter<Balances, ()>;
+    type WeightToFee = FixedFee<1, Balance>;
+    type LengthToFee = FixedFee<0, Balance>;
 }
 
 parameter_types! {
@@ -82,16 +91,17 @@ parameter_types! {
 }
 
 impl pallet_scheduler::Config for Test {
-    type RuntimeCall = RuntimeCall;
     type RuntimeEvent = RuntimeEvent;
     type RuntimeOrigin = RuntimeOrigin;
     type PalletsOrigin = OriginCaller;
-    type ScheduleOrigin = EnsureRoot<AccountId>;
-    type MaxScheduledPerBlock = MaxScheduledPerBlock;
+    type RuntimeCall = RuntimeCall;
     type MaximumWeight = MaximumWeight;
+    type ScheduleOrigin = EnsureRoot<AccountId>;
     type OriginPrivilegeCmp = EqualPrivilegeOnly;
-    type Preimages = ();
+    type MaxScheduledPerBlock = MaxScheduledPerBlock;
     type WeightInfo = ();
+    type Preimages = ();
+    type BlockNumberProvider = System;
 }
 
 parameter_types! {
@@ -108,21 +118,21 @@ composite_authenticators! {
 }
 
 impl Config for Test {
-    type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
+    type RuntimeCall = RuntimeCall;
     type Currency = Balances;
+    type WeightInfo = ();
     type Authenticator = PassAuthenticator;
+    type PalletsOrigin = OriginCaller;
+    type PalletId = PassPalletId;
+    type MaxSessionDuration = ConstU64<10>;
     type RegisterOrigin = EitherOf<
         // Root does not pay
         EnsureRootWithSuccess<Self::AccountId, RootDoesNotPay>,
         // Anyone else pays
         pallet_pass::EnsureSignedPays<Test, ConstU64<1>, RootAccount>,
     >;
-    type RuntimeCall = RuntimeCall;
-    type PalletId = PassPalletId;
-    type PalletsOrigin = OriginCaller;
     type Scheduler = Scheduler;
-    type MaxSessionDuration = ConstU64<10>;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = BenchmarkHelper;
 }
@@ -156,7 +166,7 @@ impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
     }
 }
 
-pub fn new_test_ext() -> sp_io::TestExternalities {
+pub fn new_test_ext() -> TestExternalities {
     let mut ext = TestExternalities::new(Default::default());
     ext.execute_with(|| {
         System::set_block_number(1);

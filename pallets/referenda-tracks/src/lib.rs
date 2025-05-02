@@ -48,16 +48,13 @@ mod tests;
 
 use alloc::{borrow::Cow, vec::Vec};
 use frame_support::traits::OriginTrait;
-use frame_system::pallet_prelude::BlockNumberFor;
-use pallet_referenda::{BalanceOf, PalletsOriginOf, Track};
+use pallet_referenda::{BalanceOf, BlockNumberFor, PalletsOriginOf, Track, TrackInfoOf};
 use sp_core::Get;
 
 pub use pallet::*;
 pub use weights::WeightInfo;
 
 pub type TrackIdOf<T, I = ()> = <T as Config<I>>::TrackId;
-pub type TrackInfoOf<T, I = ()> = pallet_referenda::TrackInfoOf<T, I>;
-pub type TrackOf<T, I> = Track<<T as Config<I>>::TrackId, BalanceOf<T, I>, BlockNumberFor<T>>;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -150,11 +147,7 @@ pub mod pallet {
             pallet_origin: PalletsOriginOf<T>,
         ) -> DispatchResult {
             T::AdminOrigin::ensure_origin(origin)?;
-            <Self as fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumberFor<T>>>::insert(
-                id,
-                info,
-                pallet_origin,
-            )
+            <Self as fc_traits_tracks::MutateTracks<_, _>>::insert(id, info, pallet_origin)
         }
 
         /// Update the configuration of an existing referenda Track.
@@ -173,9 +166,7 @@ pub mod pallet {
             info: TrackInfoOf<T, I>,
         ) -> DispatchResult {
             T::UpdateOrigin::ensure_origin(origin, &id)?;
-            <Self as fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumberFor<T>>>::update(
-                id, info,
-            )
+            <Self as fc_traits_tracks::MutateTracks<_, _>>::update(id, info)
         }
 
         /// Remove an existing track
@@ -193,10 +184,7 @@ pub mod pallet {
             pallet_origin: PalletsOriginOf<T>,
         ) -> DispatchResult {
             T::AdminOrigin::ensure_origin(origin)?;
-            <Self as fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumberFor<T>>>::remove(
-                id,
-                pallet_origin,
-            )
+            <Self as fc_traits_tracks::MutateTracks<_, _>>::remove(id, pallet_origin)
         }
     }
 }

@@ -237,7 +237,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             }
         }
 
-        #[derive(TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode)]
+        #[derive(TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking)]
         pub enum #device_attestation {
             #(#auth_variants),*
         }
@@ -269,7 +269,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
         }
 
 
-        #[derive(TypeInfo, Encode, Decode, MaxEncodedLen)]
+        #[derive(TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen)]
         pub enum #device {
             #(#device_variants),*
         }
@@ -301,7 +301,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
         }
 
 
-        #[derive(TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode)]
+        #[derive(TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking)]
         pub enum #credential {
             #(#credential_variants),*
         }

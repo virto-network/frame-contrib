@@ -15,7 +15,7 @@ pub mod composite_prelude {
         Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
         HashedUserId, UserAuthenticator, UserChallengeResponse,
     };
-    pub use codec::{Decode, Encode, MaxEncodedLen};
+    pub use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
     pub use frame_support::{pallet_prelude::TypeInfo, traits::Get, DebugNoBound, EqNoBound};
 }
 

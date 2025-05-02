@@ -297,7 +297,7 @@ mod item {
             beneficiary: &AccountIdOf<T>,
         ) -> DispatchResult {
             Self::transfer(inventory_id, id, beneficiary)?;
-            Self::set_attribute(&inventory_id, id, &ItemAttribute::Creator, beneficiary)
+            Self::set_attribute(inventory_id, id, &ItemAttribute::Creator, beneficiary)
         }
 
         fn set_price(

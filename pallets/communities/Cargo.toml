@@ -73,6 +73,7 @@ runtime-benchmarks = [
   "pallet-referenda/runtime-benchmarks",
   "pallet-scheduler/runtime-benchmarks",
   "sp-runtime/runtime-benchmarks",
+  "xcm?/runtime-benchmarks"
 ]
 try-runtime = [
   "fc-pallet-referenda-tracks/try-runtime",

@@ -1,10 +1,15 @@
-use core::marker::PhantomData;
+use core::{fmt, marker::PhantomData};
 
 use crate::{Config, Pallet};
-use codec::{Decode, Encode};
-use frame_support::pallet_prelude::TransactionValidityError;
+use codec::{Decode, DecodeWithMemTracking, Encode};
+use frame_support::pallet_prelude::{TransactionValidityError, Weight};
+use frame_system::ensure_signed;
+use frame_system::pallet_prelude::RuntimeCallFor;
 use scale_info::{StaticTypeInfo, TypeInfo};
-use sp_runtime::traits::{DispatchInfoOf, SignedExtension};
+use sp_runtime::traits::{
+    DispatchInfoOf, DispatchOriginOf, Implication, TransactionExtension, ValidateResult,
+};
+use sp_runtime::transaction_validity::TransactionSource;
 
 /// Changes the origin account to inner extensions if the signer is a session key, so the validations
 /// and handling of these extensions (like charging to an account) happens on behalf of the `AccountId`
@@ -12,95 +17,96 @@ use sp_runtime::traits::{DispatchInfoOf, SignedExtension};
 ///
 /// In the future, this extension would be deprecated in favour of a couple of an extension that issues
 /// authorized origins from `pallet-pass`.
-#[derive(Encode, Decode)]
-pub struct ChargeTransactionToPassAccount<S, T, I = ()>(S, PhantomData<(T, I)>);
+#[derive(Encode, Decode, DecodeWithMemTracking, Clone, Eq, PartialEq)]
+pub struct ChargeTransactionToPassAccount<S, T, I = ()>(pub S, PhantomData<T>, PhantomData<I>);
 
-impl<S: SignedExtension, T, I> ChargeTransactionToPassAccount<S, T, I> {
+impl<S, T, I> ChargeTransactionToPassAccount<S, T, I> {
     pub fn new(s: S) -> Self {
-        Self(s, PhantomData)
+        Self(s, PhantomData, PhantomData)
     }
 }
 
-impl<S: Clone, T, I> Clone for ChargeTransactionToPassAccount<S, T, I> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), PhantomData)
-    }
-}
-
-impl<S: Eq, T, I> Eq for ChargeTransactionToPassAccount<S, T, I> {}
-impl<S: PartialEq, T, I> PartialEq for ChargeTransactionToPassAccount<S, T, I> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<S: SignedExtension + StaticTypeInfo, T, I> TypeInfo
-    for ChargeTransactionToPassAccount<S, T, I>
-{
+impl<S: StaticTypeInfo, T, I> TypeInfo for ChargeTransactionToPassAccount<S, T, I> {
     type Identity = S;
     fn type_info() -> scale_info::Type {
         S::type_info()
     }
 }
 
-impl<S: SignedExtension + Encode, T, I> core::fmt::Debug
-    for ChargeTransactionToPassAccount<S, T, I>
-{
+impl<S: fmt::Debug, T, I> fmt::Debug for ChargeTransactionToPassAccount<S, T, I> {
     #[cfg(feature = "std")]
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "ChargeTransactionToPassAccount<{:?}>", self.0.encode())
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ChargeTransactionToPassAccount<{:?}>", self.0)
     }
     #[cfg(not(feature = "std"))]
-    fn fmt(&self, _: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
         Ok(())
     }
 }
 
-impl<S, T, I> SignedExtension for ChargeTransactionToPassAccount<S, T, I>
+impl<S, T, I: 'static> ChargeTransactionToPassAccount<S, T, I>
+where
+    T: Config<I>,
+{
+    fn convert_origin(
+        origin: &DispatchOriginOf<RuntimeCallFor<T>>,
+    ) -> DispatchOriginOf<RuntimeCallFor<T>> {
+        ensure_signed(origin.clone())
+            .map(|ref who| {
+                let pass_account_id =
+                    Pallet::<T, I>::signer_from_session_key(who).unwrap_or(who.clone());
+                frame_system::RawOrigin::Signed(pass_account_id).into()
+            })
+            .unwrap_or(origin.clone())
+    }
+}
+
+impl<S, T, I: 'static> TransactionExtension<RuntimeCallFor<T>>
+    for ChargeTransactionToPassAccount<S, T, I>
 where
     T: Config<I> + Send + Sync,
-    I: 'static + Send + Sync,
-    S: SignedExtension<AccountId = T::AccountId, Call = <T as frame_system::Config>::RuntimeCall>,
+    I: Clone + Eq + Send + Sync,
+    S: TransactionExtension<RuntimeCallFor<T>> + StaticTypeInfo,
 {
     const IDENTIFIER: &'static str = S::IDENTIFIER;
-    type AccountId = S::AccountId;
-    type Call = S::Call;
-    type AdditionalSigned = S::AdditionalSigned;
+    type Implicit = S::Implicit;
+    type Val = S::Val;
     type Pre = S::Pre;
 
-    fn additional_signed(&self) -> Result<Self::AdditionalSigned, TransactionValidityError> {
-        self.0.additional_signed()
+    fn weight(&self, call: &RuntimeCallFor<T>) -> Weight {
+        self.0.weight(call)
     }
 
     fn validate(
         &self,
-        who: &Self::AccountId,
-        call: &Self::Call,
-        info: &DispatchInfoOf<Self::Call>,
+        origin: DispatchOriginOf<RuntimeCallFor<T>>,
+        call: &RuntimeCallFor<T>,
+        info: &DispatchInfoOf<RuntimeCallFor<T>>,
         len: usize,
-    ) -> frame_support::pallet_prelude::TransactionValidity {
-        let who = Pallet::<T, I>::signer_from_session_key(who).unwrap_or(who.clone());
-        self.0.validate(&who, call, info, len)
+        self_implicit: Self::Implicit,
+        inherited_implication: &impl Implication,
+        source: TransactionSource,
+    ) -> ValidateResult<Self::Val, RuntimeCallFor<T>> {
+        self.0.validate(
+            Self::convert_origin(&origin),
+            call,
+            info,
+            len,
+            self_implicit,
+            inherited_implication,
+            source,
+        )
     }
 
-    fn pre_dispatch(
+    fn prepare(
         self,
-        who: &Self::AccountId,
-        call: &Self::Call,
-        info: &DispatchInfoOf<Self::Call>,
+        val: Self::Val,
+        origin: &DispatchOriginOf<RuntimeCallFor<T>>,
+        call: &RuntimeCallFor<T>,
+        info: &DispatchInfoOf<RuntimeCallFor<T>>,
         len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
-        let who = Pallet::<T, I>::signer_from_session_key(who).unwrap_or(who.clone());
-        self.0.pre_dispatch(&who, call, info, len)
-    }
-
-    fn post_dispatch(
-        pre: Option<Self::Pre>,
-        info: &DispatchInfoOf<Self::Call>,
-        post_info: &sp_runtime::traits::PostDispatchInfoOf<Self::Call>,
-        len: usize,
-        result: &sp_runtime::DispatchResult,
-    ) -> Result<(), TransactionValidityError> {
-        S::post_dispatch(pre, info, post_info, len, result)
+        self.0
+            .prepare(val, &Self::convert_origin(origin), call, info, len)
     }
 }

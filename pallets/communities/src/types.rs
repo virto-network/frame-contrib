@@ -55,7 +55,18 @@ pub enum CommunityState {
 }
 
 /// The mechanism used by the community or one of its subsets to make decisions
-#[derive(Clone, Debug, Decode, Default, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo)]
+#[derive(
+    Clone,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Default,
+    Encode,
+    Eq,
+    MaxEncodedLen,
+    PartialEq,
+    TypeInfo,
+)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DecisionMethod<AssetId, MinVote> {
     #[default]
@@ -68,7 +79,9 @@ pub enum DecisionMethod<AssetId, MinVote> {
 // Governance
 pub type VoteWeight = u32;
 
-#[derive(Clone, Debug, Decode, Encode, PartialEq, MaxEncodedLen, TypeInfo)]
+#[derive(
+    Clone, Debug, Decode, DecodeWithMemTracking, Encode, PartialEq, MaxEncodedLen, TypeInfo,
+)]
 #[scale_info(skip_type_params(AssetId, AssetBalance, NativeBalance))]
 pub enum Vote<AssetId, AssetBalance, NativeBalance> {
     AssetBalance(bool, AssetId, AssetBalance),
@@ -108,7 +121,9 @@ where
     }
 }
 
-#[derive(Clone, Debug, Decode, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo)]
+#[derive(
+    Clone, Debug, Decode, DecodeWithMemTracking, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo,
+)]
 #[scale_info(skip_type_params(T))]
 #[codec(mel_bound(T: Config))]
 pub struct Tally<T> {

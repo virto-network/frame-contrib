@@ -618,7 +618,7 @@ pub mod pallet {
 			let di = call.get_dispatch_info();
 			let weight = T::WeightInfo::dispatch_as_account()
 				.saturating_add(T::DbWeight::get().reads_writes(1, 1))
-				.saturating_add(di.weight);
+				.saturating_add(di.call_weight);
 			(weight, di.class)
 		})]
         pub fn dispatch_as_account(

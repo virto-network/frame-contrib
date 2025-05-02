@@ -2,7 +2,7 @@
 use crate::*;
 
 use alloc::{collections::btree_map::BTreeMap, vec::Vec};
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_system::pallet_prelude::BlockNumberFor;
 use scale_info::TypeInfo;
 use sp_runtime::{traits::Zero, BoundedVec, Percent, Saturating};
@@ -165,14 +165,18 @@ pub enum Task {
 }
 
 /// Types of Tasks that can be scheduled in the pallet
-#[derive(PartialEq, Eq, Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    PartialEq, Eq, Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo, MaxEncodedLen,
+)]
 pub enum Role {
     // payment `from` to `to` has to be cancelled
     Sender,
     Beneficiary,
 }
 
-#[derive(PartialEq, Eq, Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    PartialEq, Eq, Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo, MaxEncodedLen,
+)]
 pub struct DisputeResult {
     pub percent_beneficiary: Percent,
     pub in_favor_of: Role,

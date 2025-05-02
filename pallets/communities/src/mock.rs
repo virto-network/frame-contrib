@@ -192,6 +192,7 @@ impl pallet_nfts::Config for Test {
 
     #[cfg(feature = "runtime-benchmarks")]
     type Helper = NftsBenchmarksHelper;
+    type BlockNumberProvider = System;
 }
 
 // Governance at Communities
@@ -229,6 +230,7 @@ impl pallet_scheduler::Config for Test {
     type MaxScheduledPerBlock = MaxScheduledPerBlock;
     type WeightInfo = pallet_scheduler::weights::SubstrateWeight<Self>;
     type Preimages = Preimage;
+    type BlockNumberProvider = System;
 }
 
 pub struct EnsureOriginToTrack;
@@ -301,6 +303,7 @@ impl pallet_referenda::Config for Test {
     type AlarmInterval = AlarmInterval;
     type Tracks = Tracks;
     type Preimages = Preimage;
+    type BlockNumberProvider = System;
 }
 
 // Communities
@@ -574,6 +577,7 @@ impl TestEnvBuilder {
             assets: self.assets_config,
             balances: pallet_balances::GenesisConfig {
                 balances: self.balances,
+                dev_accounts: None,
             },
             system: Default::default(),
         }

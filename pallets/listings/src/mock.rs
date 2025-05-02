@@ -108,6 +108,7 @@ impl pallet_nfts::Config for Test {
     #[cfg(feature = "runtime-benchmarks")]
     type Helper = OwnersCatalogBenchmarkHelper<Self>;
     type WeightInfo = ();
+    type BlockNumberProvider = System;
 }
 #[cfg(feature = "runtime-benchmarks")]
 use core::marker::PhantomData;

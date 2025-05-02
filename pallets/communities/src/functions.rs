@@ -2,7 +2,6 @@ use super::*;
 
 use frame_contrib_traits::memberships::{GenericRank, Inspect, Rank};
 use frame_support::{
-    dispatch::PostDispatchInfo,
     fail,
     traits::{
         fungible::{InspectFreeze, Mutate, MutateFreeze},
@@ -11,10 +10,7 @@ use frame_support::{
         Polling,
     },
 };
-use sp_runtime::{
-    traits::{AccountIdConversion, Dispatchable},
-    DispatchResultWithInfo,
-};
+use sp_runtime::traits::{AccountIdConversion, Dispatchable};
 
 impl<T: Config> Pallet<T> {
     #[inline]
@@ -221,12 +217,11 @@ impl<T: Config> Pallet<T> {
     pub(crate) fn do_dispatch_as_community_account(
         community_id: &CommunityIdOf<T>,
         call: RuntimeCallFor<T>,
-    ) -> DispatchResultWithInfo<PostDispatchInfo> {
+    ) -> DispatchResultWithPostInfo {
         let community_account = Self::community_account(community_id);
         let signer = frame_system::RawOrigin::Signed(community_account);
 
-        let post = call.dispatch(signer.into()).map_err(|e| e.error)?;
-        Ok(post)
+        call.dispatch(signer.into())
     }
 }
 

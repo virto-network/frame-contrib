@@ -3,14 +3,14 @@ use super::*;
 use frame_support::ensure;
 use sp_runtime::{BoundedVec, DispatchError, DispatchResult};
 
-impl<T: Config<I>, I: 'static> pallet_referenda::TracksInfo<BalanceOf<T, I>, BlockNumberFor<T>>
+impl<T: Config<I>, I: 'static> pallet_referenda::TracksInfo<BalanceOf<T, I>, BlockNumberFor<T, I>>
     for Pallet<T, I>
 {
     type Id = T::TrackId;
     type RuntimeOrigin = <T::RuntimeOrigin as OriginTrait>::PalletsOrigin;
 
     fn tracks(
-    ) -> impl Iterator<Item = Cow<'static, Track<Self::Id, BalanceOf<T, I>, BlockNumberFor<T>>>>
+    ) -> impl Iterator<Item = Cow<'static, Track<Self::Id, BalanceOf<T, I>, BlockNumberFor<T, I>>>>
     {
         Tracks::<T, I>::iter().map(|(id, info)| Cow::Owned(Track { id, info }))
     }
@@ -19,16 +19,7 @@ impl<T: Config<I>, I: 'static> pallet_referenda::TracksInfo<BalanceOf<T, I>, Blo
     }
 }
 
-impl<T: Config<I>, I: 'static> Get<Vec<TrackOf<T, I>>> for crate::Pallet<T, I> {
-    fn get() -> Vec<TrackOf<T, I>> {
-        // expensive but it doesn't seem to be used anywhere
-        <Pallet<T, I> as pallet_referenda::TracksInfo<BalanceOf<T, I>, BlockNumberFor<T>>>::tracks()
-            .map(|t| t.into_owned())
-            .collect()
-    }
-}
-
-impl<T: Config<I>, I> fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumberFor<T>>
+impl<T: Config<I>, I> fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumberFor<T, I>>
     for Pallet<T, I>
 {
     /// Inserts a new track into the tracks storage.
