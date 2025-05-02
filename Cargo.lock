@@ -1094,7 +1094,8 @@ dependencies = [
 name = "fc-pallet-gas-transaction-payment"
 version = "1.0.0"
 dependencies = [
- "fc-traits-gas-tank",
+ "frame-benchmarking",
+ "frame-contrib-traits",
  "frame-support",
  "frame-system",
  "pallet-balances",

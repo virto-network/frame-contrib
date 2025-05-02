@@ -1,135 +1,205 @@
-use codec::{Decode, Encode};
-use core::marker::PhantomData;
-use fc_traits_gas_tank::GasBurner;
+use super::*;
+
+use codec::{Decode, DecodeWithMemTracking, Encode};
+use core::{fmt, marker::PhantomData};
 use frame_support::{
     dispatch::{DispatchInfo, Pays, PostDispatchInfo},
     pallet_prelude::{TransactionValidityError, ValidTransaction},
     weights::Weight,
 };
 use scale_info::{StaticTypeInfo, TypeInfo};
-use sp_runtime::traits::{DispatchInfoOf, Dispatchable, SignedExtension};
+use sp_runtime::{
+    traits::{
+        DispatchInfoOf, DispatchOriginOf, Dispatchable, Implication, PostDispatchInfoOf,
+        TransactionExtension, ValidateResult,
+    },
+    transaction_validity::{InvalidTransaction, TransactionSource},
+    DispatchResult,
+};
 
-use crate::{Config, Event, Pallet};
+#[derive(Decode, DecodeWithMemTracking, Encode, Clone, Eq, PartialEq)]
+pub struct ChargeTransactionPayment<T, S>(pub S, PhantomData<T>);
 
-#[derive(Encode, Decode, Clone, Eq, PartialEq)]
-pub struct ChargeTransactionPayment<T, S: SignedExtension>(pub S, PhantomData<T>);
-
-// Make this extension "invisible" from the outside (ie metadata type information)
-impl<T, S: SignedExtension + StaticTypeInfo> TypeInfo for ChargeTransactionPayment<T, S> {
+// Make this extension "invisible" from the outside (i.e. metadata type information)
+impl<T: Config, S: TransactionExtension<T::RuntimeCall> + StaticTypeInfo> TypeInfo
+    for ChargeTransactionPayment<T, S>
+{
     type Identity = S;
     fn type_info() -> scale_info::Type {
         S::type_info()
     }
 }
 
-impl<T, S: SignedExtension + Encode> core::fmt::Debug for ChargeTransactionPayment<T, S> {
+impl<T, S: Encode> fmt::Debug for ChargeTransactionPayment<T, S> {
     #[cfg(feature = "std")]
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ChargeTxBurningGas<{:?}>", self.0.encode())
     }
     #[cfg(not(feature = "std"))]
-    fn fmt(&self, _: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
         Ok(())
     }
 }
 
-impl<T, S: SignedExtension> ChargeTransactionPayment<T, S> {
+impl<T, S> ChargeTransactionPayment<T, S> {
     pub fn new(s: S) -> Self {
         Self(s, PhantomData)
     }
 }
 
 #[derive(PartialEq)]
-pub enum Pre<S: SignedExtension + Encode> {
-    Burner(Weight),
-    Inner(S::Pre),
+pub enum Pre<AccountId, P> {
+    Burner(AccountId, Weight),
+    Inner(P),
 }
 
-impl<S: SignedExtension + Encode> core::fmt::Debug for Pre<S> {
+impl<AccountId, P> fmt::Debug for Pre<AccountId, P>
+where
+    AccountId: fmt::Debug,
+    P: fmt::Debug,
+{
     #[cfg(feature = "std")]
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Pre::Burner(gas) => write!(f, "Pre::Burner({:?})", gas),
-            Pre::Inner(_) => write!(f, "Pre::Inner(<inner>)"),
+            Pre::Burner(who, gas) => write!(f, "Pre::Burner({who:?}, {gas:?})"),
+            Pre::Inner(inner) => write!(f, "Pre::Inner({inner:?})"),
         }
     }
     #[cfg(not(feature = "std"))]
-    fn fmt(&self, _: &mut core::fmt::Formatter) -> core::fmt::Result {
+    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
         Ok(())
     }
 }
 
-impl<T, S> SignedExtension for ChargeTransactionPayment<T, S>
+impl<T, S> TransactionExtension<T::RuntimeCall> for ChargeTransactionPayment<T, S>
 where
     T: Config + Send + Sync,
     T::RuntimeCall: Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>,
-    S: SignedExtension<AccountId = T::AccountId, Call = T::RuntimeCall>,
-    S::Call: Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>,
+    S: TransactionExtension<T::RuntimeCall> + StaticTypeInfo,
 {
     const IDENTIFIER: &'static str = S::IDENTIFIER;
-    type AccountId = S::AccountId;
-    type Call = S::Call;
-    type AdditionalSigned = S::AdditionalSigned;
-    type Pre = (Self::AccountId, Pre<S>);
+    type Implicit = S::Implicit;
+    type Val = Option<S::Val>;
+    type Pre = Pre<T::AccountId, S::Pre>;
 
-    fn additional_signed(&self) -> Result<Self::AdditionalSigned, TransactionValidityError> {
-        self.0.additional_signed()
-    }
-
-    fn pre_dispatch(
-        self,
-        who: &Self::AccountId,
-        call: &Self::Call,
-        info: &DispatchInfoOf<Self::Call>,
-        len: usize,
-    ) -> Result<Self::Pre, TransactionValidityError> {
-        let pre = if let Some(leftover) = T::GasBurner::check_available_gas(who, &info.weight) {
-            Pre::Burner(leftover)
-        } else {
-            Pre::Inner(self.0.pre_dispatch(who, call, info, len)?)
-        };
-
-        Ok((who.clone(), pre))
+    fn weight(&self, _: &T::RuntimeCall) -> Weight {
+        T::WeightInfo::charge_transaction_payment()
     }
 
     fn validate(
         &self,
-        who: &Self::AccountId,
-        call: &Self::Call,
-        info: &DispatchInfoOf<Self::Call>,
+        origin: DispatchOriginOf<T::RuntimeCall>,
+        call: &T::RuntimeCall,
+        info: &DispatchInfoOf<T::RuntimeCall>,
         len: usize,
-    ) -> frame_support::pallet_prelude::TransactionValidity {
-        if T::GasBurner::check_available_gas(who, &info.weight).is_some() {
-            Ok(ValidTransaction::default())
-        } else {
-            self.0.validate(who, call, info, len)
+        self_implicit: Self::Implicit,
+        inherited_implication: &impl Implication,
+        source: TransactionSource,
+    ) -> ValidateResult<Self::Val, T::RuntimeCall> {
+        match origin
+            .clone()
+            .into()
+            .map_err(|_| InvalidTransaction::BadSigner)?
+        {
+            frame_system::RawOrigin::Signed(ref who) => {
+                let gas = T::GasTank::check_available_gas(who, &info.call_weight);
+                if gas.is_some() {
+                    Ok((ValidTransaction::default(), None, origin))
+                } else {
+                    self.0
+                        .validate(
+                            origin,
+                            call,
+                            info,
+                            len,
+                            self_implicit,
+                            inherited_implication,
+                            source,
+                        )
+                        .map(|(valid, val, origin)| (valid, Some(val), origin))
+                }
+            }
+            _ => self
+                .0
+                .validate(
+                    origin,
+                    call,
+                    info,
+                    len,
+                    self_implicit,
+                    inherited_implication,
+                    source,
+                )
+                .map(|(valid, val, origin)| (valid, Some(val), origin)),
         }
     }
 
-    fn post_dispatch(
-        pre: Option<Self::Pre>,
-        info: &DispatchInfoOf<Self::Call>,
-        post_info: &sp_runtime::traits::PostDispatchInfoOf<Self::Call>,
+    fn prepare(
+        self,
+        val: Self::Val,
+        origin: &DispatchOriginOf<T::RuntimeCall>,
+        call: &T::RuntimeCall,
+        info: &DispatchInfoOf<T::RuntimeCall>,
         len: usize,
-        result: &sp_runtime::DispatchResult,
-    ) -> Result<(), frame_support::pallet_prelude::TransactionValidityError> {
-        if let Some((who, pre)) = pre {
-            match pre {
-                Pre::Inner(inner_pre) => {
-                    S::post_dispatch(Some(inner_pre), info, post_info, len, result)?
-                }
-                Pre::Burner(expected_remaining) => {
-                    let used_gas = post_info.actual_weight.unwrap_or(info.weight);
-                    let should_burn_gas = post_info.pays_fee == Pays::Yes;
+    ) -> Result<Self::Pre, TransactionValidityError> {
+        match origin
+            .clone()
+            .into()
+            .map_err(|_| InvalidTransaction::BadSigner)?
+        {
+            frame_system::RawOrigin::Signed(who) => {
+                let pre = if let Some(leftover) =
+                    T::GasTank::check_available_gas(&who, &info.call_weight)
+                {
+                    Pre::Burner(who, leftover)
+                } else {
+                    self.0
+                        .prepare(
+                            val.expect("value was given on validate; qed"),
+                            origin,
+                            call,
+                            info,
+                            len,
+                        )
+                        .map(Pre::Inner)?
+                };
 
-                    if should_burn_gas {
-                        let remaining =
-                            T::GasBurner::burn_gas(&who, &expected_remaining, &used_gas);
-                        Pallet::<T>::deposit_event(Event::GasBurned { who, remaining });
-                    }
+                Ok(pre)
+            }
+            _ => self
+                .0
+                .prepare(
+                    val.expect("value was given on validate; qed"),
+                    origin,
+                    call,
+                    info,
+                    len,
+                )
+                .map(Pre::Inner),
+        }
+    }
+
+    fn post_dispatch_details(
+        pre: Self::Pre,
+        info: &DispatchInfoOf<T::RuntimeCall>,
+        post_info: &PostDispatchInfoOf<T::RuntimeCall>,
+        len: usize,
+        result: &DispatchResult,
+    ) -> Result<Weight, TransactionValidityError> {
+        match pre {
+            Pre::Inner(pre) => S::post_dispatch_details(pre, info, post_info, len, result),
+            Pre::Burner(who, expected_remaining) => {
+                let used_gas = post_info.actual_weight.unwrap_or(info.call_weight);
+                let should_burn_gas = post_info.pays_fee == Pays::Yes;
+
+                if should_burn_gas {
+                    let remaining = T::GasTank::burn_gas(&who, &expected_remaining, &used_gas);
+                    Pallet::<T>::deposit_event(Event::GasBurned { who, remaining });
+                    Ok(used_gas)
+                } else {
+                    Ok(Weight::zero())
                 }
             }
         }
-        Ok(())
     }
 }

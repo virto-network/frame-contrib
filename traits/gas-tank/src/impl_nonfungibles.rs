@@ -166,6 +166,8 @@ where
 {
     type TankId = (F::CollectionId, F::ItemId);
     type Gas = Weight;
+    #[cfg(feature = "runtime-benchmarks")]
+    type AccountId = T::AccountId;
 
     fn refuel_gas((collection_id, item_id): &Self::TankId, gas: &Self::Gas) -> Self::Gas {
         if !S::get().select(collection_id.clone(), item_id.clone()) {
@@ -188,6 +190,15 @@ where
         tank.capacity_per_period
             .unwrap_or_default()
             .saturating_sub(tank.used)
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn refuel_gas_to_account(who: &Self::AccountId, gas: &Self::Gas) -> Self::Gas {
+        // Finds the first available tank for `who`
+        let Some(tank_id) = F::owned(who).next() else {
+            return Self::Gas::zero();
+        };
+        Self::refuel_gas(&tank_id, gas)
     }
 }
 
