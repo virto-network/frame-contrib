@@ -1,24 +1,7 @@
-// This file is part of Substrate.
-
-// Copyright (C) Parity Technologies (UK) Ltd.
-// SPDX-License-Identifier: Apache-2.0
-
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// 	http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-//! Test environment for remarks pallet.
+//! Test environment for remarks referenda-tracks.
 
 use crate::{self as pallet_referenda_tracks, Config};
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{
     derive_impl, parameter_types,
     traits::{ConstU32, ConstU64, EnsureOriginWithArg, EqualPrivilegeOnly, VoteTally},
@@ -45,14 +28,14 @@ frame_support::construct_runtime!(
     }
 );
 
-#[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl frame_system::Config for Test {
     type BaseCallFilter = frame_support::traits::Everything;
     type Block = Block;
     type AccountData = pallet_balances::AccountData<u64>;
 }
 
-#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig)]
 impl pallet_balances::Config for Test {
     type AccountStore = System;
 }
@@ -78,6 +61,7 @@ impl pallet_scheduler::Config for Test {
     type WeightInfo = ();
     type OriginPrivilegeCmp = EqualPrivilegeOnly;
     type Preimages = Preimage;
+    type BlockNumberProvider = System;
 }
 
 pub struct EnsureOriginToTrack;
@@ -135,6 +119,7 @@ impl pallet_referenda::Config for Test {
     type AlarmInterval = AlarmInterval;
     type Tracks = Tracks;
     type Preimages = Preimage;
+    type BlockNumberProvider = System;
 }
 
 parameter_types! {
@@ -152,7 +137,9 @@ impl Config for Test {
     type BenchmarkHelper = BenchmarkHelper;
 }
 
-#[derive(Encode, Debug, Decode, TypeInfo, Eq, PartialEq, Clone, MaxEncodedLen)]
+#[derive(
+    Encode, Debug, Decode, DecodeWithMemTracking, TypeInfo, Eq, PartialEq, Clone, MaxEncodedLen,
+)]
 pub struct Tally {
     pub ayes: u32,
     pub nays: u32,
@@ -202,7 +189,10 @@ pub fn new_test_ext(maybe_tracks: Option<TracksVec>) -> sp_io::TestExternalities
 
     let t = RuntimeGenesisConfig {
         system: Default::default(),
-        balances: pallet_balances::GenesisConfig::<Test> { balances },
+        balances: pallet_balances::GenesisConfig::<Test> {
+            balances,
+            dev_accounts: None,
+        },
     }
     .build_storage()
     .unwrap();
