@@ -88,6 +88,7 @@ impl pallet_nfts::Config for Test {
 
     #[cfg(feature = "runtime-benchmarks")]
     type Helper = ();
+    type BlockNumberProvider = System;
 }
 
 #[frame_support::storage_alias]

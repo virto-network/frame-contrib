@@ -52,17 +52,17 @@ where
         origin: &DispatchOriginOf<RuntimeCallFor<T>>,
     ) -> DispatchOriginOf<RuntimeCallFor<T>> {
         ensure_signed(origin.clone())
-            .and_then(|ref who| {
+            .map(|ref who| {
                 let pass_account_id =
                     Pallet::<T, I>::signer_from_session_key(who).unwrap_or(who.clone());
-                Ok(frame_system::RawOrigin::Signed(pass_account_id).into())
+                frame_system::RawOrigin::Signed(pass_account_id).into()
             })
             .unwrap_or(origin.clone())
     }
 }
 
 impl<S, T, I: 'static> TransactionExtension<RuntimeCallFor<T>>
-for ChargeTransactionToPassAccount<S, T, I>
+    for ChargeTransactionToPassAccount<S, T, I>
 where
     T: Config<I> + Send + Sync,
     I: Clone + Eq + Send + Sync,

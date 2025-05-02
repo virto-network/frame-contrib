@@ -1,6 +1,6 @@
 use frame_support::{
     assert_ok, construct_runtime, derive_impl, parameter_types,
-    traits::{AsEnsureOriginWithArg, ConstU128, ConstU32},
+    traits::{AsEnsureOriginWithArg, ConstU32},
 };
 use frame_system::{EnsureRoot, EnsureRootWithSuccess};
 use sp_runtime::{
@@ -9,7 +9,6 @@ use sp_runtime::{
 };
 
 type Block = frame_system::mocking::MockBlock<Test>;
-type WeightInfo = ();
 
 pub type AccountPublic = <MultiSignature as Verify>::Signer;
 pub type AccountId = <AccountPublic as IdentifyAccount>::AccountId;
@@ -27,7 +26,7 @@ construct_runtime! {
   }
 }
 
-#[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl frame_system::Config for Test {
     type AccountId = AccountId;
     type Lookup = IdentityLookup<Self::AccountId>;
@@ -35,20 +34,10 @@ impl frame_system::Config for Test {
     type AccountData = pallet_balances::AccountData<Balance>;
 }
 
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig)]
 impl pallet_balances::Config for Test {
     type Balance = Balance;
-    type DustRemoval = ();
-    type RuntimeEvent = RuntimeEvent;
-    type ExistentialDeposit = ConstU128<1>;
     type AccountStore = System;
-    type WeightInfo = WeightInfo;
-    type MaxLocks = ConstU32<10>;
-    type MaxReserves = ();
-    type ReserveIdentifier = [u8; 8];
-    type FreezeIdentifier = RuntimeHoldReason;
-    type MaxFreezes = ConstU32<10>;
-    type RuntimeHoldReason = RuntimeHoldReason;
-    type RuntimeFreezeReason = RuntimeFreezeReason;
 }
 
 type CollectionId = <Test as pallet_nfts::Config>::CollectionId;
@@ -82,6 +71,7 @@ impl pallet_nfts::Config for Test {
 
     #[cfg(feature = "runtime-benchmarks")]
     type Helper = ();
+    type BlockNumberProvider = System;
 }
 
 use frame_support::traits::nonfungibles_v2::{Create, Mutate};

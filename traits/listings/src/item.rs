@@ -11,7 +11,9 @@ pub struct Item<AccountId, Asset, Balance> {
     pub price: Option<ItemPrice<Asset, Balance>>,
 }
 
-#[derive(Encode, Decode, DecodeWithMemTracking, PartialEq, Clone, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode, Decode, DecodeWithMemTracking, PartialEq, Clone, Debug, TypeInfo, MaxEncodedLen,
+)]
 pub struct ItemPrice<Asset, Balance> {
     pub asset: Asset,
     pub amount: Balance,

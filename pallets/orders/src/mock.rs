@@ -253,7 +253,7 @@ impl fc_pallet_listings::BenchmarkHelper<InventoryIdFor<Test>> for Test {
     TypeInfo,
     Eq,
     PartialEq,
-    Debug
+    Debug,
 )]
 pub struct PaymentId(u32);
 

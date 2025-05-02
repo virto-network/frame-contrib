@@ -28,7 +28,7 @@ pub type Extension = ChargeTransactionToPassAccount<
     Test,
 >;
 pub type CheckedExtrinsic =
-sp_runtime::generic::CheckedExtrinsic<AccountId, RuntimeCall, Extension>;
+    sp_runtime::generic::CheckedExtrinsic<AccountId, RuntimeCall, Extension>;
 pub type Block = sp_runtime::generic::Block<
     sp_runtime::generic::Header<u64, sp_runtime::traits::BlakeTwo256>,
     MockUncheckedExtrinsic<Test, (), Extension>,

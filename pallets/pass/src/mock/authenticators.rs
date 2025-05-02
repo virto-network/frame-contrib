@@ -23,26 +23,26 @@ pub(self) type PassAuthorityId = AuthorityFromPalletId<PassPalletId>;
 
 pub mod authenticator_a {
     use super::{Authenticator as TAuthenticator, *};
-	use codec::DecodeWithMemTracking;
+    use codec::DecodeWithMemTracking;
 
     pub struct Authenticator;
 
-	#[derive(
-		TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
-	)]
+    #[derive(
+        TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
+    )]
     pub struct DeviceAttestation {
         pub(crate) device_id: DeviceId,
         pub(crate) challenge: Challenge,
     }
 
-	#[derive(TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen)]
+    #[derive(TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen)]
     pub struct Device {
         pub(crate) device_id: DeviceId,
     }
 
-	#[derive(
-		TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
-	)]
+    #[derive(
+        TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
+    )]
     pub struct Credential {
         pub(crate) user_id: HashedUserId,
         pub(crate) challenge: Challenge,
@@ -123,41 +123,27 @@ pub mod authenticator_a {
 }
 
 pub mod authenticator_b {
-	use codec::DecodeWithMemTracking;
     use super::*;
+    use codec::DecodeWithMemTracking;
 
     pub struct AuthenticatorB;
 
-	#[derive(
-		TypeInfo,
-		DebugNoBound,
-		EqNoBound,
-		PartialEq,
-		Clone,
-		Encode,
-		Decode,
-		DecodeWithMemTracking
-	)]
+    #[derive(
+        TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
+    )]
     pub struct DeviceAttestation {
         pub(crate) device_id: DeviceId,
         pub(crate) challenge: Challenge,
     }
 
-	#[derive(TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen)]
+    #[derive(TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen)]
     pub struct Device {
         pub(crate) device_id: DeviceId,
     }
 
-	#[derive(
-		TypeInfo,
-		DebugNoBound,
-		EqNoBound,
-		PartialEq,
-		Clone,
-		Encode,
-		Decode,
-		DecodeWithMemTracking
-	)]
+    #[derive(
+        TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
+    )]
     pub struct Credential {
         pub(crate) user_id: HashedUserId,
         pub(crate) challenge: Challenge,
@@ -221,9 +207,9 @@ pub mod authenticator_b {
             })
         }
 
-		fn device_id(&self) -> &DeviceId {
-			&self.device_id
-		}
+        fn device_id(&self) -> &DeviceId {
+            &self.device_id
+        }
     }
 
     impl DeviceChallengeResponse<DeviceId> for DeviceAttestation {
