@@ -11,6 +11,8 @@ use crate::{
 
 type ChallengerOf<Dev> = <Dev as UserAuthenticator>::Challenger;
 
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug)]
+#[scale_info(skip_type_params(Id))]
 pub struct AuthorityFromPalletId<Id>(PhantomData<Id>);
 
 impl<Id: Get<PalletId>> Get<AuthorityId> for AuthorityFromPalletId<Id> {
@@ -20,6 +22,8 @@ impl<Id: Get<PalletId>> Get<AuthorityId> for AuthorityFromPalletId<Id> {
     }
 }
 
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug)]
+#[scale_info(skip_type_params(Dev, Att))]
 /// Convenient auto-implementor of the Authenticator trait
 pub struct Auth<Dev, Att>(PhantomData<(Dev, Att)>);
 
@@ -43,7 +47,7 @@ pub trait VerifyCredential<Cred> {
 }
 
 /// Convenient auto-implemtator of the UserAuthenticator trait
-#[derive(Encode, Decode, TypeInfo)]
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug)]
 #[scale_info(skip_type_params(A, Ch, Cred))]
 pub struct Dev<T, A, Ch, Cred>(T, PhantomData<(A, Ch, Cred)>);
 
@@ -64,70 +68,18 @@ where
     type Challenger = Ch;
     type Credential = Cred;
 
-    fn device_id(&self) -> &DeviceId {
-        self.0.as_ref()
-    }
-
     fn verify_credential(&self, credential: &Self::Credential) -> Option<()> {
         self.0.verify(credential)
+    }
+
+    fn device_id(&self) -> &DeviceId {
+        self.0.as_ref()
     }
 }
 
 impl<T: MaxEncodedLen, A, Ch, Cr> MaxEncodedLen for Dev<T, A, Ch, Cr> {
     fn max_encoded_len() -> usize {
         T::max_encoded_len()
-    }
-}
-
-// TODO implement here
-mod pass_key {
-    use super::*;
-
-    #[allow(dead_code)]
-    pub type PassKey<A> = Dev<(), A, (), PassKeyAssertion>;
-    #[allow(dead_code)]
-    pub type PassKeyManager<A> = Auth<PassKey<A>, PassKeyAttestation>;
-
-    #[derive(Clone, Debug, Decode, DecodeWithMemTracking, Encode, TypeInfo, PartialEq, Eq)]
-    pub struct PassKeyAttestation;
-
-    impl<Cx> DeviceChallengeResponse<Cx> for PassKeyAttestation {
-        fn is_valid(&self) -> bool {
-            todo!()
-        }
-
-        fn used_challenge(&self) -> (Cx, crate::Challenge) {
-            todo!()
-        }
-
-        fn authority(&self) -> crate::AuthorityId {
-            todo!()
-        }
-
-        fn device_id(&self) -> &DeviceId {
-            todo!()
-        }
-    }
-
-    #[derive(Clone, Debug, Decode, DecodeWithMemTracking, Encode, TypeInfo, PartialEq, Eq)]
-    pub struct PassKeyAssertion;
-
-    impl<Cx> UserChallengeResponse<Cx> for PassKeyAssertion {
-        fn is_valid(&self) -> bool {
-            todo!()
-        }
-
-        fn used_challenge(&self) -> (Cx, crate::Challenge) {
-            todo!()
-        }
-
-        fn authority(&self) -> crate::AuthorityId {
-            todo!()
-        }
-
-        fn user_id(&self) -> crate::HashedUserId {
-            todo!()
-        }
     }
 }
 
@@ -149,9 +101,10 @@ pub mod dummy {
     #[derive(
         CloneNoBound,
         DebugNoBound,
+        Encode,
         Decode,
         DecodeWithMemTracking,
-        Encode,
+        MaxEncodedLen,
         TypeInfo,
         PartialEqNoBound,
         EqNoBound,
@@ -168,9 +121,10 @@ pub mod dummy {
     #[derive(
         CloneNoBound,
         DebugNoBound,
+        Encode,
         Decode,
         DecodeWithMemTracking,
-        Encode,
+        MaxEncodedLen,
         TypeInfo,
         PartialEqNoBound,
         EqNoBound,
@@ -230,18 +184,18 @@ pub mod dummy {
     where
         A: Get<AuthorityId> + 'static,
     {
-        fn device_id(&self) -> &DeviceId {
-            &DUMMY_DEV
-        }
-
         fn is_valid(&self) -> bool {
             self.0
         }
+
         fn used_challenge(&self) -> (DummyCx, crate::Challenge) {
             (0, [0; 32])
         }
         fn authority(&self) -> crate::AuthorityId {
             A::get()
+        }
+        fn device_id(&self) -> &DeviceId {
+            &DUMMY_DEV
         }
     }
 
@@ -249,10 +203,6 @@ pub mod dummy {
     where
         A: Get<AuthorityId> + 'static,
     {
-        fn user_id(&self) -> crate::HashedUserId {
-            DUMMY_USER
-        }
-
         fn is_valid(&self) -> bool {
             self.0
         }
@@ -263,6 +213,10 @@ pub mod dummy {
 
         fn authority(&self) -> AuthorityId {
             A::get()
+        }
+
+        fn user_id(&self) -> crate::HashedUserId {
+            DUMMY_USER
         }
     }
 }

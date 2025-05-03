@@ -662,3 +662,5 @@ mod dispatch {
         });
     }
 }
+
+mod charge_transaction_to_pass_account {}
