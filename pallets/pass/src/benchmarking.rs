@@ -12,10 +12,7 @@ fn assert_has_event<T: Config<I>, I: 'static>(generic_event: RuntimeEventFor<T, 
 
 #[allow(dead_code)]
 fn setup_signers<T: frame_system::Config>() -> (T::AccountId, T::AccountId) {
-    (
-        frame_benchmarking::account("signer", 0, 0),
-        frame_benchmarking::account("signer", 1, 0),
-    )
+    (account("signer", 0, 0), account("signer", 1, 0))
 }
 
 fn hash<T: frame_system::Config>(b: &[u8]) -> HashedUserId
@@ -39,7 +36,7 @@ mod benchmarks {
         // Setup code
         let origin = T::BenchmarkHelper::register_origin();
         let user_id = hash::<T>(b"my-account");
-        let account_id = Pallet::<T, I>::account_id_for(user_id)?;
+        let account_id = Pallet::<T, I>::address_for(user_id);
         let device_id = [0u8; 32];
 
         #[extrinsic_call]
@@ -55,5 +52,5 @@ mod benchmarks {
         Ok(())
     }
 
-    impl_benchmark_test_suite!(Pallet, crate::mock::new_test_ext(), crate::mock::Test);
+    impl_benchmark_test_suite!(Pallet, mock::new_test_ext(), mock::Test);
 }

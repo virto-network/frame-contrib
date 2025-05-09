@@ -1,9 +1,11 @@
 //! Test environment for pallet pass.
 
-use crate::{self as pallet_pass, ChargeTransactionToPassAccount, Config};
+use crate::{self as pallet_pass, Config, FirstItemIsFree, HoldReason, PassAuthenticate};
 pub use authenticators::*;
 use codec::{Decode, Encode, MaxEncodedLen};
 use fc_traits_authn::{composite_authenticators, util::AuthorityFromPalletId, Challenger};
+use frame_support::traits::fungible::HoldConsideration;
+use frame_support::traits::{Consideration, Footprint, LinearStoragePrice};
 use frame_support::weights::FixedFee;
 use frame_support::{
     derive_impl, parameter_types,
@@ -12,26 +14,26 @@ use frame_support::{
     DebugNoBound, EqNoBound, PalletId,
 };
 use frame_system::mocking::MockUncheckedExtrinsic;
-use frame_system::{EnsureRoot, EnsureRootWithSuccess};
+use frame_system::{EnsureRoot, EnsureRootWithSuccess, EnsureSigned};
 use scale_info::TypeInfo;
 use sp_core::{blake2_256, H256};
 use sp_io::TestExternalities;
 use sp_runtime::{
     traits::{IdentifyAccount, IdentityLookup, Verify},
-    MultiSignature,
+    DispatchError, MultiSignature,
 };
 
 mod authenticators;
 
-pub type Extension = ChargeTransactionToPassAccount<
+pub type TxExtensions = (
+    PassAuthenticate<Test>,
     pallet_transaction_payment::ChargeTransactionPayment<Test>,
-    Test,
->;
+);
 pub type CheckedExtrinsic =
-    sp_runtime::generic::CheckedExtrinsic<AccountId, RuntimeCall, Extension>;
+    sp_runtime::generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtensions>;
 pub type Block = sp_runtime::generic::Block<
     sp_runtime::generic::Header<u64, sp_runtime::traits::BlakeTwo256>,
-    MockUncheckedExtrinsic<Test, (), Extension>,
+    MockUncheckedExtrinsic<Test, (), TxExtensions>,
 >;
 
 pub type AccountPublic = <MultiSignature as Verify>::Signer;
@@ -73,9 +75,14 @@ impl frame_system::Config for Test {
     type AccountData = pallet_balances::AccountData<Balance>;
 }
 
+parameter_types! {
+    pub ExistentialDeposit: Balance = 1000;
+}
+
 #[derive_impl(pallet_balances::config_preludes::TestDefaultConfig)]
 impl pallet_balances::Config for Test {
     type AccountStore = System;
+    type ExistentialDeposit = ExistentialDeposit;
 }
 
 #[derive_impl(pallet_transaction_payment::config_preludes::TestDefaultConfig)]
@@ -107,7 +114,9 @@ impl pallet_scheduler::Config for Test {
 parameter_types! {
     pub const RootAccount: AccountId = AccountId::new([0u8; 32]);
     pub PassPalletId: PalletId = PalletId(*b"py/pass_");
-    pub RootDoesNotPay: Option<pallet_pass::DepositInformation<Test>> = None;
+    pub HoldAccountRegistration: RuntimeHoldReason = HoldReason::AccountRegistration.into();
+    pub HoldAccountDevices: RuntimeHoldReason = HoldReason::AccountDevices.into();
+    pub HoldSessionKeys: RuntimeHoldReason = HoldReason::SessionKeys.into();
 }
 
 composite_authenticators! {
@@ -117,22 +126,67 @@ composite_authenticators! {
     };
 }
 
+#[derive(Clone, Encode, Decode, TypeInfo, MaxEncodedLen, Debug, Eq, PartialEq)]
+pub struct RootDoesNotPayConsideration<C>(Option<C>);
+
+impl<C> Consideration<AccountId, Footprint> for RootDoesNotPayConsideration<C>
+where
+    C: Consideration<AccountId, Footprint>,
+{
+    fn new(who: &AccountId, new: Footprint) -> Result<Self, DispatchError> {
+        if who == &RootAccount::get() {
+            Ok(Self(None))
+        } else {
+            Ok(Self(Some(C::new(who, new)?)))
+        }
+    }
+
+    fn update(self, who: &AccountId, new: Footprint) -> Result<Self, DispatchError> {
+        if let Some(c) = self.0 {
+            Ok(Self(Some(c.update(who, new)?)))
+        } else {
+            Ok(self)
+        }
+    }
+
+    fn drop(self, who: &AccountId) -> Result<(), DispatchError> {
+        FirstItemIsFree::<C>(self.0).drop(who)
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn ensure_successful(who: &AccountId, new: Footprint) {
+        C::ensure_successful(who, new)
+    }
+}
+
+pub type RegistrationStoragePrice = LinearStoragePrice<ExistentialDeposit, ConstU64<1>, Balance>;
+pub type ItemStoragePrice = LinearStoragePrice<ConstU64<100>, ConstU64<1>, Balance>;
+
 impl Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type RuntimeCall = RuntimeCall;
-    type Currency = Balances;
-    type WeightInfo = ();
-    type Authenticator = PassAuthenticator;
     type PalletsOrigin = OriginCaller;
-    type PalletId = PassPalletId;
-    type MaxSessionDuration = ConstU64<10>;
+    type RuntimeCall = RuntimeCall;
+    type WeightInfo = ();
     type RegisterOrigin = EitherOf<
         // Root does not pay
-        EnsureRootWithSuccess<Self::AccountId, RootDoesNotPay>,
+        EnsureRootWithSuccess<Self::AccountId, RootAccount>,
         // Anyone else pays
-        pallet_pass::EnsureSignedPays<Test, ConstU64<1>, RootAccount>,
+        EnsureSigned<Self::AccountId>,
     >;
+    type AddressGenerator = ();
+    type Balances = Balances;
+    type Authenticator = PassAuthenticator;
     type Scheduler = Scheduler;
+    type RegistryConsideration = RootDoesNotPayConsideration<
+        HoldConsideration<AccountId, Balances, HoldAccountRegistration, RegistrationStoragePrice>,
+    >;
+    type DeviceConsideration = FirstItemIsFree<
+        HoldConsideration<AccountId, Balances, HoldAccountDevices, ItemStoragePrice>,
+    >;
+    type SessionKeyConsideration =
+        FirstItemIsFree<HoldConsideration<AccountId, Balances, HoldSessionKeys, ItemStoragePrice>>;
+    type PalletId = PassPalletId;
+    type MaxSessionDuration = ConstU64<10>;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = BenchmarkHelper;
 }

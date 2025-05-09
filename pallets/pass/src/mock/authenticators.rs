@@ -75,13 +75,13 @@ pub mod authenticator_a {
         type Challenger = Authenticator;
         type Credential = Credential;
 
-        fn device_id(&self) -> &DeviceId {
-            &self.device_id
-        }
-
         // Note: This authenticator should pass intentionally, to pass on simpler tests
         fn verify_credential(&self, _: &Self::Credential) -> Option<()> {
             Some(())
+        }
+
+        fn device_id(&self) -> &DeviceId {
+            &self.device_id
         }
     }
 

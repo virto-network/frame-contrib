@@ -13,7 +13,8 @@ pub trait WeightInfo {
 	fn unreserve_uninitialized_account() -> Weight;
 	fn authenticate() -> Weight;
 	fn add_device() -> Weight;
-	fn dispatch() -> Weight;
+	fn remove_device() -> Weight;
+	fn add_session_key() -> Weight;
 	fn remove_session_key() -> Weight;
 }
 
@@ -76,7 +77,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	}
 
 	/// The range of component `l` is `[1, 1048576]`.
-	fn dispatch() -> Weight {
+	fn remove_device() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `0`
+		//  Estimated: `0`
+		// Minimum execution time: 8_471_000 picoseconds.
+		Weight::from_parts(8_586_000, 0)
+			// Standard Error: 0
+			.saturating_add(Weight::from_parts(1_359, 0))
+	}
+
+	/// The range of component `l` is `[1, 1048576]`.
+	fn add_session_key() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
@@ -156,7 +168,18 @@ impl WeightInfo for () {
 	}
 
 	/// The range of component `l` is `[1, 1048576]`.
-	fn dispatch() -> Weight {
+	fn remove_device() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `0`
+		//  Estimated: `0`
+		// Minimum execution time: 8_471_000 picoseconds.
+		Weight::from_parts(0, 0)
+			// Standard Error: 0
+			.saturating_add(Weight::from_parts(0, 0))
+	}
+
+	/// The range of component `l` is `[1, 1048576]`.
+	fn add_session_key() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`

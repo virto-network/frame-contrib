@@ -50,7 +50,7 @@ pub type HashedUserId = [u8; HASHED_USER_ID_LEN];
 
 /// Given some context it deterministically generates a "challenge" used by authenticators
 pub trait Challenger {
-    type Context;
+    type Context: Parameter;
 
     fn generate(cx: &Self::Context) -> Challenge;
 
@@ -97,7 +97,7 @@ pub trait Authenticator {
 pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
     type Authority: Get<AuthorityId>;
     type Challenger: Challenger;
-    type Credential: UserChallengeResponse<CxOf<Self::Challenger>>;
+    type Credential: UserChallengeResponse<CxOf<Self::Challenger>> + Send + Sync;
 
     fn verify_user(&self, credential: &Self::Credential) -> Option<()> {
         log::trace!(target: LOG_TARGET, "Verifying user for credential: {:?}", credential);

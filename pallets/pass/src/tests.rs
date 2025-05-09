@@ -1,17 +1,28 @@
 //! Tests for pass pallet.
-use super::{Error, Event};
+use super::{Error, Event, PassAuthenticate};
 use crate::mock::*;
 
-use fc_traits_authn::{Challenger, HashedUserId};
-use frame_support::{assert_noop, assert_ok, parameter_types, traits::fungible::Mutate};
+use codec::{Encode, MaxEncodedLen};
+use fc_traits_authn::{Challenger, DeviceId, HashedUserId};
+use frame_support::{
+    assert_noop, assert_ok,
+    dispatch::PostDispatchInfo,
+    parameter_types,
+    traits::{fungible::Mutate, Footprint},
+};
 use sp_core::Hasher;
-use sp_runtime::ArithmeticError;
+use sp_runtime::{
+    generic::ExtrinsicFormat,
+    traits::{Applyable, Convert},
+    ApplyExtrinsicResultWithInfo, DispatchError, TokenError,
+};
 
-const SIGNER: AccountId = AccountId::new([0u8; 32]);
-const OTHER: AccountId = AccountId::new([1u8; 32]);
+const SIGNER: AccountId = AccountId::new([1u8; 32]);
+const OTHER: AccountId = AccountId::new([2u8; 32]);
+const CHARLIE: AccountId = AccountId::new([3u8; 32]);
 
-const THE_DEVICE: fc_traits_authn::DeviceId = [0u8; 32];
-const OTHER_DEVICE: fc_traits_authn::DeviceId = [1u8; 32];
+const THE_DEVICE: DeviceId = [0u8; 32];
+const OTHER_DEVICE: DeviceId = [1u8; 32];
 
 parameter_types! {
     pub AccountNameA: HashedUserId = <Test as frame_system::Config>::Hashing::hash(
@@ -28,13 +39,12 @@ mod register {
     #[test]
     fn fail_if_already_registered() {
         new_test_ext().execute_with(|| {
-            let account_id =
-                Pass::account_id_for(AccountNameA::get()).expect("account exists; qed");
+            let account_id: AccountId = Pass::address_for(AccountNameA::get());
             assert_ok!(Pass::create_account(&account_id));
 
             assert_noop!(
                 Pass::register(
-                    RuntimeOrigin::signed(SIGNER),
+                    RuntimeOrigin::root(),
                     AccountNameA::get(),
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
@@ -45,7 +55,7 @@ mod register {
                 ),
                 Error::<Test>::AccountAlreadyRegistered
             );
-        });
+        })
     }
 
     #[test]
@@ -75,7 +85,7 @@ mod register {
                         }
                     ),
                 ),
-                ArithmeticError::Underflow,
+                TokenError::FundsUnavailable,
             );
         });
     }
@@ -83,7 +93,11 @@ mod register {
     #[test]
     fn fail_if_attestation_is_invalid() {
         new_test_ext().execute_with(|| {
-            assert_ok!(Balances::mint_into(&SIGNER, 2));
+            assert_ok!(Balances::mint_into(
+                &SIGNER,
+                ExistentialDeposit::get()
+                    + RegistrationStoragePrice::convert(Footprint::from_parts(1, 32))
+            ));
 
             assert_noop!(
                 Pass::register(
@@ -102,10 +116,13 @@ mod register {
     #[test]
     fn it_works() {
         new_test_ext().execute_with(|| {
-            assert_ok!(Balances::mint_into(&SIGNER, 2));
+            assert_ok!(Balances::mint_into(
+                &SIGNER,
+                ExistentialDeposit::get()
+                    + RegistrationStoragePrice::convert(Footprint::from_parts(1, 32))
+            ));
 
-            let account_id =
-                Pass::account_id_for(AccountNameA::get()).expect("account exists; qed");
+            let account_id = Pass::address_for(AccountNameA::get());
 
             assert_ok!(Pass::register(
                 RuntimeOrigin::signed(SIGNER),
@@ -125,7 +142,7 @@ mod register {
                 .into(),
             );
             System::assert_has_event(
-                Event::<Test>::AddedDevice {
+                Event::<Test>::DeviceAdded {
                     who: account_id,
                     device_id: THE_DEVICE,
                 }
@@ -138,9 +155,8 @@ mod register {
 fn prepare(user_id: HashedUserId) -> sp_io::TestExternalities {
     let mut t = new_test_ext();
     t.execute_with(|| {
-        assert_ok!(Balances::mint_into(&SIGNER, 2));
         assert_ok!(Pass::register(
-            RuntimeOrigin::signed(SIGNER),
+            RuntimeOrigin::root(),
             user_id,
             PassDeviceAttestation::AuthenticatorAAuthenticator(
                 authenticator_a::DeviceAttestation {
@@ -157,19 +173,18 @@ const DURATION: u64 = 10;
 
 mod authenticate {
     use super::*;
+    use crate::DeviceOf;
 
     #[test]
     fn fail_if_cannot_find_account() {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_noop!(
                 Pass::authenticate(
-                    RuntimeOrigin::signed(OTHER),
-                    THE_DEVICE,
-                    PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                    &THE_DEVICE,
+                    &PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                         user_id: AccountNameB::get(),
                         challenge: authenticator_a::Authenticator::generate(&()),
                     }),
-                    Some(DURATION),
                 ),
                 Error::<Test>::AccountNotFound
             );
@@ -181,13 +196,11 @@ mod authenticate {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_noop!(
                 Pass::authenticate(
-                    RuntimeOrigin::signed(OTHER),
-                    OTHER_DEVICE,
-                    PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                    &OTHER_DEVICE,
+                    &PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                         user_id: AccountNameA::get(),
                         challenge: authenticator_a::Authenticator::generate(&()),
                     }),
-                    Some(DURATION),
                 ),
                 Error::<Test>::DeviceNotFound
             );
@@ -197,10 +210,8 @@ mod authenticate {
     #[test]
     fn fail_if_attestation_is_invalid() {
         new_test_ext().execute_with(|| {
-            assert_ok!(Balances::mint_into(&SIGNER, 2));
-
             assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
+                RuntimeOrigin::root(),
                 AccountNameA::get(),
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
@@ -210,13 +221,11 @@ mod authenticate {
 
             assert_noop!(
                 Pass::authenticate(
-                    RuntimeOrigin::signed(OTHER),
-                    THE_DEVICE,
-                    PassCredential::AuthenticatorB(authenticator_b::Credential::new(
+                    &THE_DEVICE,
+                    &PassCredential::AuthenticatorB(authenticator_b::Credential::new(
                         AccountNameA::get(),
                         AuthenticatorB::generate(&OTHER_DEVICE)
                     )),
-                    Some(DURATION),
                 ),
                 Error::<Test>::CredentialInvalid
             );
@@ -225,49 +234,44 @@ mod authenticate {
 
     #[test]
     fn fail_if_attested_with_credentials_from_a_different_device() {
-        new_test_ext().execute_with(|| {
-            assert_ok!(Balances::mint_into(&SIGNER, 2));
+        prepare(AccountNameA::get()).execute_with(|| {
+            let address = Pass::address_for(AccountNameA::get());
+            assert_ok!(Balances::mint_into(
+                &Address::get(),
+                ExistentialDeposit::get()
+                    + ItemStoragePrice::convert(Footprint::from_parts(
+                        1,
+                        DeviceOf::<Test>::max_encoded_len()
+                    ))
+            ));
 
-            assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
-                AccountNameA::get(),
-                PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
-                    device_id: THE_DEVICE,
-                    challenge: AuthenticatorB::generate(&THE_DEVICE),
+            assert_ok!(Pass::authenticate(
+                &THE_DEVICE,
+                &PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                    user_id: AccountNameA::get(),
+                    challenge: authenticator_a::Authenticator::generate(&()),
                 }),
             ));
-            assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(SIGNER),
-                THE_DEVICE,
-                PassCredential::AuthenticatorB(
-                    authenticator_b::Credential::new(
-                        AccountNameA::get(),
-                        AuthenticatorB::generate(&AccountNameA::get()),
-                    )
-                    .sign(&THE_DEVICE)
-                ),
-                None,
-            ));
-            assert_ok!(Pass::add_device(
-                RuntimeOrigin::signed(SIGNER),
+
+            Pass::try_add_device(
+                &address,
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: OTHER_DEVICE,
                     challenge: AuthenticatorB::generate(&OTHER_DEVICE),
                 }),
-            ));
+            )
+            .expect("adding device on an existing account works; qed");
 
             assert_noop!(
                 Pass::authenticate(
-                    RuntimeOrigin::signed(OTHER),
-                    THE_DEVICE,
-                    PassCredential::AuthenticatorB(
+                    &THE_DEVICE,
+                    &PassCredential::AuthenticatorB(
                         authenticator_b::Credential::new(
                             AccountNameA::get(),
                             AuthenticatorB::generate(&AccountNameA::get())
                         )
                         .sign(&OTHER_DEVICE)
                     ),
-                    Some(DURATION),
                 ),
                 Error::<Test>::CredentialInvalid
             );
@@ -275,12 +279,10 @@ mod authenticate {
     }
 
     #[test]
-    fn fail_if_attested_with_credentials_from_a_different_user_device() {
+    fn fail_if_attested_with_credentials_from_a_different_users_device() {
         new_test_ext().execute_with(|| {
-            assert_ok!(Balances::mint_into(&SIGNER, 2));
-
             assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
+                RuntimeOrigin::root(),
                 AccountNameA::get(),
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
@@ -288,7 +290,7 @@ mod authenticate {
                 }),
             ));
             assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
+                RuntimeOrigin::root(),
                 AccountNameB::get(),
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: OTHER_DEVICE,
@@ -298,16 +300,14 @@ mod authenticate {
 
             assert_noop!(
                 Pass::authenticate(
-                    RuntimeOrigin::signed(OTHER),
-                    THE_DEVICE,
-                    PassCredential::AuthenticatorB(
+                    &THE_DEVICE,
+                    &PassCredential::AuthenticatorB(
                         authenticator_b::Credential::new(
                             AccountNameA::get(),
                             AuthenticatorB::generate(&AccountNameA::get()),
                         )
                         .sign(&OTHER_DEVICE)
                     ),
-                    Some(DURATION),
                 ),
                 Error::<Test>::CredentialInvalid
             );
@@ -317,35 +317,21 @@ mod authenticate {
     #[test]
     fn it_works() {
         prepare(AccountNameA::get()).execute_with(|| {
-            let block_number = System::block_number();
-
             assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(OTHER),
-                THE_DEVICE,
-                PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                &THE_DEVICE,
+                &PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                     user_id: AccountNameA::get(),
                     challenge: authenticator_a::Authenticator::generate(&()),
                 }),
-                Some(DURATION),
             ));
-
-            System::assert_has_event(
-                Event::<Test>::SessionCreated {
-                    session_key: OTHER,
-                    until: block_number + DURATION,
-                }
-                .into(),
-            );
         });
     }
 
     #[test]
     fn verify_credential_works() {
         new_test_ext().execute_with(|| {
-            assert_ok!(Balances::mint_into(&SIGNER, 2));
-
             assert_ok!(Pass::register(
-                RuntimeOrigin::signed(SIGNER),
+                RuntimeOrigin::root(),
                 AccountNameA::get(),
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
@@ -354,52 +340,42 @@ mod authenticate {
             ));
 
             assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(SIGNER),
-                THE_DEVICE,
-                PassCredential::AuthenticatorB(
+                &THE_DEVICE,
+                &PassCredential::AuthenticatorB(
                     authenticator_b::Credential::new(
                         AccountNameA::get(),
                         AuthenticatorB::generate(&AccountNameA::get())
                     )
                     .sign(&THE_DEVICE)
                 ),
-                Some(DURATION),
             ));
-
-            let block_number = System::block_number();
-            System::assert_has_event(
-                Event::<Test>::SessionCreated {
-                    session_key: SIGNER,
-                    until: block_number + DURATION,
-                }
-                .into(),
-            );
         });
     }
+}
+
+parameter_types! {
+    pub Address: AccountId = Pass::address_for(AccountNameA::get());
 }
 
 mod add_device {
     use super::*;
 
-    fn prepare() -> sp_io::TestExternalities {
-        let mut t = super::prepare(AccountNameA::get());
-        t.execute_with(|| {
-            assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(SIGNER),
-                THE_DEVICE,
-                PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
-                    user_id: AccountNameA::get(),
-                    challenge: authenticator_a::Authenticator::generate(&()),
-                }),
-                Some(DURATION),
-            ));
-        });
-        t
-    }
-
     #[test]
-    fn fail_if_not_signed_by_session_key() {
-        prepare().execute_with(|| {
+    fn fails_if_bad_origin() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_noop!(
+                Pass::add_device(
+                    RuntimeOrigin::root(),
+                    PassDeviceAttestation::AuthenticatorAAuthenticator(
+                        authenticator_a::DeviceAttestation {
+                            device_id: OTHER_DEVICE,
+                            challenge: authenticator_a::Authenticator::generate(&()),
+                        }
+                    ),
+                ),
+                DispatchError::BadOrigin
+            );
+
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(OTHER),
@@ -410,29 +386,54 @@ mod add_device {
                         }
                     ),
                 ),
-                Error::<Test>::SessionNotFound
+                DispatchError::BadOrigin
             );
         });
     }
 
     #[test]
+    fn deposit_logic_works() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_noop!(
+                Pass::add_device(
+                    RuntimeOrigin::signed(Address::get()),
+                    PassDeviceAttestation::AuthenticatorAAuthenticator(
+                        authenticator_a::DeviceAttestation {
+                            device_id: OTHER_DEVICE,
+                            challenge: authenticator_a::Authenticator::generate(&()),
+                        }
+                    ),
+                ),
+                TokenError::FundsUnavailable
+            );
+        })
+    }
+
+    #[test]
     fn it_works() {
-        prepare().execute_with(|| {
-            let who = Pass::account_id_for(AccountNameA::get()).expect("account exists; qed");
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Balances::mint_into(
+                &Address::get(),
+                ExistentialDeposit::get()
+                    + ItemStoragePrice::convert(Footprint::from_parts(
+                        1,
+                        AccountId::max_encoded_len()
+                    ))
+            ));
 
             assert_ok!(Pass::add_device(
-                RuntimeOrigin::signed(SIGNER),
+                RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
                         device_id: OTHER_DEVICE,
                         challenge: authenticator_a::Authenticator::generate(&()),
                     }
                 ),
-            ),);
+            ));
 
             System::assert_has_event(
-                Event::<Test>::AddedDevice {
-                    who,
+                Event::<Test>::DeviceAdded {
+                    who: Address::get(),
                     device_id: OTHER_DEVICE,
                 }
                 .into(),
@@ -441,55 +442,168 @@ mod add_device {
     }
 }
 
+mod add_session_key {
+    use super::*;
+
+    #[test]
+    fn fails_if_bad_origin() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_noop!(
+                Pass::add_session_key(RuntimeOrigin::root(), OTHER, Some(DURATION)),
+                DispatchError::BadOrigin
+            );
+            assert_noop!(
+                Pass::add_session_key(RuntimeOrigin::signed(OTHER), OTHER, Some(DURATION)),
+                DispatchError::BadOrigin
+            );
+        })
+    }
+
+    #[test]
+    fn fails_if_account_exists() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Balances::mint_into(&CHARLIE, ExistentialDeposit::get()));
+            assert_noop!(
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    CHARLIE,
+                    Some(DURATION)
+                ),
+                Error::<Test>::AccountForSessionKeyAlreadyExists
+            );
+        })
+    }
+
+    #[test]
+    fn it_works() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                OTHER,
+                Some(DURATION)
+            ));
+
+            System::assert_has_event(
+                Event::<Test>::SessionCreated {
+                    session_key: OTHER,
+                    until: DURATION,
+                }
+                .into(),
+            );
+        })
+    }
+
+    #[test]
+    fn deposit_logic_works() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                SIGNER,
+                None,
+            ));
+
+            assert_noop!(
+                Pass::add_session_key(RuntimeOrigin::signed(Address::get()), OTHER, None),
+                TokenError::FundsUnavailable
+            );
+
+            assert_ok!(Balances::mint_into(
+                &Address::get(),
+                ExistentialDeposit::get()
+                    + ItemStoragePrice::convert(Footprint::from_parts(
+                        1,
+                        AccountId::max_encoded_len()
+                    ))
+            ));
+
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                OTHER,
+                None,
+            ));
+        })
+    }
+}
+
 mod dispatch {
     use super::*;
     use crate::Sessions;
+    use frame_support::dispatch::GetDispatchInfo;
+    use sp_runtime::transaction_validity::InvalidTransaction;
 
     parameter_types! {
-        pub Call: Box<RuntimeCall> = Box::new(RuntimeCall::System(frame_system::Call::remark_with_event {
+        pub Call: RuntimeCall = RuntimeCall::System(frame_system::Call::remark_with_event {
             remark: b"Hello, world".to_vec()
-        }));
+        });
         pub CallEvent: RuntimeEvent = frame_system::Event::Remarked {
-            sender: Pass::account_id_for(AccountNameA::get()).expect("account exists; qed"),
+            sender: Address::get(),
             hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
         }.into();
     }
 
-    fn prepare() -> sp_io::TestExternalities {
-        let mut t = super::prepare(AccountNameA::get());
-        t.execute_with(|| {
-            assert_ok!(Pass::authenticate(
-                RuntimeOrigin::signed(SIGNER),
-                THE_DEVICE,
-                PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
-                    user_id: AccountNameA::get(),
-                    challenge: authenticator_a::Authenticator::generate(&()),
-                }),
-                Some(DURATION),
-            ));
-        });
-        t
+    fn authenticate(
+        device_id: DeviceId,
+        credentials: PassCredential,
+        call: RuntimeCall,
+    ) -> ApplyExtrinsicResultWithInfo<PostDispatchInfo> {
+        let extensions: TxExtensions = (
+            PassAuthenticate::<Test>::from(device_id, credentials),
+            pallet_transaction_payment::ChargeTransactionPayment::from(0),
+        );
+
+        let xt = CheckedExtrinsic {
+            format: ExtrinsicFormat::General(0, extensions),
+            function: call.clone(),
+        };
+
+        xt.apply::<Test>(&call.get_dispatch_info(), call.encoded_size())
+    }
+
+    fn signed(
+        session_key: AccountId,
+        call: RuntimeCall,
+    ) -> ApplyExtrinsicResultWithInfo<PostDispatchInfo> {
+        let extensions: TxExtensions = (
+            PassAuthenticate::<Test>::default(),
+            pallet_transaction_payment::ChargeTransactionPayment::from(0),
+        );
+
+        let xt = CheckedExtrinsic {
+            format: ExtrinsicFormat::Signed(session_key, extensions),
+            function: call.clone(),
+        };
+
+        xt.apply::<Test>(&call.get_dispatch_info(), call.encoded_size())
     }
 
     #[test]
-    fn fail_without_credentials_if_not_signed_by_session_key() {
-        prepare().execute_with(|| {
-            assert_noop!(
-                Pass::dispatch(RuntimeOrigin::signed(OTHER), Call::get(), None, None),
-                Error::<Test>::SessionNotFound
-            );
+    fn bypasses_if_not_signed_by_a_session_key() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Balances::mint_into(&CHARLIE, Balance::MAX));
+            assert_ok!(signed(CHARLIE, Call::get()));
+
+            System::assert_has_event(
+                frame_system::Event::Remarked {
+                    sender: CHARLIE,
+                    hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
+                }
+                .into(),
+            )
         });
     }
 
     #[test]
-    fn without_credentials_it_works() {
-        prepare().execute_with(|| {
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(SIGNER),
-                Call::get(),
+    fn it_works_if_signed_by_a_session_key() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Balances::mint_into(&Address::get(), Balance::MAX));
+
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                OTHER,
                 None,
-                None
             ));
+
+            assert_ok!(signed(OTHER, Call::get()));
 
             System::assert_has_event(CallEvent::get());
         });
@@ -497,49 +611,41 @@ mod dispatch {
 
     #[test]
     fn fail_with_credentials_if_account_not_found() {
-        prepare().execute_with(|| {
+        prepare(AccountNameA::get()).execute_with(|| {
             assert_noop!(
-                Pass::dispatch(
-                    RuntimeOrigin::signed(OTHER),
+                authenticate(
+                    OTHER_DEVICE,
+                    PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                        user_id: AccountNameB::get(),
+                        challenge: authenticator_a::Authenticator::generate(&())
+                    }),
                     Call::get(),
-                    Some((
-                        OTHER_DEVICE,
-                        PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
-                            user_id: AccountNameB::get(),
-                            challenge: authenticator_a::Authenticator::generate(&())
-                        })
-                    )),
-                    None
                 ),
-                Error::<Test>::AccountNotFound
+                InvalidTransaction::BadSigner
             );
         });
     }
 
     #[test]
     fn fail_with_credentials_if_device_not_found() {
-        prepare().execute_with(|| {
+        prepare(AccountNameA::get()).execute_with(|| {
             assert_noop!(
-                Pass::dispatch(
-                    RuntimeOrigin::signed(OTHER),
+                authenticate(
+                    OTHER_DEVICE,
+                    PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                        user_id: AccountNameA::get(),
+                        challenge: authenticator_a::Authenticator::generate(&())
+                    }),
                     Call::get(),
-                    Some((
-                        OTHER_DEVICE,
-                        PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
-                            user_id: AccountNameA::get(),
-                            challenge: authenticator_a::Authenticator::generate(&())
-                        })
-                    )),
-                    None
                 ),
-                Error::<Test>::DeviceNotFound
+                InvalidTransaction::BadSigner
             );
-        });
+        })
     }
 
     #[test]
     fn fail_with_credentials_if_credential_invalid() {
-        prepare().execute_with(|| {
+        prepare(AccountNameA::get()).execute_with(|| {
             // On block 1
             let challenge = authenticator_a::Authenticator::generate(&());
 
@@ -547,51 +653,31 @@ mod dispatch {
             run_to(3);
 
             assert_noop!(
-                Pass::dispatch(
-                    RuntimeOrigin::signed(OTHER),
-                    Call::get(),
-                    Some((
-                        THE_DEVICE,
-                        PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
-                            user_id: AccountNameA::get(),
-                            challenge,
-                        })
-                    )),
-                    None,
-                ),
-                Error::<Test>::CredentialInvalid
-            );
-
-            let challenge = authenticator_a::Authenticator::generate(&());
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(OTHER),
-                Call::get(),
-                Some((
+                authenticate(
                     THE_DEVICE,
                     PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                         user_id: AccountNameA::get(),
                         challenge,
-                    })
-                )),
-                None,
-            ));
+                    }),
+                    Call::get(),
+                ),
+                InvalidTransaction::BadSigner
+            );
         });
     }
 
     #[test]
     fn with_credentials_it_works() {
-        prepare().execute_with(|| {
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(OTHER),
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Balances::mint_into(&Address::get(), Balance::MAX));
+
+            assert_ok!(authenticate(
+                THE_DEVICE,
+                PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                    user_id: AccountNameA::get(),
+                    challenge: authenticator_a::Authenticator::generate(&()),
+                }),
                 Call::get(),
-                Some((
-                    THE_DEVICE,
-                    PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
-                        user_id: AccountNameA::get(),
-                        challenge: authenticator_a::Authenticator::generate(&())
-                    })
-                )),
-                None
             ));
 
             System::assert_has_event(CallEvent::get());
@@ -599,61 +685,42 @@ mod dispatch {
     }
 
     #[test]
-    fn with_new_session_key_it_creates_a_session() {
-        prepare().execute_with(|| {
-            let block_number = System::block_number();
+    fn session_duration_is_met() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Balances::mint_into(&Address::get(), Balance::MAX));
 
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(OTHER),
-                Call::get(),
-                Some((
-                    THE_DEVICE,
-                    PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
-                        user_id: AccountNameA::get(),
-                        challenge: authenticator_a::Authenticator::generate(&())
-                    })
-                )),
-                Some(OTHER)
-            ));
-
-            System::assert_has_event(
-                Event::SessionCreated {
-                    session_key: OTHER,
-                    until: block_number + DURATION,
+            assert_ok!(authenticate(
+                THE_DEVICE,
+                PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                    user_id: AccountNameA::get(),
+                    challenge: authenticator_a::Authenticator::generate(&()),
+                }),
+                crate::Call::<Test>::add_session_key {
+                    session: SIGNER,
+                    duration: None,
                 }
                 .into(),
-            );
-        });
-    }
-
-    #[test]
-    fn session_duration_is_met() {
-        prepare().execute_with(|| {
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(SIGNER),
-                Call::get(),
-                None,
-                None,
             ));
 
             run_to(9);
 
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(SIGNER),
-                Call::get(),
-                None,
-                Some(OTHER),
-            ));
+            assert_ok!(signed(SIGNER, Call::get()));
 
             run_to(12);
 
             assert!(!Sessions::<Test>::contains_key(SIGNER));
 
-            assert_ok!(Pass::dispatch(
-                RuntimeOrigin::signed(OTHER),
-                Call::get(),
-                None,
-                None,
+            assert_ok!(authenticate(
+                THE_DEVICE,
+                PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                    user_id: AccountNameA::get(),
+                    challenge: authenticator_a::Authenticator::generate(&()),
+                }),
+                crate::Call::<Test>::add_session_key {
+                    session: OTHER,
+                    duration: Some(7),
+                }
+                .into(),
             ));
 
             run_to(20);
@@ -662,5 +729,3 @@ mod dispatch {
         });
     }
 }
-
-mod charge_transaction_to_pass_account {}
