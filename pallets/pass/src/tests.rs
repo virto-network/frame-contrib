@@ -359,6 +359,7 @@ parameter_types! {
 
 mod add_device {
     use super::*;
+    use crate::DeviceOf;
 
     #[test]
     fn fails_if_bad_origin() {
@@ -417,7 +418,7 @@ mod add_device {
                 ExistentialDeposit::get()
                     + ItemStoragePrice::convert(Footprint::from_parts(
                         1,
-                        AccountId::max_encoded_len()
+                        DeviceOf::<Test>::max_encoded_len(),
                     ))
             ));
 
