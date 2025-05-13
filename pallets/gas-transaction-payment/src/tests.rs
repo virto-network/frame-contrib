@@ -1,17 +1,21 @@
+use codec::Encode;
+use frame::deps::frame_support::dispatch::DispatchInfo;
+use frame::{
+    deps::sp_runtime::{
+        generic::ExtrinsicFormat,
+        traits::{Applyable, DispatchTransaction},
+    },
+    testing_prelude::{
+        assert_noop, assert_ok, frame_system, parameter_types, InvalidTransaction,
+        TransactionValidityError, Weight,
+    },
+};
+use pallet_transaction_payment::ChargeTransactionPayment;
+
 use crate::mock::{
     fc_pallet_gas_transaction_payment, new_test_ext, AccountId, Balances, CheckedExtrinsic,
     RuntimeCall, RuntimeOrigin, Tank, Test, TxExtensions,
 };
-use codec::Encode;
-use frame_support::dispatch::DispatchInfo;
-use frame_support::{
-    assert_noop, assert_ok,
-    pallet_prelude::{InvalidTransaction, TransactionValidityError},
-    parameter_types,
-};
-use pallet_transaction_payment::ChargeTransactionPayment;
-use sp_runtime::traits::{Applyable, DispatchTransaction};
-use sp_runtime::Weight;
 
 const ALICE: AccountId = 1;
 const BOB: AccountId = 2;
@@ -97,7 +101,6 @@ mod charge_transaction_payment_pre_dispatch {
 
 mod charge_transaction_payment_usage_with_checked_extrinsic {
     use super::*;
-    use sp_runtime::generic::ExtrinsicFormat;
 
     fn assert_applied_extrinsic<const S: usize>(xt: CheckedExtrinsic) {
         let info = DispatchInfo {

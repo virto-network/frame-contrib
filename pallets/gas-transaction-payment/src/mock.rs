@@ -2,16 +2,15 @@
 
 use crate::ChargeTransactionPayment;
 pub use crate::{self as fc_pallet_gas_transaction_payment, Config};
-use frame_contrib_traits::gas_tank::{GasBurner, GasFueler};
-use frame_support::{
-    derive_impl, storage_alias,
-    weights::{FixedFee, Weight},
-    Blake2_128,
+use frame::{
+    deps::{frame_support::derive_impl, sp_runtime},
+    storage_alias,
+    testing_prelude::*,
 };
+use frame_contrib_traits::gas_tank::GasBurner;
 use frame_system::mocking::MockUncheckedExtrinsic;
-use sp_io::TestExternalities;
 
-#[frame_support::runtime]
+#[frame_construct_runtime]
 pub mod runtime {
     #[runtime::runtime]
     #[runtime::derive(
@@ -40,10 +39,8 @@ pub type TxExtensions =
 pub type UncheckedExtrinsic = MockUncheckedExtrinsic<Test, (), TxExtensions>;
 pub type CheckedExtrinsic =
     sp_runtime::generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtensions>;
-pub type Block = sp_runtime::generic::Block<
-    sp_runtime::generic::Header<u64, sp_runtime::traits::BlakeTwo256>,
-    UncheckedExtrinsic,
->;
+pub type Block =
+    sp_runtime::generic::Block<sp_runtime::generic::Header<u64, BlakeTwo256>, UncheckedExtrinsic>;
 
 pub type AccountId = <Test as frame_system::Config>::AccountId;
 pub type Balance = <Test as pallet_balances::Config>::Balance;
@@ -93,27 +90,6 @@ impl GasBurner for DummyGasBurner {
     }
 }
 
-impl GasFueler for DummyGasBurner {
-    type TankId = ();
-    type Gas = Weight;
-    #[cfg(feature = "runtime-benchmarks")]
-    type AccountId = AccountId;
-
-    fn refuel_gas(_: &Self::TankId, _: &Self::Gas) -> Self::Gas {
-        Weight::zero()
-    }
-
-    #[cfg(feature = "runtime-benchmarks")]
-    fn refuel_gas_to_account(who: &Self::AccountId, gas: &Self::Gas) -> Self::Gas {
-        Tank::mutate(who, |fuel| {
-            let updated_fuel = fuel.unwrap_or_default().saturating_add(*gas);
-            *fuel = Some(updated_fuel);
-
-            updated_fuel
-        })
-    }
-}
-
 impl Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
@@ -128,6 +104,13 @@ impl fc_pallet_gas_transaction_payment::BenchmarkHelper<Test> for Test {
 
     fn ext() -> ChargeTransactionPayment<Test, Self::Ext> {
         TxExtensions::new(pallet_transaction_payment::ChargeTransactionPayment::<Test>::from(0))
+    }
+
+    fn setup_account(who: &AccountId, gas: Weight) -> DispatchResult {
+        Tank::mutate(who, |tank| {
+            *tank = Some(tank.unwrap_or_default().saturating_add(gas))
+        });
+        Ok(())
     }
 }
 
