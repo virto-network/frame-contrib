@@ -156,10 +156,7 @@ where
             *maybe_consideration = Some((
                 consideration.update(
                     address,
-                    Footprint {
-                        count,
-                        size: Footprint::from_mel::<BlobType>().size,
-                    },
+                    Footprint::from_parts(count as usize, BlobType::max_encoded_len()),
                 )?,
                 count,
             ));
