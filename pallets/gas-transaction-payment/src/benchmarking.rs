@@ -21,10 +21,14 @@ extern crate alloc;
 
 use super::*;
 use crate::Pallet;
-use frame_benchmarking::v2::*;
-use frame_support::dispatch::{DispatchInfo, PostDispatchInfo};
+use frame::{
+    benchmarking::prelude::*,
+    deps::{
+        frame_support::dispatch::{DispatchInfo, PostDispatchInfo},
+        sp_runtime::traits::{AsTransactionAuthorizedOrigin, DispatchTransaction, Dispatchable},
+    },
+};
 use frame_system::RawOrigin;
-use sp_runtime::traits::{AsTransactionAuthorizedOrigin, DispatchTransaction, Dispatchable};
 
 fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
     frame_system::Pallet::<T>::assert_last_event(generic_event.into());
@@ -34,13 +38,12 @@ fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
     T: Config + Send + Sync,
 	T::RuntimeOrigin: AsTransactionAuthorizedOrigin,
 	T::RuntimeCall: Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>,
-    <T::GasTank as GasFueler>::AccountId: From<T::AccountId>,
 )]
 mod benchmarks {
     use super::*;
 
     #[benchmark]
-    fn charge_transaction_payment() {
+    fn charge_transaction_payment() -> Result<(), BenchmarkError> {
         let caller: T::AccountId = account("caller", 0, 0);
 
         let ext = T::BenchmarkHelper::ext();
@@ -56,7 +59,7 @@ mod benchmarks {
             pays_fee: Pays::Yes,
         };
 
-        T::GasTank::refuel_gas_to_account(&caller.clone().into(), &info.call_weight);
+        T::BenchmarkHelper::setup_account(&caller.clone().into(), info.call_weight)?;
         let remaining = T::GasTank::check_available_gas(&caller, &info.call_weight)
             .expect("at least some remaining gas should be available after refueling; qed");
 
@@ -87,7 +90,13 @@ mod benchmarks {
             }
             .into(),
         );
+
+        Ok(())
     }
 
-    impl_benchmark_test_suite!(Pallet, sp_io::TestExternalities::default(), mock::Test);
+    impl_benchmark_test_suite!(
+        Pallet,
+        frame::testing_prelude::TestExternalities::default(),
+        mock::Test
+    );
 }

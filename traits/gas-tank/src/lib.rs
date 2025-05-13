@@ -33,20 +33,11 @@ pub trait GasBurner {
 pub trait GasFueler {
     type TankId: Parameter;
     type Gas: Parameter;
-    #[cfg(feature = "runtime-benchmarks")]
-    type AccountId;
 
     /// Refills as much `gas` as possible returning what the updated amount of gas in the tank.
     ///
     /// This method is expected not to fail.
     fn refuel_gas(id: &Self::TankId, gas: &Self::Gas) -> Self::Gas;
-
-    /// Refills as much `gas` as possible returning what the updated amount of gas in the tank,
-    /// indicating an account instead of a tank.
-    ///
-    /// This method is expected not to fail.
-    #[cfg(feature = "runtime-benchmarks")]
-    fn refuel_gas_to_account(who: &Self::AccountId, gas: &Self::Gas) -> Self::Gas;
 }
 
 pub trait MakeTank {

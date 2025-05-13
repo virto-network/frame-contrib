@@ -2,11 +2,10 @@
 
 //! # Pallet Gas Burn
 //!
-//! This pallet exposes a mechanism to allow transactions payment using a prepaid fees mechanism.
+//! This pallet exposes a mechanism to allow transaction payment using a prepaid fees mechanism.
 
-use frame_contrib_traits::gas_tank::{GasBurner, GasFueler};
-use frame_support::pallet_prelude::*;
-use sp_runtime::traits::TransactionExtension;
+use frame::{deps::sp_runtime::traits::TransactionExtension, prelude::*};
+use frame_contrib_traits::gas_tank::GasBurner;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
@@ -23,10 +22,9 @@ pub use extensions::*;
 pub use pallet::*;
 pub use weights::*;
 
-#[frame_support::pallet]
+#[frame::pallet]
 pub mod pallet {
     use super::*;
-    use frame_contrib_traits::gas_tank::GasFueler;
 
     #[pallet::config]
     pub trait Config: frame_system::Config {
@@ -35,7 +33,7 @@ pub mod pallet {
         /// The Weight info
         type WeightInfo: WeightInfo;
         /// A type that handles gas tanks
-        type GasTank: GasFueler<Gas = Weight> + GasBurner<AccountId = Self::AccountId, Gas = Weight>;
+        type GasTank: GasBurner<AccountId = Self::AccountId, Gas = Weight>;
         /// A helper to prepare benchmarking tests
         #[cfg(feature = "runtime-benchmarks")]
         type BenchmarkHelper: BenchmarkHelper<Self>;
@@ -60,4 +58,7 @@ pub trait BenchmarkHelper<T: Config> {
 
     /// An instance of the extension, ready to be used.
     fn ext() -> ChargeTransactionPayment<T, Self::Ext>;
+
+    /// Prepares an account with enough gas to execute
+    fn setup_account(who: &T::AccountId, gas: Weight) -> DispatchResult;
 }
