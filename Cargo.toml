@@ -34,6 +34,7 @@ fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", default-feat
 mock-helpers = { path = "./mock-helpers", default-features = false }
 
 # Polkadot SDK
+frame = { version = "0.9.1", package = "polkadot-sdk-frame", default-features = false, features = ["runtime"] }
 frame-benchmarking = { version = "40.0.0", default-features = false }
 frame-support = { version = "40.1.0", default-features = false }
 frame-system = { version = "40.1.0", default-features = false }
@@ -48,9 +49,8 @@ pallet-referenda = { version = "40.1.0", default-features = false }
 pallet-scheduler = { version = "41.0.0", default-features = false }
 pallet-timestamp = { version = "39.0.0", default-features = false }
 pallet-transaction-payment = { version = "40.0.0", default-features = false }
-pallet-utility = { version = "40.0.0", default-features = false }
 sp-core = { version = "36.1.0", default-features = false }
-sp-io = { version = "40.0.0", default-features = false }
+sp-io = { version = "40.0.1", default-features = false }
 sp-keystore = { version = "0.42.0", default-features = false }
 sp-runtime = { version = "41.1.0", default-features = false }
 xcm = { version = "16.1.0", package = "staging-xcm", default-features = false }

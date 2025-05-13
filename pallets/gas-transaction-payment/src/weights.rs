@@ -4,8 +4,7 @@
 #![allow(missing_docs)]
 #![allow(dead_code)]
 
-use core::marker::PhantomData;
-use frame_support::{traits::Get, weights::{constants::RocksDbWeight, Weight}};
+use frame::weights_prelude::*;
 
 /// Weight functions needed for `pallet_transaction_payment`.
 pub trait WeightInfo {
