@@ -62,7 +62,7 @@ where
     T: VerifyCredential<Cred> + AsRef<DeviceId> + FullCodec + MaxEncodedLen + TypeInfo + 'static,
     A: Get<AuthorityId> + 'static,
     Ch: Challenger + 'static,
-    Cred: UserChallengeResponse<Ch::Context> + 'static,
+    Cred: UserChallengeResponse<Ch::Context> + 'static + Send + Sync,
 {
     type Authority = A;
     type Challenger = Ch;

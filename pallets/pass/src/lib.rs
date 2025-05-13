@@ -6,27 +6,27 @@
 
 extern crate alloc;
 
-use alloc::boxed::Box;
 use core::fmt::Debug;
 use fc_traits_authn::{
     util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId,
-    UserAuthenticator, UserChallengeResponse, HASHED_USER_ID_LEN,
+    UserAuthenticator, UserChallengeResponse,
 };
-use frame_support::traits::schedule::DispatchTime;
-use frame_support::traits::Bounded;
 use frame_support::{
     pallet_prelude::*,
+    storage::StorageDoubleMap as _,
     traits::{
         fungible::{Inspect, Mutate},
-        schedule::v3::{Named, TaskName},
-        EnsureOriginWithArg,
+        schedule::{
+            v3::{Named, TaskName},
+            DispatchTime,
+        },
+        Bounded, Consideration, EnsureOriginWithArg, Footprint,
     },
     PalletId,
 };
-use frame_system::{pallet_prelude::*, RawOrigin};
-use sp_core::blake2_256;
+use frame_system::pallet_prelude::*;
 use sp_runtime::{
-    traits::{Dispatchable, TrailingZeroInput},
+    traits::{Dispatchable, StaticLookup},
     DispatchResult,
 };
 
@@ -38,11 +38,11 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-mod extension;
+mod extensions;
 mod types;
 
 pub mod weights;
-pub use extension::*;
+pub use extensions::*;
 pub use pallet::*;
 pub use types::*;
 pub use weights::*;
@@ -53,48 +53,101 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config<I: 'static = ()>: frame_system::Config {
+        // Primitives: Some overarching types that come from the system (or the system depends on).
+
+        /// The overarching event type.
         type RuntimeEvent: From<Event<Self, I>>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
+        /// The caller origin, overarching type of all pallets origins.
+        type PalletsOrigin: From<frame_system::Origin<Self>>;
+        /// The overarching call type.
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin>
             + Debug
             + From<Call<Self, I>>
             + From<frame_system::Call<Self>>;
-
-        type Currency: Inspect<Self::AccountId> + Mutate<Self::AccountId>;
-
+        /// The weight information for this pallet.
         type WeightInfo: WeightInfo;
 
-        type Authenticator: Authenticator<Authority = AuthorityFromPalletId<Self::PalletId>>;
+        // Origins: Types that manage authorization rules to allow or deny some caller origins to
+        // execute a method.
 
-        type PalletsOrigin: From<frame_system::Origin<Self>>;
-
-        #[pallet::constant]
-        type PalletId: Get<PalletId>;
-
-        /// The maximum duration of a session
-        #[pallet::constant]
-        type MaxSessionDuration: Get<BlockNumberFor<Self>>;
-
+        /// The origin to register an account. Returns an [`AccountId`] that identifies an account
+        /// that holds the origin.
         type RegisterOrigin: EnsureOriginWithArg<
             Self::RuntimeOrigin,
             HashedUserId,
-            Success = Option<DepositInformation<Self, I>>,
+            Success = Self::AccountId,
         >;
 
+        // Dependencies: The external components this pallet depends on.
+
+        /// A structure to generate addresses.
+        type AddressGenerator: AddressGenerator<Self, I>;
+        /// The native fungible system of a runtime.
+        type Balances: Inspect<Self::AccountId> + Mutate<Self::AccountId>;
+        /// A single or composite authenticator that allows the pallet to handle the actions
+        /// regarding assertion to register devices and authenticating with credentials.
+        type Authenticator: Authenticator<Authority = AuthorityFromPalletId<Self::PalletId>>;
+        /// The `Scheduler` system.
         type Scheduler: Named<
             BlockNumberFor<Self>,
             <Self as Config<I>>::RuntimeCall,
             Self::PalletsOrigin,
         >;
 
+        // Considerations: Costs that are "taken from [the caller's] account temporarily in order to
+        // offset the cost to the chain of holding some data Footprint in state".
+
+        /// A `Consideration` helper to handle the deposits for registering an account. The account
+        /// registrar would cover for the consideration.
+        type RegistrarConsideration: Consideration<Self::AccountId, Footprint>;
+        /// A `Consideration` helper to handle the deposits for storing devices.
+        type DeviceConsideration: Consideration<Self::AccountId, Footprint>;
+        /// A `Consideration` helper to handle the deposits for storing session keys.
+        type SessionKeyConsideration: Consideration<Self::AccountId, Footprint>;
+
+        // Parameters: A set of constant parameters to configure limits.
+
+        /// A unique identification for the pallet.
+        #[pallet::constant]
+        type PalletId: Get<PalletId>;
+        /// The maximum duration of a session
+        #[pallet::constant]
+        type MaxSessionDuration: Get<BlockNumberFor<Self>>;
+
+        // Benchmarking: Types to handle benchmarks.
+
+        /// A helper trait to set up benchmark tests.
         #[cfg(feature = "runtime-benchmarks")]
         type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }
 
+    #[pallet::composite_enum]
+    pub enum HoldReason {
+        /// Holds an amount for registering accounts. Can be released when killing an account.
+        AccountRegistration,
+        /// Holds an amount for adding devices. Can be released by removing devices.
+        AccountDevices,
+        /// Holds an amount for storing session keys. Gets released automatically once the keys
+        /// expire and get removed.
+        SessionKeys,
+    }
+
     #[pallet::pallet]
     pub struct Pallet<T, I = ()>(_);
+
+    /// A map of the pass accounts registered by a system account, with a mapping of the
+    /// [`HashedUserId`] used to register it.
+    #[pallet::storage]
+    pub type RegisteredAccounts<T: Config<I>, I: 'static = ()> =
+        StorageDoubleMap<_, Blake2_128Concat, T::AccountId, Blake2_128Concat, HashedUserId, ()>;
+
+    /// Counts how many pass accounts a system account has registered and holds an amount as
+    /// registrar.
+    #[pallet::storage]
+    pub type RegistrarConsiderations<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, (T::RegistrarConsideration, u64)>;
 
     // Storage
     #[pallet::storage]
@@ -107,9 +160,19 @@ pub mod pallet {
         DeviceOf<T, I>,
     >;
 
+    /// Counts how many devices a pass account has registered and holds an amount to the account.
     #[pallet::storage]
-    pub type Sessions<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T>)>;
+    pub type DeviceConsiderations<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, (T::DeviceConsideration, u64)>;
+
+    #[pallet::storage]
+    pub type SessionKeys<T: Config<I>, I: 'static = ()> =
+        CountedStorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T>)>;
+
+    /// Counts how many sessions a pass account has registered and holds an amount to the account.
+    #[pallet::storage]
+    pub type SessionKeyConsiderations<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, (T::SessionKeyConsideration, u64)>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -117,11 +180,19 @@ pub mod pallet {
         Registered {
             who: T::AccountId,
         },
-        AddedDevice {
+        DeviceAdded {
+            who: T::AccountId,
+            device_id: DeviceId,
+        },
+        DeviceRemoved {
             who: T::AccountId,
             device_id: DeviceId,
         },
         SessionCreated {
+            session_key: T::AccountId,
+            until: BlockNumberFor<T>,
+        },
+        SessionRemoved {
             session_key: T::AccountId,
             until: BlockNumberFor<T>,
         },
@@ -136,272 +207,231 @@ pub mod pallet {
         DeviceNotFound,
         SessionExpired,
         SessionNotFound,
+        /// There is an existing account for the given session key. Thus it cannot be used to
+        /// register a new session.
+        AccountForSessionKeyAlreadyExists,
+        InvalidConsideration,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
-        /// Register an account
+        /// Registers an account. Takes a deposit to provision the account.
         #[pallet::call_index(0)]
         pub fn register(
             origin: OriginFor<T>,
             user: HashedUserId,
             attestation: DeviceAttestationOf<T, I>,
         ) -> DispatchResult {
-            let maybe_deposit_info = T::RegisterOrigin::ensure_origin(origin, &user)?;
-            let account_id = Self::account_id_for(user)?;
-            ensure!(
-                !Self::account_exists(&account_id),
-                Error::<T, I>::AccountAlreadyRegistered
-            );
+            let registrar = &T::RegisterOrigin::ensure_origin(origin, &user)?;
+            let address = &T::AddressGenerator::generate_address(user);
 
-            if let Some(deposit_info) = maybe_deposit_info {
-                Self::charge_register_deposit(deposit_info)?;
-            }
-            Self::create_account(&account_id)?;
-            Self::deposit_event(Event::<T, I>::Registered {
-                who: account_id.clone(),
-            });
+            // Handles the deposit of storage for the account
+            ConsiderationHandler::<
+                T::AccountId,
+                RegistrarConsiderations<T, I>,
+                T::RegistrarConsideration,
+                HashedUserId,
+            >::increment(&registrar)?;
 
-            Self::do_add_device(&account_id, attestation)
+            Self::create_account(&address)?;
+            Self::try_add_device(&address, attestation)
         }
 
-        #[pallet::feeless_if(
-            |_: &OriginFor<T>, device_id: &DeviceId, credential: &CredentialOf<T, I>, _: &Option<BlockNumberFor<T>>| -> bool {
-                Pallet::<T, I>::try_authenticate(device_id, credential).is_ok()
-            }
-		)]
-        #[pallet::call_index(3)]
-        pub fn authenticate(
-            origin: OriginFor<T>,
-            device_id: DeviceId,
-            credential: CredentialOf<T, I>,
-            duration: Option<BlockNumberFor<T>>,
-        ) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            let account_id = Self::try_authenticate(&device_id, &credential)?;
-            Self::try_add_session(&who, &account_id, duration)?;
-            Ok(())
-        }
-
-        /// Call to claim an Account: It assumes the account is initialized
-        /// (because an active account is required to authenticate first of all).
-        #[pallet::call_index(4)]
+        #[pallet::call_index(1)]
         pub fn add_device(
             origin: OriginFor<T>,
             attestation: DeviceAttestationOf<T, I>,
         ) -> DispatchResult {
-            let who = Self::ensure_signer_is_valid_session(origin)?;
-            Self::do_add_device(&who, attestation)
+            let address = &Self::ensure_signer_is_pass_account(origin)?;
+            Self::try_add_device(address, attestation)
         }
 
-        #[pallet::call_index(5)]
-        pub fn dispatch(
+        #[pallet::call_index(2)]
+        pub fn remove_device(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
+            let address = Self::ensure_signer_is_pass_account(origin)?;
+            Self::try_remove_device(&address, &device_id)
+        }
+
+        #[pallet::call_index(3)]
+        pub fn add_session_key(
             origin: OriginFor<T>,
-            call: Box<RuntimeCallFor<T>>,
-            maybe_credential: Option<(DeviceId, CredentialOf<T, I>)>,
-            maybe_next_session_key: Option<T::AccountId>,
+            session: AccountIdLookupOf<T>,
+            duration: Option<BlockNumberFor<T>>,
         ) -> DispatchResult {
-            let account_id = if let Some((device_id, credential)) = maybe_credential {
-                let account_id = Self::account_id_for(credential.user_id())?;
-                Self::do_authenticate(credential, device_id)?;
-                account_id
-            } else {
-                Self::ensure_signer_is_valid_session(origin)?
-            };
+            let address = &Self::ensure_signer_is_pass_account(origin)?;
+            let session_key = &T::Lookup::lookup(session)?;
 
-            if let Some(next_session_key) = maybe_next_session_key {
-                Self::try_add_session(
-                    &next_session_key,
-                    &account_id,
-                    Some(T::MaxSessionDuration::get()),
-                )?;
-            }
+            // We must ensure that there is no account registered for that session key.
+            //
+            // Session keys are meant to be ephemeral, therefore they should never be tied to an
+            // existing account.
+            ensure!(
+                !frame_system::Pallet::<T>::account_exists(session_key),
+                Error::<T, I>::AccountForSessionKeyAlreadyExists
+            );
 
-            // Re-dispatch the call on behalf of the caller.
-            let res = call.dispatch(RawOrigin::Signed(account_id).into());
-            // Turn the result from the `dispatch` into our expected `DispatchResult` type.
-            res.map(|_| ()).map_err(|e| e.error)
+            ConsiderationHandler::<
+                T::AccountId,
+                SessionKeyConsiderations<T, I>,
+                T::SessionKeyConsideration,
+                T::AccountId,
+            >::increment(&address)?;
+
+            // Let's try to remove an existing session that uses the same session key (if any). This is
+            // so we ensure we decrease the provider counter correctly.
+            Self::try_remove_session_key(session_key)?;
+
+            let until = duration
+                .unwrap_or(T::MaxSessionDuration::get())
+                .min(T::MaxSessionDuration::get());
+            SessionKeys::<T, I>::insert(session_key.clone(), (address.clone(), until));
+            Self::schedule_next_removal(session_key, duration)?;
+
+            Self::deposit_event(Event::<T, I>::SessionCreated {
+                session_key: session_key.clone(),
+                until,
+            });
+
+            Ok(())
         }
 
-        #[pallet::call_index(6)]
+        #[pallet::call_index(4)]
         pub fn remove_session_key(
             origin: OriginFor<T>,
             session_key: T::AccountId,
         ) -> DispatchResult {
             ensure_root(origin)?;
-            Self::do_remove_session(&session_key);
-            Ok(())
+            Self::try_remove_session_key(&session_key)
         }
     }
 }
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
-    pub fn account_id_for(user: HashedUserId) -> Result<T::AccountId, DispatchError> {
-        // we know the length of HashedUserId
-        let mut input = [0u8; 2 * HASHED_USER_ID_LEN];
-        input[HASHED_USER_ID_LEN..].copy_from_slice(&user);
-        let account_id: T::AccountId =
-            T::AccountId::decode(&mut TrailingZeroInput::new(&blake2_256(&input)))
-                .map_err(|_| Error::<T, I>::AccountNotFound)?;
-        Ok(account_id)
+    pub fn address_for(user: HashedUserId) -> T::AccountId {
+        T::AddressGenerator::generate_address(user)
     }
 
-    pub fn account_exists(who: &T::AccountId) -> bool {
-        frame_system::Pallet::<T>::account_exists(who)
+    /// Extracts the pass account from a session key.
+    pub(crate) fn pass_account_from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
+        SessionKeys::<T, I>::get(who).map(|(s, _)| s)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn charge_register_deposit(
-        (source, amount, dest): DepositInformation<T, I>,
-    ) -> DispatchResult {
-        T::Currency::transfer(
-            &source,
-            &dest,
-            amount,
-            frame_support::traits::tokens::Preservation::Expendable,
-        )
-        .map(|_| ())
-    }
-
-    pub(crate) fn create_account(who: &T::AccountId) -> DispatchResult {
+    /// Ensure that the signed origin maps onto an already existing pass account.
+    pub(crate) fn ensure_signer_is_pass_account(
+        origin: OriginFor<T>,
+    ) -> Result<T::AccountId, DispatchError> {
+        let who = ensure_signed(origin)?;
         ensure!(
-            frame_system::Pallet::<T>::inc_providers(who) == frame_system::IncRefStatus::Created,
+            Devices::<T, I>::contains_prefix(&who),
+            DispatchError::BadOrigin
+        );
+        Ok(who)
+    }
+
+    /// Provisions a new account.
+    pub(crate) fn create_account(address: &T::AccountId) -> DispatchResult {
+        // Fail to register if a system account already exists with the same address. Otherwise,
+        // we have a new account!
+        ensure!(
+            frame_system::Pallet::<T>::inc_providers(address)
+                == frame_system::IncRefStatus::Created,
             Error::<T, I>::AccountAlreadyRegistered
         );
+
+        Self::deposit_event(Event::<T, I>::Registered {
+            who: address.clone(),
+        });
+
         Ok(())
     }
 
-    pub(crate) fn try_authenticate(
+    pub(crate) fn authenticate(
         device_id: &DeviceId,
         credential: &CredentialOf<T, I>,
     ) -> Result<T::AccountId, DispatchError> {
-        let account_id = Self::account_id_for(credential.user_id())?;
+        let address = T::AddressGenerator::generate_address(credential.user_id());
         ensure!(
-            Self::account_exists(&account_id),
+            Devices::<T, I>::contains_prefix(&address),
             Error::<T, I>::AccountNotFound
         );
         let device =
-            Devices::<T, I>::get(&account_id, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
+            Devices::<T, I>::get(&address, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
         device
             .verify_user(credential)
             .ok_or(Error::<T, I>::CredentialInvalid)?;
 
-        Ok(account_id)
+        Ok(address)
     }
 
-    pub(crate) fn do_add_device(
-        who: &T::AccountId,
+    pub(crate) fn try_add_device(
+        address: &T::AccountId,
         attestation: DeviceAttestationOf<T, I>,
     ) -> DispatchResult {
         let device_id = attestation.device_id();
         let device = T::Authenticator::verify_device(attestation.clone())
             .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
 
-        Devices::<T, I>::insert(who, device_id, device);
-        Self::deposit_event(Event::<T, I>::AddedDevice {
-            who: who.clone(),
+        ConsiderationHandler::<
+            T::AccountId,
+            DeviceConsiderations<T, I>,
+            T::DeviceConsideration,
+            DeviceOf<T, I>,
+        >::increment(&address)?;
+
+        Devices::<T, I>::insert(address, device_id, device);
+
+        Self::deposit_event(Event::<T, I>::DeviceAdded {
+            who: address.clone(),
             device_id: *device_id,
         });
 
         Ok(())
     }
 
-    pub(crate) fn ensure_signer_is_valid_session(
-        origin: OriginFor<T>,
-    ) -> Result<T::AccountId, DispatchError> {
-        let who = ensure_signed(origin)?;
-
-        let (account_id, until) =
-            Sessions::<T, I>::get(&who).ok_or(Error::<T, I>::SessionNotFound)?;
-
-        // Failsafe: In the extreme case the scheduler needs to defer the cleanup call for a
-        // certain
-        if frame_system::Pallet::<T>::block_number() > until {
-            Self::do_remove_session(&who);
-            return Err(Error::<T, I>::SessionExpired.into());
-        }
-
-        Ok(account_id)
-    }
-
-    pub(crate) fn signer_from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
-        let (account_id, until) = Sessions::<T, I>::get(who)?;
-        if frame_system::Pallet::<T>::block_number() <= until {
-            Some(account_id)
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn do_authenticate(
-        credential: CredentialOf<T, I>,
-        device_id: DeviceId,
-    ) -> Result<T::AccountId, DispatchError> {
-        let account_id = Self::account_id_for(credential.user_id())?;
+    pub(crate) fn try_remove_device(address: &T::AccountId, id: &DeviceId) -> DispatchResult {
         ensure!(
-            Self::account_exists(&account_id),
-            Error::<T, I>::AccountNotFound
+            Devices::<T, I>::contains_key(address, id),
+            Error::<T, I>::DeviceNotFound
         );
-        let device =
-            Devices::<T, I>::get(&account_id, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
-        device
-            .verify_user(&credential)
-            .ok_or(Error::<T, I>::CredentialInvalid)?;
-        Ok(account_id)
-    }
 
-    fn do_remove_session(session_key: &T::AccountId) {
-        Self::cancel_scheduled_session_key_removal(session_key);
-        // Decrements the provider reference of this `Session` key account once it's expired.
-        let _ = frame_system::Pallet::<T>::dec_providers(session_key).inspect_err(|_| {
-			log::warn!(
-                "Failed to remove the last provider for {session_key:?}, which has an active consumer"
-            )
-		});
-        Sessions::<T, I>::remove(session_key);
-    }
+        ConsiderationHandler::<
+            T::AccountId,
+            DeviceConsiderations<T, I>,
+            T::DeviceConsideration,
+            DeviceOf<T, I>,
+        >::decrement(&address)?;
 
-    pub(crate) fn try_add_session(
-        session_key: &T::AccountId,
-        account_id: &T::AccountId,
-        duration: Option<BlockNumberFor<T>>,
-    ) -> DispatchResult {
-        // Let's try to remove an existing session that uses the same session key (if any). This is
-        // so we ensure we decrease the provider counter correctly.
-        if Sessions::<T, I>::contains_key(session_key) {
-            Self::do_remove_session(session_key);
-        }
+        Devices::<T, I>::remove(address, id);
 
-        let block_number = frame_system::Pallet::<T>::block_number();
-
-        // Add a consumer reference to this account, since we'll be using
-        // it meanwhile it stays active as a Session.
-        frame_system::Pallet::<T>::inc_providers(session_key);
-
-        let session_duration = duration
-            .unwrap_or(T::MaxSessionDuration::get())
-            .min(T::MaxSessionDuration::get());
-        let until = block_number + session_duration;
-
-        Sessions::<T, I>::insert(session_key.clone(), (account_id.clone(), until));
-        Self::schedule_next_removal(session_key, duration)?;
-
-        Self::deposit_event(Event::<T, I>::SessionCreated {
-            session_key: session_key.clone(),
-            until,
+        Self::deposit_event(Event::<T, I>::DeviceRemoved {
+            who: address.clone(),
+            device_id: id.clone(),
         });
 
         Ok(())
     }
 
-    fn task_name_from_session_key(session_key: &T::AccountId) -> TaskName {
-        blake2_256(&("remove_session_key", session_key).encode())
+    /// Removes a previously existing session. This is infallible.
+    fn try_remove_session_key(session_key: &T::AccountId) -> DispatchResult {
+        Self::cancel_scheduled_session_key_removal(session_key);
+
+        if let Some(address) = &Self::pass_account_from_session_key(session_key) {
+            ConsiderationHandler::<
+                T::AccountId,
+                SessionKeyConsiderations<T, I>,
+                T::SessionKeyConsideration,
+                T::AccountId,
+            >::decrement(&address)?;
+
+            SessionKeys::<T, I>::remove(session_key);
+        }
+
+        Ok(())
     }
 
-    /// Infallibly cancels an already scheduled session key removal
-    fn cancel_scheduled_session_key_removal(session_key: &T::AccountId) {
-        T::Scheduler::cancel_named(Self::task_name_from_session_key(session_key))
-            .map_or_else(|_| (), |_| ());
+    #[inline]
+    fn task_name_from_session_key(session_key: &T::AccountId) -> TaskName {
+        sp_core::blake2_256(&("remove_session_key", session_key).encode())
     }
 
     fn schedule_next_removal(
@@ -428,5 +458,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         )?;
 
         Ok(())
+    }
+
+    /// Infallibly cancels an already scheduled session key removal
+    fn cancel_scheduled_session_key_removal(session_key: &T::AccountId) {
+        let _ = T::Scheduler::cancel_named(Self::task_name_from_session_key(session_key));
     }
 }
