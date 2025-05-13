@@ -95,7 +95,7 @@ where
             // Otherwise, just pass the previous origin to the rest of the extensions pipeline.
 
             Ok::<_, TransactionValidityError>(if let Ok(who) = ensure_signed(origin.clone()) {
-                Pallet::<T, I>::from_session_key(&who)
+                Pallet::<T, I>::pass_account_from_session_key(&who)
                     .or(Some(who))
                     .map(|who| RawOrigin::Signed(who).into())
                     .unwrap()

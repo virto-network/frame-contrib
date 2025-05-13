@@ -210,6 +210,7 @@ pub mod pallet {
         /// There is an existing account for the given session key. Thus it cannot be used to
         /// register a new session.
         AccountForSessionKeyAlreadyExists,
+        InvalidConsideration,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -226,10 +227,13 @@ pub mod pallet {
 
             // Handles the deposit of storage for the account
             RegistrarConsiderations::<T, I>::try_mutate(registrar, |maybe_consideration| {
-                let (consideration, mut count) = maybe_consideration.clone().unwrap_or((
-                    T::RegistryConsideration::new(registrar, Footprint::default())?,
-                    0,
-                ));
+                let (consideration, mut count) = match maybe_consideration {
+                    Some(registrar_consideration) => registrar_consideration.clone(),
+                    _ => (
+                        T::RegistryConsideration::new(address, Footprint::default())?,
+                        0,
+                    ),
+                };
 
                 count.saturating_inc();
                 *maybe_consideration = Some((
@@ -284,10 +288,13 @@ pub mod pallet {
             );
 
             SessionConsiderations::<T, I>::try_mutate(address, |maybe_consideration| {
-                let (consideration, mut count) = maybe_consideration.clone().unwrap_or((
-                    T::SessionKeyConsideration::new(address, Footprint::default())?,
-                    0,
-                ));
+                let (consideration, mut count) = match maybe_consideration {
+                    Some(session_consideration) => session_consideration.clone(),
+                    _ => (
+                        T::SessionKeyConsideration::new(address, Footprint::default())?,
+                        0,
+                    ),
+                };
 
                 count.saturating_inc();
                 *maybe_consideration = Some((
@@ -343,7 +350,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     }
 
     /// Extracts the pass account from a session key.
-    pub(crate) fn from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
+    pub(crate) fn pass_account_from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
         Sessions::<T, I>::get(who).map(|(s, _)| s)
     }
 
@@ -403,10 +410,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
 
         DeviceConsiderations::<T, I>::try_mutate(address, |maybe_consideration| {
-            let (consideration, mut count) = maybe_consideration.clone().unwrap_or((
-                T::DeviceConsideration::new(address, Footprint::default())?,
-                0,
-            ));
+            let (consideration, mut count) = match maybe_consideration {
+                Some(device_consideration) => device_consideration.clone(),
+                _ => (
+                    T::DeviceConsideration::new(address, Footprint::default())?,
+                    0,
+                ),
+            };
 
             count.saturating_inc();
             *maybe_consideration = Some((
@@ -479,7 +489,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     fn try_remove_session(session_key: &T::AccountId) -> DispatchResult {
         Self::cancel_scheduled_session_key_removal(session_key);
 
-        if let Some(address) = &Self::from_session_key(session_key) {
+        if let Some(address) = &Self::pass_account_from_session_key(session_key) {
             SessionConsiderations::<T, I>::try_mutate(address, |maybe_consideration| {
                 let (consideration, mut count) = maybe_consideration.clone().unwrap_or((
                     T::SessionKeyConsideration::new(address, Footprint::default())?,
