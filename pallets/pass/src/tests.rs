@@ -527,7 +527,7 @@ mod add_session_key {
 
 mod dispatch {
     use super::*;
-    use crate::Sessions;
+    use crate::SessionKeys;
     use frame_support::dispatch::GetDispatchInfo;
     use sp_runtime::transaction_validity::InvalidTransaction;
 
@@ -708,7 +708,7 @@ mod dispatch {
 
             run_to(12);
 
-            assert!(!Sessions::<Test>::contains_key(SIGNER));
+            assert!(!SessionKeys::<Test>::contains_key(SIGNER));
 
             assert_ok!(authenticate(
                 THE_DEVICE,
@@ -725,7 +725,7 @@ mod dispatch {
 
             run_to(20);
 
-            assert!(!Sessions::<Test>::contains_key(OTHER));
+            assert!(!SessionKeys::<Test>::contains_key(OTHER));
         });
     }
 }

@@ -177,7 +177,7 @@ impl Config for Test {
     type Balances = Balances;
     type Authenticator = PassAuthenticator;
     type Scheduler = Scheduler;
-    type RegistryConsideration = RootDoesNotPayConsideration<
+    type RegistrarConsideration = RootDoesNotPayConsideration<
         HoldConsideration<AccountId, Balances, HoldAccountRegistration, RegistrationStoragePrice>,
     >;
     type DeviceConsideration = FirstItemIsFree<

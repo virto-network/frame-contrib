@@ -27,7 +27,7 @@ use frame_support::{
 use frame_system::pallet_prelude::*;
 use sp_runtime::{
     traits::{Dispatchable, StaticLookup},
-    DispatchResult, Saturating,
+    DispatchResult,
 };
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -101,7 +101,7 @@ pub mod pallet {
 
         /// A `Consideration` helper to handle the deposits for registering an account. The account
         /// registrar would cover for the consideration.
-        type RegistryConsideration: Consideration<Self::AccountId, Footprint>;
+        type RegistrarConsideration: Consideration<Self::AccountId, Footprint>;
         /// A `Consideration` helper to handle the deposits for storing devices.
         type DeviceConsideration: Consideration<Self::AccountId, Footprint>;
         /// A `Consideration` helper to handle the deposits for storing session keys.
@@ -147,7 +147,7 @@ pub mod pallet {
     /// registrar.
     #[pallet::storage]
     pub type RegistrarConsiderations<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, (T::RegistryConsideration, u64)>;
+        StorageMap<_, Blake2_128Concat, T::AccountId, (T::RegistrarConsideration, u64)>;
 
     // Storage
     #[pallet::storage]
@@ -166,12 +166,12 @@ pub mod pallet {
         StorageMap<_, Blake2_128Concat, T::AccountId, (T::DeviceConsideration, u64)>;
 
     #[pallet::storage]
-    pub type Sessions<T: Config<I>, I: 'static = ()> =
+    pub type SessionKeys<T: Config<I>, I: 'static = ()> =
         CountedStorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T>)>;
 
     /// Counts how many sessions a pass account has registered and holds an amount to the account.
     #[pallet::storage]
-    pub type SessionConsiderations<T: Config<I>, I: 'static = ()> =
+    pub type SessionKeyConsiderations<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, T::AccountId, (T::SessionKeyConsideration, u64)>;
 
     #[pallet::event]
@@ -226,29 +226,12 @@ pub mod pallet {
             let address = &T::AddressGenerator::generate_address(user);
 
             // Handles the deposit of storage for the account
-            RegistrarConsiderations::<T, I>::try_mutate(registrar, |maybe_consideration| {
-                let (consideration, mut count) = match maybe_consideration {
-                    Some(registrar_consideration) => registrar_consideration.clone(),
-                    _ => (
-                        T::RegistryConsideration::new(address, Footprint::default())?,
-                        0,
-                    ),
-                };
-
-                count.saturating_inc();
-                *maybe_consideration = Some((
-                    consideration.update(
-                        registrar,
-                        Footprint::from_parts(
-                            count as usize,
-                            count as usize * size_of::<HashedUserId>(),
-                        ),
-                    )?,
-                    count,
-                ));
-
-                Ok::<_, DispatchError>(())
-            })?;
+            ConsiderationHandler::<
+                T::AccountId,
+                RegistrarConsiderations<T, I>,
+                T::RegistrarConsideration,
+                HashedUserId,
+            >::increment(&registrar)?;
 
             Self::create_account(&address)?;
             Self::try_add_device(&address, attestation)
@@ -287,38 +270,21 @@ pub mod pallet {
                 Error::<T, I>::AccountForSessionKeyAlreadyExists
             );
 
-            SessionConsiderations::<T, I>::try_mutate(address, |maybe_consideration| {
-                let (consideration, mut count) = match maybe_consideration {
-                    Some(session_consideration) => session_consideration.clone(),
-                    _ => (
-                        T::SessionKeyConsideration::new(address, Footprint::default())?,
-                        0,
-                    ),
-                };
-
-                count.saturating_inc();
-                *maybe_consideration = Some((
-                    consideration.update(
-                        address,
-                        Footprint {
-                            count,
-                            size: Footprint::from_mel::<T::AccountId>().size,
-                        },
-                    )?,
-                    count,
-                ));
-
-                Ok::<_, DispatchError>(())
-            })?;
+            ConsiderationHandler::<
+                T::AccountId,
+                SessionKeyConsiderations<T, I>,
+                T::SessionKeyConsideration,
+                T::AccountId,
+            >::increment(&address)?;
 
             // Let's try to remove an existing session that uses the same session key (if any). This is
             // so we ensure we decrease the provider counter correctly.
-            Self::try_remove_session(session_key)?;
+            Self::try_remove_session_key(session_key)?;
 
             let until = duration
                 .unwrap_or(T::MaxSessionDuration::get())
                 .min(T::MaxSessionDuration::get());
-            Sessions::<T, I>::insert(session_key.clone(), (address.clone(), until));
+            SessionKeys::<T, I>::insert(session_key.clone(), (address.clone(), until));
             Self::schedule_next_removal(session_key, duration)?;
 
             Self::deposit_event(Event::<T, I>::SessionCreated {
@@ -335,7 +301,7 @@ pub mod pallet {
             session_key: T::AccountId,
         ) -> DispatchResult {
             ensure_root(origin)?;
-            Self::try_remove_session(&session_key)
+            Self::try_remove_session_key(&session_key)
         }
     }
 }
@@ -345,13 +311,9 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         T::AddressGenerator::generate_address(user)
     }
 
-    pub fn account_exists(who: &T::AccountId) -> bool {
-        frame_system::Pallet::<T>::account_exists(who)
-    }
-
     /// Extracts the pass account from a session key.
     pub(crate) fn pass_account_from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
-        Sessions::<T, I>::get(who).map(|(s, _)| s)
+        SessionKeys::<T, I>::get(who).map(|(s, _)| s)
     }
 
     /// Ensure that the signed origin maps onto an already existing pass account.
@@ -387,18 +349,18 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         device_id: &DeviceId,
         credential: &CredentialOf<T, I>,
     ) -> Result<T::AccountId, DispatchError> {
-        let account_id = T::AddressGenerator::generate_address(credential.user_id());
+        let address = T::AddressGenerator::generate_address(credential.user_id());
         ensure!(
-            Self::account_exists(&account_id),
+            Devices::<T, I>::contains_prefix(&address),
             Error::<T, I>::AccountNotFound
         );
         let device =
-            Devices::<T, I>::get(&account_id, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
+            Devices::<T, I>::get(&address, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
         device
             .verify_user(credential)
             .ok_or(Error::<T, I>::CredentialInvalid)?;
 
-        Ok(account_id)
+        Ok(address)
     }
 
     pub(crate) fn try_add_device(
@@ -409,29 +371,12 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let device = T::Authenticator::verify_device(attestation.clone())
             .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
 
-        DeviceConsiderations::<T, I>::try_mutate(address, |maybe_consideration| {
-            let (consideration, mut count) = match maybe_consideration {
-                Some(device_consideration) => device_consideration.clone(),
-                _ => (
-                    T::DeviceConsideration::new(address, Footprint::default())?,
-                    0,
-                ),
-            };
-
-            count.saturating_inc();
-            *maybe_consideration = Some((
-                consideration.update(
-                    address,
-                    Footprint {
-                        count,
-                        size: Footprint::from_mel::<DeviceOf<T, I>>().size,
-                    },
-                )?,
-                count,
-            ));
-
-            Ok::<_, DispatchError>(())
-        })?;
+        ConsiderationHandler::<
+            T::AccountId,
+            DeviceConsiderations<T, I>,
+            T::DeviceConsideration,
+            DeviceOf<T, I>,
+        >::increment(&address)?;
 
         Devices::<T, I>::insert(address, device_id, device);
 
@@ -449,31 +394,12 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Error::<T, I>::DeviceNotFound
         );
 
-        DeviceConsiderations::<T, I>::try_mutate(address, |maybe_consideration| {
-            let (consideration, mut count) = maybe_consideration.clone().unwrap_or((
-                T::DeviceConsideration::new(address, Footprint::default())?,
-                0,
-            ));
-
-            count.saturating_dec();
-            if count.gt(&0) {
-                *maybe_consideration = Some((
-                    consideration.update(
-                        address,
-                        Footprint {
-                            count,
-                            size: Footprint::from_mel::<DeviceOf<T, I>>().size,
-                        },
-                    )?,
-                    count,
-                ));
-            } else {
-                consideration.drop(address)?;
-                *maybe_consideration = None;
-            }
-
-            Ok::<_, DispatchError>(())
-        })?;
+        ConsiderationHandler::<
+            T::AccountId,
+            DeviceConsiderations<T, I>,
+            T::DeviceConsideration,
+            DeviceOf<T, I>,
+        >::decrement(&address)?;
 
         Devices::<T, I>::remove(address, id);
 
@@ -486,37 +412,18 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     }
 
     /// Removes a previously existing session. This is infallible.
-    fn try_remove_session(session_key: &T::AccountId) -> DispatchResult {
+    fn try_remove_session_key(session_key: &T::AccountId) -> DispatchResult {
         Self::cancel_scheduled_session_key_removal(session_key);
 
         if let Some(address) = &Self::pass_account_from_session_key(session_key) {
-            SessionConsiderations::<T, I>::try_mutate(address, |maybe_consideration| {
-                let (consideration, mut count) = maybe_consideration.clone().unwrap_or((
-                    T::SessionKeyConsideration::new(address, Footprint::default())?,
-                    0,
-                ));
+            ConsiderationHandler::<
+                T::AccountId,
+                SessionKeyConsiderations<T, I>,
+                T::SessionKeyConsideration,
+                T::AccountId,
+            >::decrement(&address)?;
 
-                count.saturating_dec();
-                if count.gt(&0) {
-                    *maybe_consideration = Some((
-                        consideration.update(
-                            address,
-                            Footprint {
-                                count,
-                                size: Footprint::from_mel::<T::AccountId>().size,
-                            },
-                        )?,
-                        count,
-                    ));
-                } else {
-                    consideration.drop(address)?;
-                    *maybe_consideration = None;
-                }
-
-                Ok::<_, DispatchError>(())
-            })?;
-
-            Sessions::<T, I>::remove(session_key);
+            SessionKeys::<T, I>::remove(session_key);
         }
 
         Ok(())

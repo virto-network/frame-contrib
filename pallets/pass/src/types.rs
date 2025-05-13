@@ -1,10 +1,22 @@
 use crate::Config;
-use codec::Decode;
-use frame_support::traits::{fungible::Inspect, Consideration, Footprint, MapSuccess};
+use codec::{Decode, EncodeLike};
+use core::marker::PhantomData;
+use fc_traits_authn::{
+    composite_prelude::{Encode, MaxEncodedLen, TypeInfo},
+    HashedUserId, HASHED_USER_ID_LEN,
+};
+use frame_support::{
+    dispatch::DispatchResult,
+    traits::{fungible::Inspect, Consideration, Footprint, MapSuccess},
+};
 use frame_system::EnsureSigned;
 use sp_core::TypedGet;
-use sp_runtime::traits::{Hash, TrailingZeroInput};
-use sp_runtime::{morph_types, traits::StaticLookup, DispatchError};
+use sp_runtime::{
+    morph_types,
+    traits::StaticLookup,
+    traits::{Hash, TrailingZeroInput},
+    DispatchError, Saturating,
+};
 
 // pub type HashedUserId<T> = <T as frame_system::Config>::Hash;
 pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
@@ -117,10 +129,58 @@ where
     }
 }
 
+pub struct ConsiderationHandler<A, S, C, T>(PhantomData<(A, S, C, T)>);
+
+impl<Account, Storage, Consideration, BlobType>
+    ConsiderationHandler<Account, Storage, Consideration, BlobType>
+where
+    Account: EncodeLike + MaxEncodedLen,
+    Consideration: frame_support::traits::Consideration<Account, Footprint>,
+    Storage: frame_support::StorageMap<
+        Account,
+        (Consideration, u64),
+        Query = Option<(Consideration, u64)>,
+    >,
+    BlobType: MaxEncodedLen,
+{
+    /// Makes a mutation on the consideration storage for an address
+    fn mutate_consideration(address: &Account, f: impl FnOnce(&mut u64)) -> DispatchResult {
+        Storage::try_mutate(address, |maybe_consideration| {
+            let (consideration, mut count) = match maybe_consideration {
+                Some(c) => c.to_owned(),
+                _ => (Consideration::new(address, Footprint::default())?, 0),
+            };
+
+            f(&mut count);
+
+            *maybe_consideration = Some((
+                consideration.update(
+                    address,
+                    Footprint {
+                        count,
+                        size: Footprint::from_mel::<BlobType>().size,
+                    },
+                )?,
+                count,
+            ));
+
+            Ok(())
+        })
+    }
+
+    /// Increments the consideration count for an address
+    pub fn increment(address: &Account) -> DispatchResult {
+        Self::mutate_consideration(address, u64::saturating_inc)
+    }
+
+    /// Decrements the consideration count for an address
+    pub fn decrement(address: &Account) -> DispatchResult {
+        Self::mutate_consideration(address, u64::saturating_dec)
+    }
+}
+
 #[cfg(feature = "runtime-benchmarks")]
 pub use benchmarks::BenchmarkHelper;
-use fc_traits_authn::composite_prelude::{Encode, MaxEncodedLen, TypeInfo};
-use fc_traits_authn::{HashedUserId, HASHED_USER_ID_LEN};
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks {
