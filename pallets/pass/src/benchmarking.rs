@@ -2,9 +2,17 @@ use super::*;
 use crate::{DeviceOf, Pallet};
 
 use frame_benchmarking::v2::*;
-use frame_support::{assert_ok, traits::OriginTrait};
+use frame_support::{
+    assert_ok,
+    dispatch::{DispatchInfo, GetDispatchInfo},
+    traits::OriginTrait,
+};
 use frame_system::RawOrigin;
-use sp_runtime::traits::Hash;
+use sp_core::blake2_256;
+use sp_runtime::traits::{
+    transaction_extension::DispatchTransaction, AsTransactionAuthorizedOrigin, DispatchInfoOf,
+    Hash, TxBaseImplication,
+};
 
 type RuntimeEventFor<T, I> = <T as Config<I>>::RuntimeEvent;
 
@@ -56,14 +64,15 @@ where
 
 #[instance_benchmarks(
 where
-    OriginFor<T>: From<frame_system::Origin<T>>,
     T::Hash: Into<HashedUserId>,
+    DispatchInfoOf<RuntimeCallFor<T>>: From<DispatchInfo>,
+    OriginFor<T>: From<frame_system::Origin<T>> + AsTransactionAuthorizedOrigin,
     RuntimeEventFor<T, I>: From<frame_system::Event<T>>,
 )]
 mod benchmarks {
     use super::*;
-    #[benchmark]
 
+    #[benchmark]
     pub fn register() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
@@ -104,13 +113,30 @@ mod benchmarks {
         let device_id = [0u8; 32];
         do_register::<T, I>(user_id, device_id)?;
 
+        let call: RuntimeCallFor<T> = frame_system::Call::remark {
+            remark: b"Hello, world".to_vec(),
+        }
+        .into();
+        let ext = PassAuthenticate::<T, I>::from(
+            device_id,
+            T::BenchmarkHelper::credential(
+                user_id,
+                &TxBaseImplication((0u8, call.clone())).using_encoded(blake2_256),
+            ),
+        );
+
         #[block]
         {
-            assert_ok!(Pallet::<T, I>::authenticate(
-                &device_id,
-                &T::BenchmarkHelper::credential(user_id, &[]),
-                &[]
-            ));
+            assert_ok!(ext
+                .validate_only(
+                    RawOrigin::None.into(),
+                    &call,
+                    &call.get_dispatch_info().into(),
+                    call.encoded_size(),
+                    TransactionSource::External,
+                    0
+                )
+                .map(|_| ()));
         }
 
         Ok(())
