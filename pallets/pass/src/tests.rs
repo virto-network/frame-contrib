@@ -108,7 +108,7 @@ mod register {
                         context: System::block_number(),
                         challenge: LastThreeBlocksChallenger::generate(
                             &System::block_number(),
-                            &[]
+                            &[1]
                         ),
                     }),
                 ),
@@ -762,7 +762,6 @@ mod dispatch {
     /// a device from the attacker).
     #[test]
     fn fail_if_credentials_are_reused() {
-        let _ = env_logger::init();
         new_test_ext().execute_with(|| {
             assert_ok!(Pass::register(
                 RuntimeOrigin::root(),

@@ -183,7 +183,6 @@ pub use benchmarks::BenchmarkHelper;
 mod benchmarks {
     use super::*;
     use fc_traits_authn::{ExtrinsicContext, HashedUserId};
-    use frame_system::pallet_prelude::OriginFor;
 
     #[cfg(feature = "runtime-benchmarks")]
     pub trait BenchmarkHelper<T, I = ()>
@@ -191,7 +190,6 @@ mod benchmarks {
         T: Config<I>,
         I: 'static,
     {
-        fn register_origin() -> OriginFor<T>;
         fn device_attestation(
             device_id: fc_traits_authn::DeviceId,
             xtc: &impl ExtrinsicContext,

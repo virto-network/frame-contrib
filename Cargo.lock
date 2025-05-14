@@ -71,13 +71,13 @@ version = "0.6.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8acc5369981196006228e28809f761875c0327210a891e941f4c683b3a99529b"
 dependencies = [
-  "anstyle",
-  "anstyle-parse",
-  "anstyle-query",
-  "anstyle-wincon",
-  "colorchoice",
-  "is_terminal_polyfill",
-  "utf8parse",
+ "anstyle",
+ "anstyle-parse",
+ "anstyle-query",
+ "anstyle-wincon",
+ "colorchoice",
+ "is_terminal_polyfill",
+ "utf8parse",
 ]
 
 [[package]]
@@ -92,7 +92,7 @@ version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b2d16507662817a6a20a9ea92df6652ee4f94f914589377d69f3b21bc5798a9"
 dependencies = [
-  "utf8parse",
+ "utf8parse",
 ]
 
 [[package]]
@@ -101,7 +101,7 @@ version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79947af37f4177cfead1110013d678905c37501914fba0efea834c3fe9a8d60c"
 dependencies = [
-  "windows-sys",
+ "windows-sys",
 ]
 
 [[package]]
@@ -110,9 +110,9 @@ version = "3.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3534e77181a9cc07539ad51f2141fe32f6c3ffd4df76db8ad92346b003ae4e"
 dependencies = [
-  "anstyle",
-  "once_cell",
-  "windows-sys",
+ "anstyle",
+ "once_cell",
+ "windows-sys",
 ]
 
 [[package]]
@@ -1099,8 +1099,8 @@ version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "186e05a59d4c50738528153b83b0b0194d3a29507dfec16eccd4b342903397d0"
 dependencies = [
-  "log",
-  "regex",
+ "log",
+ "regex",
 ]
 
 [[package]]
@@ -1109,11 +1109,11 @@ version = "0.11.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c863f0904021b108aa8b2f55046443e6b1ebde8fd4a15c399893aae4fa069f"
 dependencies = [
-  "anstream",
-  "anstyle",
-  "env_filter",
-  "jiff",
-  "log",
+ "anstream",
+ "anstyle",
+ "env_filter",
+ "jiff",
+ "log",
 ]
 
 [[package]]
@@ -1229,7 +1229,7 @@ dependencies = [
 name = "fc-pallet-pass"
 version = "1.0.0"
 dependencies = [
-  "env_logger",
+ "env_logger",
  "fc-traits-authn",
  "frame-benchmarking",
  "frame-support",
@@ -2060,11 +2060,11 @@ version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f02000660d30638906021176af16b17498bd0d12813dbfe7b276d8bc7f3c0806"
 dependencies = [
-  "jiff-static",
-  "log",
-  "portable-atomic",
-  "portable-atomic-util",
-  "serde",
+ "jiff-static",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde",
 ]
 
 [[package]]
@@ -2073,9 +2073,9 @@ version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3c30758ddd7188629c6713fc45d1188af4f44c90582311d0c8d8c9907f60c48"
 dependencies = [
-  "proc-macro2",
-  "quote",
-  "syn 2.0.101",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
 ]
 
 [[package]]
@@ -2871,7 +2871,7 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8a2f0d8d040d7848a709caf78912debcc3f33ee4b3cac47d73d1e1069e83507"
 dependencies = [
-  "portable-atomic",
+ "portable-atomic",
 ]
 
 [[package]]

@@ -195,7 +195,6 @@ pub mod pallet {
         },
         SessionRemoved {
             session_key: T::AccountId,
-            until: BlockNumberFor<T>,
         },
     }
 
@@ -427,6 +426,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             >::decrement(&address)?;
 
             SessionKeys::<T, I>::remove(session_key);
+
+            Self::deposit_event(Event::<T, I>::SessionRemoved {
+                session_key: session_key.clone(),
+            })
         }
 
         Ok(())
