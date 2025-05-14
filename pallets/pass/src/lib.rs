@@ -231,10 +231,10 @@ pub mod pallet {
                 RegistrarConsiderations<T, I>,
                 T::RegistrarConsideration,
                 HashedUserId,
-            >::increment(&registrar)?;
+            >::increment(registrar)?;
 
-            Self::create_account(&address)?;
-            Self::try_add_device(&address, attestation)
+            Self::create_account(address)?;
+            Self::try_add_device(address, attestation)
         }
 
         #[pallet::call_index(1)]
@@ -275,7 +275,7 @@ pub mod pallet {
                 SessionKeyConsiderations<T, I>,
                 T::SessionKeyConsideration,
                 T::AccountId,
-            >::increment(&address)?;
+            >::increment(address)?;
 
             // Let's try to remove an existing session that uses the same session key (if any). This is
             // so we ensure we decrease the provider counter correctly.
@@ -378,7 +378,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             DeviceConsiderations<T, I>,
             T::DeviceConsideration,
             DeviceOf<T, I>,
-        >::increment(&address)?;
+        >::increment(address)?;
 
         Devices::<T, I>::insert(address, device_id, device);
 
@@ -401,13 +401,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             DeviceConsiderations<T, I>,
             T::DeviceConsideration,
             DeviceOf<T, I>,
-        >::decrement(&address)?;
+        >::decrement(address)?;
 
         Devices::<T, I>::remove(address, id);
 
         Self::deposit_event(Event::<T, I>::DeviceRemoved {
             who: address.clone(),
-            device_id: id.clone(),
+            device_id: *id,
         });
 
         Ok(())
@@ -423,7 +423,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
                 SessionKeyConsiderations<T, I>,
                 T::SessionKeyConsideration,
                 T::AccountId,
-            >::decrement(&address)?;
+            >::decrement(address)?;
 
             SessionKeys::<T, I>::remove(session_key);
 
