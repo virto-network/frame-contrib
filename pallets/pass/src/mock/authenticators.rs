@@ -65,7 +65,7 @@ pub mod authenticator_a {
     impl Challenger for Authenticator {
         type Context = ();
 
-        fn generate(_: &Self::Context) -> Challenge {
+        fn generate(_: &Self::Context, _: &impl ExtrinsicContext) -> Challenge {
             let (hash, _) = RandomnessFromBlockNumber::random_seed();
             hash.0
         }
@@ -127,14 +127,18 @@ pub struct LastThreeBlocksChallenger;
 impl Challenger for LastThreeBlocksChallenger {
     type Context = BlockNumberFor<Test>;
 
-    fn check_challenge(cx: &Self::Context, challenge: &[u8]) -> Option<()> {
+    fn check_challenge(
+        cx: &Self::Context,
+        xtc: &impl ExtrinsicContext,
+        challenge: &[u8],
+    ) -> Option<()> {
         let block_number = System::block_number();
         let range = block_number.saturating_sub(3)..=block_number;
-        (range.contains(cx) && challenge.eq(&Self::generate(cx))).then_some(())
+        (range.contains(cx) && challenge.eq(&Self::generate(cx, xtc))).then_some(())
     }
 
-    fn generate(context: &Self::Context) -> Challenge {
-        let (hash, _) = RandomnessFromBlockNumber::random(&context.to_le_bytes());
+    fn generate(context: &Self::Context, xtc: &impl ExtrinsicContext) -> Challenge {
+        let (hash, _) = RandomnessFromBlockNumber::random(&(context, xtc.as_ref()).encode());
         hash.0
     }
 }

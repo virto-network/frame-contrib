@@ -49,7 +49,7 @@ mod register {
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
                             device_id: THE_DEVICE,
-                            challenge: authenticator_a::Authenticator::generate(&()),
+                            challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
                 ),
@@ -67,7 +67,7 @@ mod register {
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
                         device_id: THE_DEVICE,
-                        challenge: authenticator_a::Authenticator::generate(&()),
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
                     }
                 ),
             ));
@@ -81,7 +81,7 @@ mod register {
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
                             device_id: THE_DEVICE,
-                            challenge: authenticator_a::Authenticator::generate(&()),
+                            challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
                 ),
@@ -106,7 +106,10 @@ mod register {
                     PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                         device_id: THE_DEVICE,
                         context: System::block_number(),
-                        challenge: LastThreeBlocksChallenger::generate(&System::block_number()),
+                        challenge: LastThreeBlocksChallenger::generate(
+                            &System::block_number(),
+                            &[]
+                        ),
                     }),
                 ),
                 Error::<Test>::DeviceAttestationInvalid
@@ -131,7 +134,7 @@ mod register {
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
                         device_id: THE_DEVICE,
-                        challenge: authenticator_a::Authenticator::generate(&()),
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
                     }
                 ),
             ));
@@ -162,7 +165,7 @@ fn prepare(user_id: HashedUserId) -> sp_io::TestExternalities {
             PassDeviceAttestation::AuthenticatorAAuthenticator(
                 authenticator_a::DeviceAttestation {
                     device_id: THE_DEVICE,
-                    challenge: authenticator_a::Authenticator::generate(&()),
+                    challenge: authenticator_a::Authenticator::generate(&(), &[]),
                 }
             ),
         ));
@@ -184,8 +187,9 @@ mod authenticate {
                     &THE_DEVICE,
                     &PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                         user_id: AccountNameB::get(),
-                        challenge: authenticator_a::Authenticator::generate(&()),
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
                     }),
+                    &[]
                 ),
                 Error::<Test>::AccountNotFound
             );
@@ -200,8 +204,9 @@ mod authenticate {
                     &OTHER_DEVICE,
                     &PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                         user_id: AccountNameA::get(),
-                        challenge: authenticator_a::Authenticator::generate(&()),
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
                     }),
+                    &[]
                 ),
                 Error::<Test>::DeviceNotFound
             );
@@ -209,7 +214,7 @@ mod authenticate {
     }
 
     #[test]
-    fn fail_if_attestation_is_invalid() {
+    fn fail_if_challenge_validation_fails() {
         new_test_ext().execute_with(|| {
             assert_ok!(Pass::register(
                 RuntimeOrigin::root(),
@@ -217,18 +222,51 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number()),
+                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                 }),
             ));
 
             assert_noop!(
                 Pass::authenticate(
                     &THE_DEVICE,
+                    &PassCredential::AuthenticatorB(
+                        authenticator_b::Credential::new(
+                            AccountNameA::get(),
+                            System::block_number(),
+                            LastThreeBlocksChallenger::generate(&System::block_number(), &[])
+                        )
+                        .sign(&THE_DEVICE)
+                    ),
+                    &[1]
+                ),
+                Error::<Test>::CredentialInvalid
+            );
+        });
+    }
+
+    #[test]
+    fn fail_if_credentials_cannot_be_verified() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(Pass::register(
+                RuntimeOrigin::root(),
+                AccountNameA::get(),
+                PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                    device_id: THE_DEVICE,
+                    context: System::block_number(),
+                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                }),
+            ));
+
+            assert_noop!(
+                Pass::authenticate(
+                    &THE_DEVICE,
+                    // The credentials are not signed, therefore, are invalid
                     &PassCredential::AuthenticatorB(authenticator_b::Credential::new(
                         AccountNameA::get(),
                         System::block_number(),
-                        LastThreeBlocksChallenger::generate(&System::block_number())
+                        LastThreeBlocksChallenger::generate(&System::block_number(), &[])
                     )),
+                    &[]
                 ),
                 Error::<Test>::CredentialInvalid
             );
@@ -252,8 +290,9 @@ mod authenticate {
                 &THE_DEVICE,
                 &PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                     user_id: AccountNameA::get(),
-                    challenge: authenticator_a::Authenticator::generate(&()),
+                    challenge: authenticator_a::Authenticator::generate(&(), &[]),
                 }),
+                &[],
             ));
 
             Pass::try_add_device(
@@ -261,7 +300,7 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: OTHER_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number()),
+                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                 }),
             )
             .expect("adding device on an existing account works; qed");
@@ -273,10 +312,11 @@ mod authenticate {
                         authenticator_b::Credential::new(
                             AccountNameA::get(),
                             System::block_number(),
-                            LastThreeBlocksChallenger::generate(&System::block_number()),
+                            LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                         )
                         .sign(&OTHER_DEVICE)
                     ),
+                    &[],
                 ),
                 Error::<Test>::CredentialInvalid
             );
@@ -292,7 +332,7 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number()),
+                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                 }),
             ));
             assert_ok!(Pass::register(
@@ -301,7 +341,7 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: OTHER_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number()),
+                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                 }),
             ));
 
@@ -312,10 +352,11 @@ mod authenticate {
                         authenticator_b::Credential::new(
                             AccountNameA::get(),
                             System::block_number(),
-                            LastThreeBlocksChallenger::generate(&System::block_number()),
+                            LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                         )
                         .sign(&OTHER_DEVICE)
                     ),
+                    &[]
                 ),
                 Error::<Test>::CredentialInvalid
             );
@@ -332,7 +373,7 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number()),
+                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                 }),
             ));
 
@@ -340,15 +381,17 @@ mod authenticate {
                 authenticator_b::Credential::new(
                     AccountNameA::get(),
                     System::block_number(),
-                    LastThreeBlocksChallenger::generate(&System::block_number()),
+                    LastThreeBlocksChallenger::generate(&System::block_number(), &[1]),
                 )
                 .sign(&THE_DEVICE),
             );
 
-            assert_ok!(Pass::authenticate(&THE_DEVICE, credentials));
+            // Nonce: 1
+            assert_ok!(Pass::authenticate(&THE_DEVICE, credentials, &[1]));
 
+            // Nonce: 2
             assert_noop!(
-                Pass::authenticate(&THE_DEVICE, credentials),
+                Pass::authenticate(&THE_DEVICE, credentials, &[2]),
                 Error::<Test>::CredentialInvalid,
             );
         })
@@ -361,8 +404,9 @@ mod authenticate {
                 &THE_DEVICE,
                 &PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                     user_id: AccountNameA::get(),
-                    challenge: authenticator_a::Authenticator::generate(&()),
+                    challenge: authenticator_a::Authenticator::generate(&(), &[]),
                 }),
+                &[]
             ));
         });
     }
@@ -376,7 +420,7 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number()),
+                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                 }),
             ));
 
@@ -386,10 +430,11 @@ mod authenticate {
                     authenticator_b::Credential::new(
                         AccountNameA::get(),
                         System::block_number(),
-                        LastThreeBlocksChallenger::generate(&System::block_number()),
+                        LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                     )
                     .sign(&THE_DEVICE)
                 ),
+                &[],
             ));
         });
     }
@@ -412,7 +457,7 @@ mod add_device {
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
                             device_id: OTHER_DEVICE,
-                            challenge: authenticator_a::Authenticator::generate(&()),
+                            challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
                 ),
@@ -425,7 +470,7 @@ mod add_device {
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
                             device_id: OTHER_DEVICE,
-                            challenge: authenticator_a::Authenticator::generate(&()),
+                            challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
                 ),
@@ -443,7 +488,7 @@ mod add_device {
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
                             device_id: OTHER_DEVICE,
-                            challenge: authenticator_a::Authenticator::generate(&()),
+                            challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
                 ),
@@ -469,7 +514,7 @@ mod add_device {
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
                         device_id: OTHER_DEVICE,
-                        challenge: authenticator_a::Authenticator::generate(&()),
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
                     }
                 ),
             ));
@@ -572,6 +617,7 @@ mod dispatch {
     use super::*;
     use crate::SessionKeys;
     use frame_support::dispatch::GetDispatchInfo;
+    use sp_core::blake2_256;
     use sp_runtime::transaction_validity::InvalidTransaction;
 
     parameter_types! {
@@ -660,7 +706,7 @@ mod dispatch {
                     OTHER_DEVICE,
                     PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                         user_id: AccountNameB::get(),
-                        challenge: authenticator_a::Authenticator::generate(&())
+                        challenge: authenticator_a::Authenticator::generate(&(), &[])
                     }),
                     Call::get(),
                 ),
@@ -677,7 +723,7 @@ mod dispatch {
                     OTHER_DEVICE,
                     PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                         user_id: AccountNameA::get(),
-                        challenge: authenticator_a::Authenticator::generate(&())
+                        challenge: authenticator_a::Authenticator::generate(&(), &[])
                     }),
                     Call::get(),
                 ),
@@ -690,7 +736,7 @@ mod dispatch {
     fn fail_with_credentials_if_credential_invalid() {
         prepare(AccountNameA::get()).execute_with(|| {
             // On block 1
-            let challenge = authenticator_a::Authenticator::generate(&());
+            let challenge = authenticator_a::Authenticator::generate(&(), &[]);
 
             // On block 3
             run_to(3);
@@ -716,6 +762,7 @@ mod dispatch {
     /// a device from the attacker).
     #[test]
     fn fail_if_credentials_are_reused() {
+        let _ = env_logger::init();
         new_test_ext().execute_with(|| {
             assert_ok!(Pass::register(
                 RuntimeOrigin::root(),
@@ -723,16 +770,27 @@ mod dispatch {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number()),
+                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                 }),
             ));
             assert_ok!(Balances::mint_into(&Address::get(), Balance::MAX));
+
+            let extrinsic_context = (
+                0u8,                                                                   // extension_version_byte
+                Call::get(),                                                           // call
+                pallet_transaction_payment::ChargeTransactionPayment::<Test>::from(0), // transaction_extensions
+                (),                                                                    // implicit
+            )
+                .using_encoded(blake2_256);
 
             let credentials = PassCredential::AuthenticatorB(
                 authenticator_b::Credential::new(
                     AccountNameA::get(),
                     System::block_number(),
-                    LastThreeBlocksChallenger::generate(&System::block_number()),
+                    LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &extrinsic_context,
+                    ),
                 )
                 .sign(&THE_DEVICE),
             );
@@ -747,7 +805,7 @@ mod dispatch {
                         attestation: PassDeviceAttestation::AuthenticatorAAuthenticator(
                             authenticator_a::DeviceAttestation {
                                 device_id: OTHER_DEVICE,
-                                challenge: authenticator_a::Authenticator::generate(&())
+                                challenge: authenticator_a::Authenticator::generate(&(), &[])
                             }
                         )
                     }
@@ -767,7 +825,7 @@ mod dispatch {
                 THE_DEVICE,
                 PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                     user_id: AccountNameA::get(),
-                    challenge: authenticator_a::Authenticator::generate(&()),
+                    challenge: authenticator_a::Authenticator::generate(&(), &[]),
                 }),
                 Call::get(),
             ));
@@ -785,7 +843,7 @@ mod dispatch {
                 THE_DEVICE,
                 PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                     user_id: AccountNameA::get(),
-                    challenge: authenticator_a::Authenticator::generate(&()),
+                    challenge: authenticator_a::Authenticator::generate(&(), &[]),
                 }),
                 crate::Call::<Test>::add_session_key {
                     session: SIGNER,
@@ -806,7 +864,7 @@ mod dispatch {
                 THE_DEVICE,
                 PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
                     user_id: AccountNameA::get(),
-                    challenge: authenticator_a::Authenticator::generate(&()),
+                    challenge: authenticator_a::Authenticator::generate(&(), &[]),
                 }),
                 crate::Call::<Test>::add_session_key {
                     session: OTHER,

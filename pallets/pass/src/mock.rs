@@ -205,17 +205,20 @@ impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
         RuntimeOrigin::root()
     }
 
-    fn device_attestation(device_id: DeviceId) -> DeviceAttestationOf<Test, ()> {
+    fn device_attestation(
+        device_id: DeviceId,
+        xtc: &impl ExtrinsicContext,
+    ) -> DeviceAttestationOf<Test, ()> {
         PassDeviceAttestation::AuthenticatorAAuthenticator(authenticator_a::DeviceAttestation {
             device_id,
-            challenge: authenticator_a::Authenticator::generate(&()),
+            challenge: authenticator_a::Authenticator::generate(&(), xtc),
         })
     }
 
-    fn credential(user_id: HashedUserId) -> CredentialOf<Test, ()> {
+    fn credential(user_id: HashedUserId, xtc: &impl ExtrinsicContext) -> CredentialOf<Test, ()> {
         PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
             user_id,
-            challenge: authenticator_a::Authenticator::generate(&()),
+            challenge: authenticator_a::Authenticator::generate(&(), xtc),
         })
     }
 }

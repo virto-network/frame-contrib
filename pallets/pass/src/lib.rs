@@ -9,8 +9,8 @@ extern crate core;
 
 use core::fmt::Debug;
 use fc_traits_authn::{
-    util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId,
-    UserAuthenticator, UserChallengeResponse,
+    util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId,
+    ExtrinsicContext, HashedUserId, UserAuthenticator, UserChallengeResponse,
 };
 use frame_support::{
     pallet_prelude::*,
@@ -349,6 +349,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub(crate) fn authenticate(
         device_id: &DeviceId,
         credential: &CredentialOf<T, I>,
+        extrinsic_context: &impl ExtrinsicContext,
     ) -> Result<T::AccountId, DispatchError> {
         let address = T::AddressGenerator::generate_address(credential.user_id());
         ensure!(
@@ -358,7 +359,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let device =
             Devices::<T, I>::get(&address, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
         device
-            .verify_user(credential)
+            .verify_user(credential, extrinsic_context)
             .ok_or(Error::<T, I>::CredentialInvalid)?;
 
         Ok(address)
@@ -369,7 +370,8 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         attestation: DeviceAttestationOf<T, I>,
     ) -> DispatchResult {
         let device_id = attestation.device_id();
-        let device = T::Authenticator::verify_device(attestation.clone())
+        // Device attestations are considered "to be trusted", thus they don't require and extrinsic context.
+        let device = T::Authenticator::verify_device(attestation.clone(), &[])
             .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
 
         ConsiderationHandler::<

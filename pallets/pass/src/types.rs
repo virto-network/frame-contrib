@@ -182,7 +182,7 @@ pub use benchmarks::BenchmarkHelper;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks {
     use super::*;
-    use fc_traits_authn::HashedUserId;
+    use fc_traits_authn::{ExtrinsicContext, HashedUserId};
     use frame_system::pallet_prelude::OriginFor;
 
     #[cfg(feature = "runtime-benchmarks")]
@@ -192,7 +192,10 @@ mod benchmarks {
         I: 'static,
     {
         fn register_origin() -> OriginFor<T>;
-        fn device_attestation(device_id: fc_traits_authn::DeviceId) -> DeviceAttestationOf<T, I>;
-        fn credential(user_id: HashedUserId) -> CredentialOf<T, I>;
+        fn device_attestation(
+            device_id: fc_traits_authn::DeviceId,
+            xtc: &impl ExtrinsicContext,
+        ) -> DeviceAttestationOf<T, I>;
+        fn credential(user_id: HashedUserId, xtc: &impl ExtrinsicContext) -> CredentialOf<T, I>;
     }
 }
