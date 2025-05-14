@@ -5,6 +5,7 @@
 //! > TODO: Update with [spec](https://hackmd.io/@pandres95/pallet-pass) document once complete
 
 extern crate alloc;
+extern crate core;
 
 use core::fmt::Debug;
 use fc_traits_authn::{

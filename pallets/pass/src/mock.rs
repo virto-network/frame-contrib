@@ -122,7 +122,7 @@ parameter_types! {
 composite_authenticators! {
     pub Pass<AuthorityFromPalletId<PassPalletId>> {
         authenticator_a::Authenticator,
-        AuthenticatorB,
+        AuthenticatorB::<LastThreeBlocksChallenger>,
     };
 }
 
