@@ -92,7 +92,7 @@ pub mod dummy {
     use scale_info::TypeInfo;
 
     use crate::{
-        AuthorityId, Challenger, DeviceChallengeResponse, DeviceId, HashedUserId,
+        AuthorityId, Challenger, DeviceChallengeResponse, DeviceId, ExtrinsicContext, HashedUserId,
         UserChallengeResponse,
     };
 
@@ -149,7 +149,7 @@ pub mod dummy {
 
     impl Challenger for DummyChallenger {
         type Context = Self;
-        fn generate(cx: &Self::Context) -> crate::Challenge {
+        fn generate(cx: &Self::Context, _xtc: &impl ExtrinsicContext) -> crate::Challenge {
             [*cx; 32]
         }
     }
