@@ -99,6 +99,7 @@ pub mod dummy {
     use super::{Auth, Dev, VerifyCredential};
 
     #[derive(
+        Default,
         CloneNoBound,
         DebugNoBound,
         Encode,
@@ -110,11 +111,11 @@ pub mod dummy {
         EqNoBound,
     )]
     #[scale_info(skip_type_params(A))]
-    pub struct DummyAttestation<A>(bool, PhantomData<A>);
+    pub struct DummyAttestation<A>(bool, Option<DeviceId>, PhantomData<(A)>);
 
     impl<A> DummyAttestation<A> {
-        pub fn new(value: bool) -> Self {
-            Self(value, PhantomData)
+        pub fn new(value: bool, device_id: DeviceId) -> Self {
+            Self(value, Some(device_id), PhantomData)
         }
     }
 
@@ -130,11 +131,11 @@ pub mod dummy {
         EqNoBound,
     )]
     #[scale_info(skip_type_params(A))]
-    pub struct DummyCredential<A>(bool, PhantomData<A>);
+    pub struct DummyCredential<A>(bool, HashedUserId, PhantomData<A>);
 
     impl<A> DummyCredential<A> {
-        pub fn new(value: bool) -> Self {
-            Self(value, PhantomData)
+        pub fn new(value: bool, user_id: HashedUserId) -> Self {
+            Self(value, user_id, PhantomData)
         }
     }
 
@@ -170,7 +171,7 @@ pub mod dummy {
 
     impl<A> AsRef<DeviceId> for DummyAttestation<A> {
         fn as_ref(&self) -> &DeviceId {
-            &DUMMY_DEV
+            self.1.as_ref().unwrap_or(&DUMMY_DEV)
         }
     }
 
@@ -191,11 +192,11 @@ pub mod dummy {
         fn used_challenge(&self) -> (DummyCx, crate::Challenge) {
             (0, [0; 32])
         }
-        fn authority(&self) -> crate::AuthorityId {
+        fn authority(&self) -> AuthorityId {
             A::get()
         }
         fn device_id(&self) -> &DeviceId {
-            &DUMMY_DEV
+            self.1.as_ref().unwrap_or(&DUMMY_DEV)
         }
     }
 
@@ -215,8 +216,8 @@ pub mod dummy {
             A::get()
         }
 
-        fn user_id(&self) -> crate::HashedUserId {
-            DUMMY_USER
+        fn user_id(&self) -> HashedUserId {
+            self.1
         }
     }
 }
