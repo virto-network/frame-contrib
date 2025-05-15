@@ -1,4 +1,6 @@
 use crate::Config;
+
+use alloc::borrow::ToOwned;
 use codec::{Decode, EncodeLike};
 use core::marker::PhantomData;
 use fc_traits_authn::{
