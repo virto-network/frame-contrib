@@ -5,11 +5,12 @@
 //! > TODO: Update with [spec](https://hackmd.io/@pandres95/pallet-pass) document once complete
 
 extern crate alloc;
+extern crate core;
 
 use core::fmt::Debug;
 use fc_traits_authn::{
-    util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId, HashedUserId,
-    UserAuthenticator, UserChallengeResponse,
+    util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId,
+    ExtrinsicContext, HashedUserId, UserAuthenticator, UserChallengeResponse,
 };
 use frame_support::{
     pallet_prelude::*,
@@ -194,7 +195,6 @@ pub mod pallet {
         },
         SessionRemoved {
             session_key: T::AccountId,
-            until: BlockNumberFor<T>,
         },
     }
 
@@ -231,10 +231,10 @@ pub mod pallet {
                 RegistrarConsiderations<T, I>,
                 T::RegistrarConsideration,
                 HashedUserId,
-            >::increment(&registrar)?;
+            >::increment(registrar)?;
 
-            Self::create_account(&address)?;
-            Self::try_add_device(&address, attestation)
+            Self::create_account(address)?;
+            Self::try_add_device(address, attestation)
         }
 
         #[pallet::call_index(1)]
@@ -275,7 +275,7 @@ pub mod pallet {
                 SessionKeyConsiderations<T, I>,
                 T::SessionKeyConsideration,
                 T::AccountId,
-            >::increment(&address)?;
+            >::increment(address)?;
 
             // Let's try to remove an existing session that uses the same session key (if any). This is
             // so we ensure we decrease the provider counter correctly.
@@ -348,6 +348,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub(crate) fn authenticate(
         device_id: &DeviceId,
         credential: &CredentialOf<T, I>,
+        extrinsic_context: &impl ExtrinsicContext,
     ) -> Result<T::AccountId, DispatchError> {
         let address = T::AddressGenerator::generate_address(credential.user_id());
         ensure!(
@@ -357,7 +358,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let device =
             Devices::<T, I>::get(&address, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
         device
-            .verify_user(credential)
+            .verify_user(credential, extrinsic_context)
             .ok_or(Error::<T, I>::CredentialInvalid)?;
 
         Ok(address)
@@ -368,7 +369,8 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         attestation: DeviceAttestationOf<T, I>,
     ) -> DispatchResult {
         let device_id = attestation.device_id();
-        let device = T::Authenticator::verify_device(attestation.clone())
+        // Device attestations are considered "to be trusted", thus they don't require and extrinsic context.
+        let device = T::Authenticator::verify_device(attestation.clone(), &[])
             .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
 
         ConsiderationHandler::<
@@ -376,7 +378,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             DeviceConsiderations<T, I>,
             T::DeviceConsideration,
             DeviceOf<T, I>,
-        >::increment(&address)?;
+        >::increment(address)?;
 
         Devices::<T, I>::insert(address, device_id, device);
 
@@ -399,13 +401,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             DeviceConsiderations<T, I>,
             T::DeviceConsideration,
             DeviceOf<T, I>,
-        >::decrement(&address)?;
+        >::decrement(address)?;
 
         Devices::<T, I>::remove(address, id);
 
         Self::deposit_event(Event::<T, I>::DeviceRemoved {
             who: address.clone(),
-            device_id: id.clone(),
+            device_id: *id,
         });
 
         Ok(())
@@ -421,9 +423,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
                 SessionKeyConsiderations<T, I>,
                 T::SessionKeyConsideration,
                 T::AccountId,
-            >::decrement(&address)?;
+            >::decrement(address)?;
 
             SessionKeys::<T, I>::remove(session_key);
+
+            Self::deposit_event(Event::<T, I>::SessionRemoved {
+                session_key: session_key.clone(),
+            })
         }
 
         Ok(())

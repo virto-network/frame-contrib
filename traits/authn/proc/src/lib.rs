@@ -144,7 +144,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
     let match_attestations = authenticators.clone().into_iter().map(|(id, p)| {
         quote! {
             #device_attestation::#id(attestation) => {
-                #device::#id(#p::verify_device(attestation)?)
+                #device::#id(#p::verify_device(attestation, xtc)?)
             }
         }
     });
@@ -166,7 +166,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             (
                 #device::#id(device),
                 #credential::#id(credential),
-            ) => device.verify_user(credential)
+            ) => device.verify_user(credential, xtc)
         }
     });
 
@@ -216,7 +216,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             type DeviceAttestation = #device_attestation;
             type Device = #device;
 
-            fn verify_device(attestation: Self::DeviceAttestation) -> Option<Self::Device> {
+            fn verify_device(attestation: Self::DeviceAttestation, xtc: &impl ExtrinsicContext) -> Option<Self::Device> {
                 Some(match attestation {
                     #(#match_attestations),*
                 })
@@ -230,7 +230,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
         impl Challenger for #auth_struct {
             type Context = ();
 
-            fn generate(_: &Self::Context) -> Challenge {
+            fn generate(_: &Self::Context, _: &impl ExtrinsicContext) -> Challenge {
                 unimplemented!(
                     "This method should not be called, instead call inner `generate` on each challenger"
                 )
@@ -279,7 +279,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             type Challenger = #auth_struct;
             type Credential = #credential;
 
-            fn verify_user(&self, credential: &Self::Credential) -> Option<()> {
+            fn verify_user(&self, credential: &Self::Credential, xtc: &impl ExtrinsicContext) -> Option<()> {
                 match (self, credential) {
                     #(#match_verify_user),*,
                     _ => None,

@@ -1,13 +1,53 @@
 use super::*;
-use crate::Pallet;
+use crate::{DeviceOf, Pallet};
+
 use frame_benchmarking::v2::*;
-use frame_support::traits::OriginTrait;
-use sp_runtime::traits::Hash;
+use frame_support::{
+    assert_ok,
+    dispatch::{DispatchInfo, GetDispatchInfo},
+    traits::OriginTrait,
+};
+use frame_system::RawOrigin;
+use sp_core::blake2_256;
+use sp_runtime::traits::{
+    transaction_extension::DispatchTransaction, AsTransactionAuthorizedOrigin, DispatchInfoOf,
+    Hash, TxBaseImplication,
+};
 
 type RuntimeEventFor<T, I> = <T as Config<I>>::RuntimeEvent;
 
 fn assert_has_event<T: Config<I>, I: 'static>(generic_event: RuntimeEventFor<T, I>) {
     frame_system::Pallet::<T>::assert_has_event(generic_event.into());
+}
+
+fn prepare_register<T: Config<I>, I: 'static>(
+    hashed_user_id: HashedUserId,
+) -> Result<T::RuntimeOrigin, BenchmarkError> {
+    let origin = T::RegisterOrigin::try_successful_origin(&hashed_user_id)
+        .map_err(|_| DispatchError::BadOrigin)?;
+    let registrar_account_id = T::RegisterOrigin::ensure_origin(origin.clone(), &hashed_user_id)
+        .map_err(|_| DispatchError::BadOrigin)?;
+
+    T::RegistrarConsideration::ensure_successful(
+        &registrar_account_id,
+        Footprint::from_parts(1, HashedUserId::max_encoded_len()),
+    );
+
+    Ok(origin)
+}
+
+fn do_register<T: Config<I>, I: 'static>(
+    hashed_user_id: HashedUserId,
+    device_id: DeviceId,
+) -> Result<(), BenchmarkError> {
+    let origin = prepare_register::<T, I>(hashed_user_id)
+        .map_err(|_| BenchmarkError::Stop("Cannot prepare origin"))?;
+    Pallet::<T, I>::register(
+        origin,
+        hashed_user_id,
+        T::BenchmarkHelper::device_attestation(device_id, &[]),
+    )
+    .map_err(|_| BenchmarkError::Stop("Cannot register pass account"))
 }
 
 #[allow(dead_code)]
@@ -24,8 +64,9 @@ where
 
 #[instance_benchmarks(
 where
-    OriginFor<T>: From<frame_system::Origin<T>>,
     T::Hash: Into<HashedUserId>,
+    DispatchInfoOf<RuntimeCallFor<T>>: From<DispatchInfo>,
+    OriginFor<T>: From<frame_system::Origin<T>> + AsTransactionAuthorizedOrigin,
     RuntimeEventFor<T, I>: From<frame_system::Event<T>>,
 )]
 mod benchmarks {
@@ -34,8 +75,9 @@ mod benchmarks {
     #[benchmark]
     pub fn register() -> Result<(), BenchmarkError> {
         // Setup code
-        let origin = T::BenchmarkHelper::register_origin();
         let user_id = hash::<T>(b"my-account");
+        let origin = prepare_register::<T, I>(user_id)?;
+
         let account_id = Pallet::<T, I>::address_for(user_id);
         let device_id = [0u8; 32];
 
@@ -43,11 +85,187 @@ mod benchmarks {
         _(
             origin.into_caller(),
             user_id,
-            T::BenchmarkHelper::device_attestation(device_id),
+            T::BenchmarkHelper::device_attestation(device_id, &[]),
         );
 
         // Verification code
-        assert_has_event::<T, I>(Event::Registered { who: account_id }.into());
+        assert_has_event::<T, I>(
+            Event::Registered {
+                who: account_id.clone(),
+            }
+            .into(),
+        );
+        assert_has_event::<T, I>(
+            Event::DeviceAdded {
+                who: account_id,
+                device_id,
+            }
+            .into(),
+        );
+
+        Ok(())
+    }
+
+    #[benchmark]
+    pub fn authenticate() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let device_id = [0u8; 32];
+        do_register::<T, I>(user_id, device_id)?;
+
+        let call: RuntimeCallFor<T> = frame_system::Call::remark {
+            remark: b"Hello, world".to_vec(),
+        }
+        .into();
+        let ext = PassAuthenticate::<T, I>::from(
+            device_id,
+            T::BenchmarkHelper::credential(
+                user_id,
+                &TxBaseImplication((0u8, call.clone())).using_encoded(blake2_256),
+            ),
+        );
+
+        #[block]
+        {
+            assert_ok!(ext
+                .validate_only(
+                    RawOrigin::None.into(),
+                    &call,
+                    &call.get_dispatch_info().into(),
+                    call.encoded_size(),
+                    TransactionSource::External,
+                    0
+                )
+                .map(|_| ()));
+        }
+
+        Ok(())
+    }
+
+    #[benchmark]
+    pub fn add_device() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let device_id = [0u8; 32];
+        do_register::<T, I>(user_id, device_id)?;
+
+        let address = Pallet::<T, I>::address_for(user_id);
+        let new_device_id = [1u8; 32];
+        T::DeviceConsideration::ensure_successful(
+            &address,
+            Footprint::from_parts(2, DeviceOf::<T, I>::max_encoded_len()),
+        );
+
+        #[extrinsic_call]
+        _(
+            RawOrigin::Signed(address.clone()),
+            T::BenchmarkHelper::device_attestation(new_device_id, &[]),
+        );
+
+        // Verification code
+        assert_has_event::<T, I>(
+            Event::DeviceAdded {
+                who: address,
+                device_id: new_device_id,
+            }
+            .into(),
+        );
+
+        Ok(())
+    }
+
+    #[benchmark]
+    pub fn remove_device() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let device_id = [0u8; 32];
+        do_register::<T, I>(user_id, device_id)?;
+
+        let address = Pallet::<T, I>::address_for(user_id);
+        let new_device_id = [1u8; 32];
+        T::DeviceConsideration::ensure_successful(
+            &address,
+            Footprint::from_parts(2, DeviceOf::<T, I>::max_encoded_len()),
+        );
+
+        Pallet::<T, I>::add_device(
+            RawOrigin::Signed(address.clone()).into(),
+            T::BenchmarkHelper::device_attestation(new_device_id, &[]),
+        )?;
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(address.clone()), new_device_id);
+
+        // Verification code
+        assert_has_event::<T, I>(
+            Event::DeviceRemoved {
+                who: address,
+                device_id: new_device_id,
+            }
+            .into(),
+        );
+
+        Ok(())
+    }
+
+    #[benchmark]
+    pub fn add_session_key() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let device_id = [0u8; 32];
+        do_register::<T, I>(user_id, device_id)?;
+
+        let address = Pallet::<T, I>::address_for(user_id);
+        let new_session_key: T::AccountId = account("session-key", 0, 0);
+        T::DeviceConsideration::ensure_successful(
+            &address,
+            Footprint::from_parts(2, T::AccountId::max_encoded_len()),
+        );
+
+        #[extrinsic_call]
+        _(
+            RawOrigin::Signed(address.clone()),
+            T::Lookup::unlookup(new_session_key.clone()),
+            None,
+        );
+
+        // Verification code
+        assert_has_event::<T, I>(
+            Event::SessionCreated {
+                session_key: new_session_key,
+                until: T::MaxSessionDuration::get(),
+            }
+            .into(),
+        );
+
+        Ok(())
+    }
+
+    #[benchmark]
+    pub fn remove_session_key() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let device_id = [0u8; 32];
+        do_register::<T, I>(user_id, device_id)?;
+
+        let address = Pallet::<T, I>::address_for(user_id);
+        let session_key: T::AccountId = account("session-key", 0, 0);
+        T::DeviceConsideration::ensure_successful(
+            &address,
+            Footprint::from_parts(2, T::AccountId::max_encoded_len()),
+        );
+
+        Pallet::<T, I>::add_session_key(
+            RawOrigin::Signed(address.clone()).into(),
+            T::Lookup::unlookup(session_key.clone()),
+            None,
+        )?;
+
+        #[extrinsic_call]
+        _(RawOrigin::Root, session_key.clone());
+
+        // Verification code
+        assert_has_event::<T, I>(Event::SessionRemoved { session_key }.into());
 
         Ok(())
     }

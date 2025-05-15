@@ -1,6 +1,7 @@
 use super::*;
 use fc_traits_authn::{util::AuthorityFromPalletId, *};
 use frame_support::traits::Randomness;
+use frame_system::pallet_prelude::BlockNumberFor;
 use sp_core::Get;
 
 pub use authenticator_b::AuthenticatorB;
@@ -64,7 +65,7 @@ pub mod authenticator_a {
     impl Challenger for Authenticator {
         type Context = ();
 
-        fn generate(_: &Self::Context) -> Challenge {
+        fn generate(_: &Self::Context, _: &impl ExtrinsicContext) -> Challenge {
             let (hash, _) = RandomnessFromBlockNumber::random_seed();
             hash.0
         }
@@ -122,38 +123,63 @@ pub mod authenticator_a {
     }
 }
 
+pub struct LastThreeBlocksChallenger;
+impl Challenger for LastThreeBlocksChallenger {
+    type Context = BlockNumberFor<Test>;
+
+    fn check_challenge(
+        cx: &Self::Context,
+        xtc: &impl ExtrinsicContext,
+        challenge: &[u8],
+    ) -> Option<()> {
+        let block_number = System::block_number();
+        let range = block_number.saturating_sub(3)..=block_number;
+        (range.contains(cx) && challenge.eq(&Self::generate(cx, xtc))).then_some(())
+    }
+
+    fn generate(context: &Self::Context, xtc: &impl ExtrinsicContext) -> Challenge {
+        let (hash, _) = RandomnessFromBlockNumber::random(&(context, xtc.as_ref()).encode());
+        hash.0
+    }
+}
+
 pub mod authenticator_b {
     use super::*;
     use codec::DecodeWithMemTracking;
+    use core::marker::PhantomData;
+    use frame_support::Parameter;
 
-    pub struct AuthenticatorB;
+    type CxOf<Ch> = <Ch as Challenger>::Context;
 
-    #[derive(
-        TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
-    )]
-    pub struct DeviceAttestation {
+    pub struct AuthenticatorB<C>(PhantomData<C>);
+
+    #[derive(TypeInfo, Debug, Eq, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking)]
+    pub struct DeviceAttestation<Cx> {
         pub(crate) device_id: DeviceId,
+        pub(crate) context: Cx,
         pub(crate) challenge: Challenge,
     }
 
     #[derive(TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen)]
-    pub struct Device {
+    #[scale_info(skip_type_params(C))]
+    pub struct Device<C> {
         pub(crate) device_id: DeviceId,
+        _data: PhantomData<C>,
     }
 
-    #[derive(
-        TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
-    )]
-    pub struct Credential {
+    #[derive(TypeInfo, Debug, Eq, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking)]
+    pub struct Credential<Cx> {
         pub(crate) user_id: HashedUserId,
+        pub(crate) context: Cx,
         pub(crate) challenge: Challenge,
         pub(crate) signature: Option<[u8; 32]>,
     }
 
-    impl Credential {
-        pub fn new(user_id: HashedUserId, challenge: Challenge) -> Self {
+    impl<Cx> Credential<Cx> {
+        pub fn new(user_id: HashedUserId, context: Cx, challenge: Challenge) -> Self {
             Self {
                 user_id,
+                context,
                 challenge,
                 signature: None,
             }
@@ -172,32 +198,31 @@ pub mod authenticator_b {
         }
     }
 
-    impl Authenticator for AuthenticatorB {
+    impl<C: Challenger + 'static> Authenticator for AuthenticatorB<C>
+    where
+        CxOf<C>: Parameter + Send + Sync + Copy + 'static,
+    {
         type Authority = PassAuthorityId;
-        type Challenger = Self;
-        type DeviceAttestation = DeviceAttestation;
-        type Device = Device;
+        type Challenger = C;
+        type DeviceAttestation = DeviceAttestation<CxOf<C>>;
+        type Device = Device<C>;
 
         fn unpack_device(attestation: Self::DeviceAttestation) -> Self::Device {
             Device {
                 device_id: attestation.device_id,
+                _data: PhantomData,
             }
         }
     }
 
-    impl Challenger for AuthenticatorB {
-        type Context = DeviceId;
-
-        fn generate(context: &Self::Context) -> Challenge {
-            let (hash, _) = RandomnessFromBlockNumber::random(context);
-            hash.0
-        }
-    }
-
-    impl UserAuthenticator for Device {
+    impl<C> UserAuthenticator for Device<C>
+    where
+        C: Challenger + 'static,
+        CxOf<C>: Parameter + Send + Sync + Copy + 'static,
+    {
         type Authority = PassAuthorityId;
-        type Challenger = AuthenticatorB;
-        type Credential = Credential;
+        type Challenger = C;
+        type Credential = Credential<CxOf<C>>;
 
         fn verify_credential(&self, credential: &Self::Credential) -> Option<()> {
             credential.signature.and_then(|signature| {
@@ -212,13 +237,16 @@ pub mod authenticator_b {
         }
     }
 
-    impl DeviceChallengeResponse<DeviceId> for DeviceAttestation {
+    impl<Cx> DeviceChallengeResponse<Cx> for DeviceAttestation<Cx>
+    where
+        Cx: Parameter + Copy + 'static,
+    {
         fn is_valid(&self) -> bool {
             true
         }
 
-        fn used_challenge(&self) -> (DeviceId, Challenge) {
-            (self.device_id, self.challenge)
+        fn used_challenge(&self) -> (Cx, Challenge) {
+            (self.context, self.challenge)
         }
 
         fn authority(&self) -> AuthorityId {
@@ -230,13 +258,16 @@ pub mod authenticator_b {
         }
     }
 
-    impl UserChallengeResponse<DeviceId> for Credential {
+    impl<Cx> UserChallengeResponse<Cx> for Credential<Cx>
+    where
+        Cx: Parameter + Copy + 'static,
+    {
         fn is_valid(&self) -> bool {
             self.signature.is_some()
         }
 
-        fn used_challenge(&self) -> (DeviceId, Challenge) {
-            (self.user_id, self.challenge)
+        fn used_challenge(&self) -> (Cx, Challenge) {
+            (self.context, self.challenge)
         }
 
         fn authority(&self) -> AuthorityId {

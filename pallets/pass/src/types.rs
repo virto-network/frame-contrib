@@ -158,10 +158,7 @@ where
             *maybe_consideration = Some((
                 consideration.update(
                     address,
-                    Footprint {
-                        count,
-                        size: Footprint::from_mel::<BlobType>().size,
-                    },
+                    Footprint::from_parts(count as usize, BlobType::max_encoded_len()),
                 )?,
                 count,
             ));
@@ -187,8 +184,7 @@ pub use benchmarks::BenchmarkHelper;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks {
     use super::*;
-    use fc_traits_authn::HashedUserId;
-    use frame_system::pallet_prelude::OriginFor;
+    use fc_traits_authn::{ExtrinsicContext, HashedUserId};
 
     #[cfg(feature = "runtime-benchmarks")]
     pub trait BenchmarkHelper<T, I = ()>
@@ -196,8 +192,10 @@ mod benchmarks {
         T: Config<I>,
         I: 'static,
     {
-        fn register_origin() -> OriginFor<T>;
-        fn device_attestation(device_id: fc_traits_authn::DeviceId) -> DeviceAttestationOf<T, I>;
-        fn credential(user_id: HashedUserId) -> CredentialOf<T, I>;
+        fn device_attestation(
+            device_id: fc_traits_authn::DeviceId,
+            xtc: &impl ExtrinsicContext,
+        ) -> DeviceAttestationOf<T, I>;
+        fn credential(user_id: HashedUserId, xtc: &impl ExtrinsicContext) -> CredentialOf<T, I>;
     }
 }

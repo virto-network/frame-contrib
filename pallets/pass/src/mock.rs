@@ -122,7 +122,7 @@ parameter_types! {
 composite_authenticators! {
     pub Pass<AuthorityFromPalletId<PassPalletId>> {
         authenticator_a::Authenticator,
-        AuthenticatorB,
+        AuthenticatorB::<LastThreeBlocksChallenger>,
     };
 }
 
@@ -188,35 +188,36 @@ impl Config for Test {
     type PalletId = PassPalletId;
     type MaxSessionDuration = ConstU64<10>;
     #[cfg(feature = "runtime-benchmarks")]
-    type BenchmarkHelper = BenchmarkHelper;
+    type BenchmarkHelper = benchmarks::BenchmarkHelper;
 }
 
 #[cfg(feature = "runtime-benchmarks")]
-use frame_system::pallet_prelude::OriginFor;
-#[cfg(feature = "runtime-benchmarks")]
-use pallet_pass::{CredentialOf, DeviceAttestationOf};
+mod benchmarks {
+    use super::*;
+    use pallet_pass::{CredentialOf, DeviceAttestationOf};
 
-#[cfg(feature = "runtime-benchmarks")]
-pub struct BenchmarkHelper;
+    pub struct BenchmarkHelper;
 
-#[cfg(feature = "runtime-benchmarks")]
-impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
-    fn register_origin() -> OriginFor<Test> {
-        RuntimeOrigin::root()
-    }
+    impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
+        fn device_attestation(
+            device_id: DeviceId,
+            xtc: &impl ExtrinsicContext,
+        ) -> DeviceAttestationOf<Test, ()> {
+            PassDeviceAttestation::AuthenticatorAAuthenticator(authenticator_a::DeviceAttestation {
+                device_id,
+                challenge: authenticator_a::Authenticator::generate(&(), xtc),
+            })
+        }
 
-    fn device_attestation(device_id: DeviceId) -> DeviceAttestationOf<Test, ()> {
-        PassDeviceAttestation::AuthenticatorAAuthenticator(authenticator_a::DeviceAttestation {
-            device_id,
-            challenge: authenticator_a::Authenticator::generate(&()),
-        })
-    }
-
-    fn credential(user_id: HashedUserId) -> CredentialOf<Test, ()> {
-        PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
-            user_id,
-            challenge: authenticator_a::Authenticator::generate(&()),
-        })
+        fn credential(
+            user_id: HashedUserId,
+            xtc: &impl ExtrinsicContext,
+        ) -> CredentialOf<Test, ()> {
+            PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                user_id,
+                challenge: authenticator_a::Authenticator::generate(&(), xtc),
+            })
+        }
     }
 }
 

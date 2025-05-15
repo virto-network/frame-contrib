@@ -8,6 +8,7 @@ use frame_support::{
 };
 use frame_system::{ensure_signed, pallet_prelude::RuntimeCallFor};
 use scale_info::TypeInfo;
+use sp_core::blake2_256;
 use sp_runtime::{
     traits::{DispatchInfoOf, DispatchOriginOf, Implication, TransactionExtension, ValidateResult},
     transaction_validity::{InvalidTransaction, TransactionSource, ValidTransaction},
@@ -81,13 +82,17 @@ where
         _info: &DispatchInfoOf<RuntimeCallFor<T>>,
         _len: usize,
         _self_implicit: Self::Implicit,
-        _inherited_implication: &impl Implication,
+        inherited_implication: &impl Implication,
         _source: TransactionSource,
     ) -> ValidateResult<Self::Val, RuntimeCallFor<T>> {
         let origin = if let Some(params) = &self.0 {
-            Pallet::<T, I>::authenticate(&params.device_id, &params.credential)
-                .map(|address| RawOrigin::Signed(address).into())
-                .map_err(|_| InvalidTransaction::BadSigner.into())
+            Pallet::<T, I>::authenticate(
+                &params.device_id,
+                &params.credential,
+                &inherited_implication.using_encoded(blake2_256),
+            )
+            .map(|address| RawOrigin::Signed(address).into())
+            .map_err(|_| InvalidTransaction::BadSigner.into())
         } else {
             // If we're not attempting to authenticate, let's check if the origin is signed, and is
             // maybe an existing session key. Given that, we'll pass the actual `pass_account_id`.
