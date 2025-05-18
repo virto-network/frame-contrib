@@ -50,8 +50,8 @@ pub type HashedUserId = [u8; HASHED_USER_ID_LEN];
 
 /// An extrinsic context, provided by the Authenticator verification call. The type cannot be
 /// known by the challenger implementation, so the content would be handled as a slice of bytes.
-pub trait ExtrinsicContext: AsRef<[u8]> {}
-impl<T> ExtrinsicContext for T where T: AsRef<[u8]> {}
+pub trait ExtrinsicContext: AsRef<[u8]> + core::fmt::Debug {}
+impl<T> ExtrinsicContext for T where T: AsRef<[u8]> + core::fmt::Debug {}
 
 /// Given some context it deterministically generates a "challenge" used by authenticators
 pub trait Challenger {
@@ -90,7 +90,7 @@ pub trait Authenticator {
         log::trace!(target: LOG_TARGET, "Authority verified");
 
         let (cx, challenge) = &attestation.used_challenge();
-        log::trace!(target: LOG_TARGET, "Check challenge {:?}", challenge);
+        log::trace!(target: LOG_TARGET, "Check challenge {:?} (with cx={cx:?}, xtc={xtc:?})", challenge);
         Self::Challenger::check_challenge(cx, xtc, challenge)?;
         log::trace!(target: LOG_TARGET, "Challenge checked");
 
