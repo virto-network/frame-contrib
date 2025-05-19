@@ -1,6 +1,8 @@
+use super::*;
+
 use crate::{CommunityDecisionMethod, Config};
 use frame_contrib_traits::memberships::{Inspect, Rank};
-use frame_support::pallet_prelude::*;
+
 use frame_support::traits::{
     fungible::{self, Inspect as FunInspect},
     fungibles::{self, Inspect as FunsInspect},
@@ -20,10 +22,12 @@ pub type DecisionMethodFor<T> = DecisionMethod<AssetIdOf<T>, AssetBalanceOf<T>>;
 pub type PollIndexOf<T> = <<T as Config>::Polls as Polling<Tally<T>>>::Index;
 pub type AccountIdLookupOf<T> = <<T as frame_system::Config>::Lookup as StaticLookup>::Source;
 pub type PalletsOriginOf<T> =
-<<T as frame_system::Config>::RuntimeOrigin as frame_support::traits::OriginTrait>::PalletsOrigin;
+    <<T as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin;
 pub type MembershipIdOf<T> = <T as Config>::MembershipId;
 pub type RuntimeCallFor<T> = <T as Config>::RuntimeCall;
 pub type RuntimeOriginFor<T> = <T as Config>::RuntimeOrigin;
+pub type BlockNumberFor<T> =
+    <<T as Config>::BlockNumberProvider as BlockNumberProvider>::BlockNumber;
 
 #[cfg(feature = "runtime-benchmarks")]
 pub type BenchmarkHelperOf<T> = <T as Config>::BenchmarkHelper;

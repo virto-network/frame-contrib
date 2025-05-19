@@ -3,8 +3,8 @@ use super::*;
 
 use self::{
     types::{
-        AccountIdOf, AssetIdOf, CommunityIdOf, DecisionMethodFor, MembershipIdOf, NativeBalanceOf,
-        PalletsOriginOf, PollIndexOf, RuntimeCallFor, Vote,
+        AccountIdOf, AssetIdOf, BlockNumberFor, CommunityIdOf, DecisionMethodFor, MembershipIdOf,
+        NativeBalanceOf, PalletsOriginOf, PollIndexOf, RuntimeCallFor, Vote,
     },
     CommunityDecisionMethod, DecisionMethod, Event, FreezeReason, Pallet as Communities,
 };
@@ -15,10 +15,7 @@ use frame_support::traits::{
     fungibles::Mutate as FunsMutate,
     OriginTrait,
 };
-use frame_system::{
-    pallet_prelude::{BlockNumberFor, OriginFor},
-    RawOrigin,
-};
+use frame_system::{pallet_prelude::OriginFor, RawOrigin};
 use sp_runtime::traits::{Hash, StaticLookup};
 
 type RuntimeEventFor<T> = <T as Config>::RuntimeEvent;

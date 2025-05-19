@@ -111,7 +111,7 @@ pub mod dummy {
         EqNoBound,
     )]
     #[scale_info(skip_type_params(A))]
-    pub struct DummyAttestation<A>(bool, Option<DeviceId>, PhantomData<(A)>);
+    pub struct DummyAttestation<A>(bool, Option<DeviceId>, PhantomData<A>);
 
     impl<A> DummyAttestation<A> {
         pub fn new(value: bool, device_id: DeviceId) -> Self {

@@ -114,18 +114,18 @@
 
 extern crate alloc;
 
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use core::num::NonZeroU8;
 use frame_contrib_traits::memberships::{self as membership, Inspect, Manager, Rank};
 use frame_support::{
-    dispatch::{DispatchResultWithPostInfo, GetDispatchInfo, PostDispatchInfo},
+    dispatch::{GetDispatchInfo, PostDispatchInfo},
     pallet_prelude::*,
     traits::{fungible, fungibles, EnsureOrigin, IsSubType, OriginTrait, Polling},
     Blake2_128Concat, Parameter,
 };
-use frame_system::pallet_prelude::{ensure_signed, BlockNumberFor, OriginFor};
+use frame_system::pallet_prelude::{ensure_signed, OriginFor};
 use sp_runtime::traits::AccountIdConversion;
-use sp_runtime::traits::{Dispatchable, StaticLookup};
+use sp_runtime::traits::{BlockNumberProvider, Dispatchable, StaticLookup};
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
@@ -164,14 +164,57 @@ pub mod pallet {
     where
         AssetIdOf<Self>: MaybeSerializeDeserialize,
     {
+        // Primitives: Some overarching types that come from the system (or the system depends on).
+
+        /// Because this pallet emits events, it depends on the runtime's
+        /// definition of an event.
+        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+        /// The `RuntimeOrigin` type used by dispatchable calls.
+        type RuntimeOrigin: Into<Result<frame_system::Origin<Self>, RuntimeOriginFor<Self>>>
+            + From<frame_system::Origin<Self>>
+            + From<Origin<Self>>
+            + Clone
+            + OriginTrait<
+                Call = RuntimeCallFor<Self>,
+                AccountId = Self::AccountId,
+                PalletsOrigin = PalletsOriginOf<Self>,
+            >;
+        /// The overarching call type.
+        type RuntimeCall: Parameter
+            + Dispatchable<RuntimeOrigin = RuntimeOriginFor<Self>, PostInfo = PostDispatchInfo>
+            + GetDispatchInfo
+            + From<Call<Self>>
+            + From<frame_system::Call<Self>>
+            + IsSubType<Call<Self>>
+            + IsType<<Self as frame_system::Config>::RuntimeCall>;
+        /// The overarching freeze reason.
+        type RuntimeFreezeReason: From<FreezeReason>;
+        /// Type representing the weight of this pallet
+        type WeightInfo: WeightInfo;
+
+        // Origins: Types that manage authorization rules to allow or deny some caller origins to
+        // execute a method.
+        /// Origin authorized to create a new community.
+        type CreateOrigin: EnsureOrigin<
+            OriginFor<Self>,
+            Success = Option<(NativeBalanceOf<Self>, AccountIdOf<Self>, AccountIdOf<Self>)>,
+        >;
+        /// Origin authorized to administer an active community
+        type AdminOrigin: EnsureOrigin<OriginFor<Self>, Success = Self::CommunityId>;
+        /// Origin authorized to manage memeberships of an active community
+        type MemberMgmtOrigin: EnsureOrigin<OriginFor<Self>, Success = Self::CommunityId>;
+
+        // Types: A set of parameter types that the pallet uses to handle information.
+
         /// This type represents an unique ID for the community
         type CommunityId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
-
         /// This type represents an unique ID to identify a membership within a
         /// community
         type MembershipId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
-
+        /// The configuration of a membership item. Necessary for the effects of mutating and transferring membership items.
         type ItemConfig: Default;
+
+        // Dependencies: The external components this pallet depends on.
 
         /// Means to manage memberships of a community
         type MemberMgmt: Inspect<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>
@@ -186,18 +229,7 @@ pub mod pallet {
                 Group = CommunityIdOf<Self>,
                 Membership = MembershipIdOf<Self>,
             >;
-
-        type CreateOrigin: EnsureOrigin<
-            OriginFor<Self>,
-            Success = Option<(NativeBalanceOf<Self>, AccountIdOf<Self>, AccountIdOf<Self>)>,
-        >;
-
-        /// Origin authorized to administer an active community
-        type AdminOrigin: EnsureOrigin<OriginFor<Self>, Success = Self::CommunityId>;
-
-        /// Origin authorized to manage memeberships of an active community
-        type MemberMgmtOrigin: EnsureOrigin<OriginFor<Self>, Success = Self::CommunityId>;
-
+        /// Means to read and mutate the state of a poll.
         type Polls: Polling<
             Tally<Self>,
             Class = CommunityIdOf<Self>,
@@ -205,12 +237,10 @@ pub mod pallet {
             Votes = VoteWeight,
             Moment = BlockNumberFor<Self>,
         >;
-
         /// Type represents interactions between fungibles (i.e. assets)
         type Assets: fungibles::Inspect<Self::AccountId, Balance = NativeBalanceOf<Self>>
             + fungibles::Mutate<Self::AccountId>
             + fungibles::Create<Self::AccountId>;
-
         /// Type allows for handling fungibles' freezes
         type AssetsFreezer: fungibles::Inspect<
                 Self::AccountId,
@@ -225,46 +255,21 @@ pub mod pallet {
                 Id = Self::RuntimeFreezeReason,
                 AssetId = AssetIdOf<Self>,
             >;
-
         /// Type represents interactions between fungible tokens (native token)
         type Balances: fungible::Inspect<Self::AccountId>
             + fungible::Mutate<Self::AccountId>
             + fungible::freeze::Inspect<Self::AccountId, Id = Self::RuntimeFreezeReason>
             + fungible::freeze::Mutate<Self::AccountId, Id = Self::RuntimeFreezeReason>;
+        /// Component that provides the current block number.
+        type BlockNumberProvider: BlockNumberProvider;
 
-        /// The overarching call type.
-        type RuntimeCall: Parameter
-            + Dispatchable<RuntimeOrigin = RuntimeOriginFor<Self>, PostInfo = PostDispatchInfo>
-            + GetDispatchInfo
-            + From<Call<Self>>
-            + From<frame_system::Call<Self>>
-            + IsSubType<Call<Self>>
-            + IsType<<Self as frame_system::Config>::RuntimeCall>;
-
-        /// The `RuntimeOrigin` type used by dispatchable calls.
-        type RuntimeOrigin: Into<Result<frame_system::Origin<Self>, RuntimeOriginFor<Self>>>
-            + From<frame_system::Origin<Self>>
-            + From<Origin<Self>>
-            + Clone
-            + OriginTrait<
-                Call = RuntimeCallFor<Self>,
-                AccountId = Self::AccountId,
-                PalletsOrigin = PalletsOriginOf<Self>,
-            >;
-
-        /// The overarching freeze reason.
-        type RuntimeFreezeReason: From<FreezeReason>;
-
-        /// Because this pallet emits events, it depends on the runtime's
-        /// definition of an event.
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
-        /// Type representing the weight of this pallet
-        type WeightInfo: WeightInfo;
+        // Parameters: A set of constant parameters to configure limits.
 
         /// The pallet id used for deriving sovereign account IDs.
         #[pallet::constant]
         type PalletId: Get<frame_support::PalletId>;
+
+        // Benchmarking: Types to handle benchmarks.
 
         #[cfg(feature = "runtime-benchmarks")]
         type BenchmarkHelper: BenchmarkHelper<Self>;
@@ -596,7 +601,7 @@ pub mod pallet {
         }
 
         /// Make previously held or locked funds from a vote available
-        // if the refereundum  has finished
+        // if the refereundum has finished
         #[pallet::call_index(10)]
         pub fn unlock(
             origin: OriginFor<T>,
@@ -624,25 +629,9 @@ pub mod pallet {
         pub fn dispatch_as_account(
             origin: OriginFor<T>,
             call: Box<RuntimeCallFor<T>>,
-        ) -> DispatchResultWithPostInfo {
+        ) -> DispatchResult {
             let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
             Self::do_dispatch_as_community_account(&community_id, *call)
         }
-
-        // /// Dispatch a callable as the community account
-        // #[pallet::call_index(12)]
-        // #[pallet::weight({
-        // 	let di = call.get_dispatch_info();
-        // 	let weight = T::WeightInfo::dispatch_as_account()
-        // 		.saturating_add(T::DbWeight::get().reads_writes(1, 1))
-        // 		.saturating_add(di.weight);
-        // 	(weight, di.class)
-        // })]
-        // pub fn dispatch_as_origin(origin: OriginFor<T>, call: Box<RuntimeCallFor<T>>)
-        // -> DispatchResultWithPostInfo { 	let community_id =
-        // T::MemberMgmtOrigin::ensure_origin(origin)?; 	let origin =
-        // crate::Origin::<T>::new(community_id); 	let post =
-        // call.dispatch(origin.into()).map_err(|e| e.error)?; 	Ok(post)
-        // }
     }
 }

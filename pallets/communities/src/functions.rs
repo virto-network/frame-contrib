@@ -205,7 +205,7 @@ impl<T: Config> Pallet<T> {
                     &FreezeReason::VoteCasted.into(),
                     who,
                     amount_to_freeze,
-                    frame_support::traits::tokens::Fortitude::Polite,
+                    Polite,
                 )?;
             }
             _ => (),
@@ -217,11 +217,12 @@ impl<T: Config> Pallet<T> {
     pub(crate) fn do_dispatch_as_community_account(
         community_id: &CommunityIdOf<T>,
         call: RuntimeCallFor<T>,
-    ) -> DispatchResultWithPostInfo {
+    ) -> DispatchResult {
         let community_account = Self::community_account(community_id);
         let signer = frame_system::RawOrigin::Signed(community_account);
-
         call.dispatch(signer.into())
+            .map(|_| ())
+            .map_err(|e| e.error)
     }
 }
 
