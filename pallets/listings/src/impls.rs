@@ -6,7 +6,6 @@ type InventoryIdTuple<T, I> = (<T as Config<I>>::MerchantId, <T as Config<I>>::I
 mod inventory {
     use super::*;
     use nonfungibles_v2::{Create, InspectEnumerable, Mutate};
-    use pallet_nfts::{CollectionConfig, CollectionSettings};
 
     impl<T: Config<I>, I: 'static> InspectInventory for Pallet<T, I> {
         type MerchantId = T::MerchantId;
@@ -49,16 +48,7 @@ mod inventory {
 
     impl<T: Config<I>, I: 'static> InventoryLifecycle<T::AccountId> for Pallet<T, I> {
         fn create(id: InventoryIdTuple<T, I>, owner: &T::AccountId) -> DispatchResult {
-            T::Nonfungibles::create_collection_with_id(
-                id.into(),
-                owner,
-                owner,
-                &CollectionConfig {
-                    settings: CollectionSettings::all_enabled(),
-                    max_supply: None,
-                    mint_settings: Default::default(),
-                },
-            )
+            T::Nonfungibles::create_collection_with_id(id.into(), owner, owner, &Default::default())
         }
 
         fn archive(id: &InventoryIdTuple<T, I>) -> DispatchResult {
@@ -97,7 +87,6 @@ mod item {
     use super::*;
     use fc_traits_listings::item::{Item, ItemOf};
     use nonfungibles_v2::{InspectEnumerable, Mutate, Transfer};
-    use pallet_nfts::{ItemConfig, ItemSettings};
 
     impl<T: Config<I>, I: 'static> InspectItem<AccountIdOf<T>> for Pallet<T, I> {
         type MerchantId = T::MerchantId;
@@ -204,9 +193,7 @@ mod item {
                 inventory_id,
                 id,
                 &inventory_owner.clone(),
-                &ItemConfig {
-                    settings: ItemSettings::all_enabled(),
-                },
+                &Default::default(),
                 true,
             )?;
             T::Nonfungibles::set_typed_attribute(

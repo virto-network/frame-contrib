@@ -69,6 +69,7 @@ pub type ItemInfo<Name, Price> = (Name, Option<Price>);
     Encode,
     Decode,
     DecodeWithMemTracking,
+    Default,
     Copy,
     Clone,
     PartialEq,

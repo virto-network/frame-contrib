@@ -7,7 +7,9 @@ use frame_support::{
     derive_impl,
     traits::{EnsureOriginWithArg, Get},
 };
-use frame_system::{EnsureNever, EnsureRoot, EnsureSigned, RawOrigin};
+use frame_system::{
+    pallet_prelude::BlockNumberFor, EnsureNever, EnsureRoot, EnsureSigned, RawOrigin,
+};
 use sp_core::{parameter_types, ConstU32};
 use sp_io::TestExternalities;
 use sp_runtime::{
@@ -112,6 +114,7 @@ impl pallet_nfts::Config for Test {
 }
 #[cfg(feature = "runtime-benchmarks")]
 use core::marker::PhantomData;
+use sp_runtime::traits::BlockNumber;
 
 #[cfg(feature = "runtime-benchmarks")]
 pub struct OwnersCatalogBenchmarkHelper<T, I = ()>(PhantomData<(T, I)>);
@@ -202,16 +205,19 @@ impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<AccountIdBytes, Id>>
 impl pallet_listings::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
-    type Balances = Balances;
-    type Assets = Assets;
-    type Nonfungibles = ListingsCatalog;
-    type NonfungiblesKeyLimit = <Self as pallet_nfts::Config>::KeyLimit;
-    type NonfungiblesValueLimit = <Self as pallet_nfts::Config>::ValueLimit;
     type CreateInventoryOrigin = EnsureAccountIdInventories;
     type InventoryAdminOrigin = EnsureAccountIdInventories;
     type MerchantId = AccountIdBytes;
     type InventoryId = u32;
     type ItemSKU = u32;
+    type CollectionConfig =
+        pallet_nfts::CollectionConfig<Balance, BlockNumberFor<Self>, InventoryIdFor<Self>>;
+    type ItemConfig = pallet_nfts::ItemConfig;
+    type Balances = Balances;
+    type Assets = Assets;
+    type Nonfungibles = ListingsCatalog;
+    type NonfungiblesKeyLimit = <Self as pallet_nfts::Config>::KeyLimit;
+    type NonfungiblesValueLimit = <Self as pallet_nfts::Config>::ValueLimit;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = Self;
 }
