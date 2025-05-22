@@ -1,35 +1,24 @@
-use crate::Config;
+use super::*;
 
-use alloc::borrow::ToOwned;
-use codec::{Decode, EncodeLike};
-use core::marker::PhantomData;
-use fc_traits_authn::{
-    composite_prelude::{Encode, MaxEncodedLen, TypeInfo},
-    HashedUserId, HASHED_USER_ID_LEN,
-};
-use frame_support::{
-    dispatch::DispatchResult,
-    traits::{fungible::Inspect, Consideration, Footprint, MapSuccess},
-};
+use codec::EncodeLike;
+use frame_support::traits::MapSuccess;
 use frame_system::EnsureSigned;
-use sp_core::TypedGet;
 use sp_runtime::{
     morph_types,
-    traits::StaticLookup,
     traits::{Hash, TrailingZeroInput},
-    DispatchError, Saturating,
+    Saturating,
 };
 
 // pub type HashedUserId<T> = <T as frame_system::Config>::Hash;
 pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
+pub(crate) type BlockNumberFor<T, I> =
+    <<T as Config<I>>::BlockNumberProvider as BlockNumberProvider>::BlockNumber;
 pub type ContextOf<T, I = ()> =
-<<<T as Config<I>>::Authenticator as fc_traits_authn::Authenticator>::Challenger as fc_traits_authn::Challenger>::Context;
-pub type DeviceOf<T, I = ()> =
-    <<T as Config<I>>::Authenticator as fc_traits_authn::Authenticator>::Device;
-pub type CredentialOf<T, I = ()> =
-    <DeviceOf<T, I> as fc_traits_authn::UserAuthenticator>::Credential;
+    <<<T as Config<I>>::Authenticator as Authenticator>::Challenger as Challenger>::Context;
+pub type DeviceOf<T, I = ()> = <<T as Config<I>>::Authenticator as Authenticator>::Device;
+pub type CredentialOf<T, I = ()> = <DeviceOf<T, I> as UserAuthenticator>::Credential;
 pub type DeviceAttestationOf<T, I = ()> =
-    <<T as Config<I>>::Authenticator as fc_traits_authn::Authenticator>::DeviceAttestation;
+    <<T as Config<I>>::Authenticator as Authenticator>::DeviceAttestation;
 pub type AccountIdLookupOf<T> = <<T as frame_system::Config>::Lookup as StaticLookup>::Source;
 pub type BalanceOf<T, I = ()> =
     <<T as Config<I>>::Balances as Inspect<<T as frame_system::Config>::AccountId>>::Balance;
