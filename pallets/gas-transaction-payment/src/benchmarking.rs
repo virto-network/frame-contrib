@@ -59,7 +59,7 @@ mod benchmarks {
             pays_fee: Pays::Yes,
         };
 
-        T::BenchmarkHelper::setup_account(&caller.clone().into(), info.call_weight)?;
+        T::BenchmarkHelper::setup_account(&caller.clone(), info.call_weight)?;
         let remaining = T::GasTank::check_available_gas(&caller, &info.call_weight)
             .expect("at least some remaining gas should be available after refueling; qed");
 
