@@ -7,64 +7,60 @@ use frame_support::{
     traits::nonfungibles_v2,
     weights::Weight,
 };
-use frame_system::pallet_prelude::BlockNumberFor;
-use sp_runtime::traits::{Bounded, CheckedAdd, CheckedSub};
+
+use sp_runtime::traits::{BlockNumberProvider, Bounded, CheckedAdd, CheckedSub};
 
 use crate::*;
 
 pub use fc_traits_nonfungibles_helpers::SelectNonFungibleItem;
 
+type BlockNumberFor<P> = <P as BlockNumberProvider>::BlockNumber;
+
 pub const ATTR_MEMBERSHIP_GAS: &[u8] = b"membership_gas";
 pub const ATTR_GAS_TX_PAY_WITH_MEMBERSHIP: &[u8] = b"mbmshp_pays_gas";
 
-#[derive(Encode, Decode, Debug)]
-pub struct WeightTank<T: frame_system::Config> {
-    pub(crate) since: BlockNumberFor<T>,
+#[derive(Encode, Decode, Debug, Default)]
+pub struct WeightTank<BlockNumber> {
+    pub(crate) since: BlockNumber,
     pub(crate) used: Weight,
-    pub(crate) period: Option<BlockNumberFor<T>>,
+    pub(crate) period: Option<BlockNumber>,
     pub(crate) capacity_per_period: Option<Weight>,
 }
 
-impl<T> WeightTank<T>
-where
-    T: frame_system::Config,
-{
-    fn new(capacity_per_period: Option<Weight>, period: Option<BlockNumberFor<T>>) -> Self {
+impl<BlockNumber> WeightTank<BlockNumber> {
+    fn new(
+        capacity_per_period: Option<Weight>,
+        since: BlockNumber,
+        period: Option<BlockNumber>,
+    ) -> Self {
         Self {
-            since: frame_system::Pallet::<T>::block_number(),
+            since,
             used: Weight::zero(),
             period,
             capacity_per_period,
         }
     }
 
-    pub(crate) fn get<F>(collection_id: &F::CollectionId, item_id: &F::ItemId) -> Option<Self>
+    pub(crate) fn get<T, F>(collection_id: &F::CollectionId, item_id: &F::ItemId) -> Option<Self>
     where
+        T: frame_system::Config,
         F: nonfungibles_v2::Inspect<T::AccountId>,
+        BlockNumber: Decode,
     {
         F::typed_system_attribute(collection_id, Some(item_id), &ATTR_MEMBERSHIP_GAS)
     }
 
-    fn put<F, I>(&self, collection_id: &F::CollectionId, item_id: &F::ItemId) -> DispatchResult
+    pub(crate) fn put<T, F, I>(
+        &self,
+        collection_id: &F::CollectionId,
+        item_id: &F::ItemId,
+    ) -> DispatchResult
     where
+        T: frame_system::Config,
         F: nonfungibles_v2::Inspect<T::AccountId> + nonfungibles_v2::Mutate<T::AccountId, I>,
+        BlockNumber: Encode,
     {
         F::set_typed_attribute(collection_id, item_id, &ATTR_MEMBERSHIP_GAS, self)
-    }
-}
-
-impl<T> Default for WeightTank<T>
-where
-    T: frame_system::Config,
-    BlockNumberFor<T>: Default,
-{
-    fn default() -> Self {
-        Self {
-            since: Default::default(),
-            used: Default::default(),
-            period: Default::default(),
-            capacity_per_period: Default::default(),
-        }
     }
 }
 
@@ -75,12 +71,13 @@ impl Get<Box<()>> for Noop {
     }
 }
 
-pub struct NonFungibleGasTank<T, F, I, S = Noop>(PhantomData<(T, F, I, S)>);
+pub struct NonFungibleGasTank<T, P, F, I, S = Noop>(PhantomData<(T, P, F, I, S)>);
 
-impl<T, F, I, S> GasBurner for NonFungibleGasTank<T, F, I, S>
+impl<T, P, F, I, S> GasBurner for NonFungibleGasTank<T, P, F, I, S>
 where
     T: frame_system::Config,
-    BlockNumberFor<T>: Bounded,
+    P: BlockNumberProvider,
+    BlockNumberFor<P>: Bounded,
     F: nonfungibles_v2::Inspect<T::AccountId>
         + nonfungibles_v2::InspectEnumerable<T::AccountId>
         + nonfungibles_v2::Mutate<T::AccountId, I>,
@@ -96,10 +93,10 @@ where
                 return None;
             }
 
-            let mut tank = WeightTank::<T>::get::<F>(&collection, &item)?;
+            let mut tank = WeightTank::<BlockNumberFor<P>>::get::<T, F>(&collection, &item)?;
 
-            let block_number = frame_system::Pallet::<T>::block_number();
-            let period = tank.period.unwrap_or(BlockNumberFor::<T>::max_value());
+            let block_number = P::current_block_number();
+            let period = tank.period.unwrap_or(BlockNumberFor::<P>::max_value());
 
             let Some(capacity) = tank.capacity_per_period else {
                 return Some(Weight::MAX);
@@ -108,7 +105,7 @@ where
             if block_number.checked_sub(&tank.since)? > period {
                 tank.since = block_number.checked_add(&period)?;
                 tank.used = Weight::zero();
-                tank.put::<F, I>(&collection, &item).ok()?;
+                tank.put::<T, F, I>(&collection, &item).ok()?;
             };
 
             let remaining = capacity.checked_sub(&tank.used.checked_add(estimated)?)?;
@@ -137,13 +134,13 @@ where
                 F::clear_typed_attribute(&collection, &item, &ATTR_GAS_TX_PAY_WITH_MEMBERSHIP)
                     .ok()?;
 
-                let mut tank = WeightTank::<T>::get::<F>(&collection, &item)?;
+                let mut tank = WeightTank::<BlockNumberFor<P>>::get::<T, F>(&collection, &item)?;
 
                 if tank.capacity_per_period.is_some() {
                     tank.used = tank.used.checked_add(used)?;
                 }
 
-                tank.put::<F, I>(&collection, &item).ok()?;
+                tank.put::<T, F, I>(&collection, &item).ok()?;
 
                 let max_weight = tank.capacity_per_period?;
                 Some(max_weight.saturating_sub(tank.used))
@@ -152,14 +149,15 @@ where
     }
 }
 
-impl<T, F, ItemConfig, S> GasFueler for NonFungibleGasTank<T, F, ItemConfig, S>
+impl<T, P, F, ItemConfig, S> GasFueler for NonFungibleGasTank<T, P, F, ItemConfig, S>
 where
     T: frame_system::Config,
-    BlockNumberFor<T>: Bounded,
+    P: BlockNumberProvider,
     F: nonfungibles_v2::Inspect<T::AccountId>
         + nonfungibles_v2::InspectEnumerable<T::AccountId>
         + nonfungibles_v2::Mutate<T::AccountId, ItemConfig>,
     ItemConfig: Default,
+    BlockNumberFor<P>: Bounded,
     F::CollectionId: 'static,
     F::ItemId: 'static,
     S: Get<Box<dyn SelectNonFungibleItem<F::CollectionId, F::ItemId>>>,
@@ -171,7 +169,8 @@ where
         if !S::get().select(collection_id.clone(), item_id.clone()) {
             return Self::Gas::zero();
         }
-        let Some(mut tank) = WeightTank::<T>::get::<F>(collection_id, item_id) else {
+        let Some(mut tank) = WeightTank::<BlockNumberFor<P>>::get::<T, F>(collection_id, item_id)
+        else {
             return Self::Gas::zero();
         };
 
@@ -182,7 +181,7 @@ where
         tank.used = tank.used.saturating_sub(*gas);
 
         // Should infallibly save the tank, given that it already got a tank
-        tank.put::<F, ItemConfig>(collection_id, item_id)
+        tank.put::<T, F, ItemConfig>(collection_id, item_id)
             .unwrap_or_default();
 
         tank.capacity_per_period
@@ -191,26 +190,28 @@ where
     }
 }
 
-impl<T, F, ItemConfig, S> MakeTank for NonFungibleGasTank<T, F, ItemConfig, S>
+impl<T, P, F, ItemConfig, S> MakeTank for NonFungibleGasTank<T, P, F, ItemConfig, S>
 where
     T: frame_system::Config,
-    BlockNumberFor<T>: Bounded,
+    P: BlockNumberProvider,
     F: nonfungibles_v2::Inspect<T::AccountId>
         + nonfungibles_v2::InspectEnumerable<T::AccountId>
         + nonfungibles_v2::Mutate<T::AccountId, ItemConfig>,
     ItemConfig: Default,
+    BlockNumberFor<P>: Bounded,
     F::CollectionId: 'static,
     F::ItemId: 'static,
 {
     type TankId = (F::CollectionId, F::ItemId);
     type Gas = Weight;
-    type BlockNumber = BlockNumberFor<T>;
+    type BlockNumber = BlockNumberFor<P>;
 
     fn make_tank(
         (collection_id, item_id): &Self::TankId,
         capacity: Option<Self::Gas>,
         periodicity: Option<Self::BlockNumber>,
     ) -> DispatchResult {
-        WeightTank::<T>::new(capacity, periodicity).put::<F, ItemConfig>(collection_id, item_id)
+        WeightTank::<Self::BlockNumber>::new(capacity, P::current_block_number(), periodicity)
+            .put::<T, F, ItemConfig>(collection_id, item_id)
     }
 }
