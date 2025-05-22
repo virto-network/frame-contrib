@@ -1,16 +1,16 @@
-#![allow(unused_qualifications)]
-use crate::*;
+use super::*;
 
-use alloc::{collections::btree_map::BTreeMap, vec::Vec};
-use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
-use frame_system::pallet_prelude::BlockNumberFor;
+use alloc::collections::btree_map::BTreeMap;
+use codec::DecodeWithMemTracking;
 use scale_info::TypeInfo;
-use sp_runtime::{traits::Zero, BoundedVec, Percent, Saturating};
+use sp_runtime::{traits::Zero, BoundedVec};
 
+pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
+pub type BlockNumberFor<T> =
+    <<T as Config>::BlockNumberProvider as BlockNumberProvider>::BlockNumber;
 // This pallet's asset id and balance type.
 pub type AssetIdOf<T> =
     <<T as Config>::Assets as FunsInspect<<T as frame_system::Config>::AccountId>>::AssetId;
-pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 pub type MaxFeesOf<T> = <T as Config>::MaxFees;
 pub type BalanceOf<T> =
     <<T as Config>::Assets as FunsInspect<<T as frame_system::Config>::AccountId>>::Balance;

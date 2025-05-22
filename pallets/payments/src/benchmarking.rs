@@ -184,7 +184,7 @@ mod benchmarks {
         #[extrinsic_call]
         _(RawOrigin::Signed(sender.clone()), payment_id);
 
-        let current_block = frame_system::Pallet::<T>::block_number();
+        let current_block = T::BlockNumberProvider::current_block_number();
         assert_has_event!(
             Event::PaymentCreatorRequestedRefund { expiry, .. }
             if expiry == (current_block + T::CancelBufferBlockLength::get())

@@ -2,10 +2,6 @@
 
 extern crate alloc;
 
-use frame_system::pallet_prelude::BlockNumberFor;
-/// Edit this file to define custom logic or remove it if it is not needed.
-/// Learn more about FRAME and the core library of Substrate FRAME pallets:
-/// <https://docs.substrate.io/v3/runtime/frame>
 pub use pallet::*;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -22,10 +18,10 @@ use sp_io::hashing::blake2_256;
 
 use alloc::vec::Vec;
 use fc_traits_payments::{OnPaymentStatusChanged, PaymentMutate};
-use frame_support::pallet_prelude::DispatchResult;
 use frame_support::{
     dispatch::{GetDispatchInfo, PostDispatchInfo},
     ensure, fail,
+    pallet_prelude::*,
     traits::{
         fungibles::{
             hold::Mutate as FunHoldMutate, Balanced as FunBalanced, Inspect as FunInspect,
@@ -40,11 +36,14 @@ use frame_support::{
         },
         Bounded, CallerTrait, QueryPreimage, StorePreimage,
     },
+    PalletId,
 };
+use frame_system::pallet_prelude::*;
 use sp_runtime::{
-    traits::{CheckedAdd, CheckedSub, Dispatchable, StaticLookup},
+    traits::{BlockNumberProvider, CheckedAdd, CheckedSub, Dispatchable, Get, StaticLookup},
     ArithmeticError, DispatchError, Percent, Saturating,
 };
+use types::BlockNumberFor;
 
 pub mod weights;
 pub use weights::*;
@@ -61,35 +60,43 @@ pub trait PaymentId<T: frame_system::Config>: Copy + Clone {
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::{
-        dispatch::DispatchResult,
-        pallet_prelude::{StorageDoubleMap, *},
-        PalletId,
-    };
-    use frame_system::pallet_prelude::*;
-
-    use sp_runtime::{traits::Get, ArithmeticError, Percent};
 
     #[cfg(feature = "runtime-benchmarks")]
     use frame_support::traits::fungibles::Create as FunCreate;
 
     #[pallet::config]
     pub trait Config: frame_system::Config {
+        // Primitives: Some overarching types that come from the system (or the system depends on).
+
         /// The overarching event type
         type RuntimeEvent: TryInto<Event<Self>>
             + From<Event<Self>>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         /// The caller origin, overarching type of all pallets origins.
         type PalletsOrigin: From<frame_system::RawOrigin<Self::AccountId>>
             + CallerTrait<Self::AccountId>
             + MaxEncodedLen;
-
+        /// The overarching hold reason.
+        type RuntimeHoldReason: From<HoldReason>;
         /// The overarching call type.
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>
             + GetDispatchInfo
             + From<Call<Self>>;
+        /// Weight information for extrinsics in this pallet.
+        type WeightInfo: WeightInfo;
+
+        // Origins: Types that manage authorization rules to allow or deny some caller origins to
+        // execute a method.
+        type SenderOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
+        type BeneficiaryOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
+        type DisputeResolver: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
+
+        // Types: A set of parameter types that the pallet uses to handle information.
+
+        type PaymentId: PaymentId<Self> + Member + Parameter + MaxEncodedLen;
+
+        // Dependencies: The external components this pallet depends on.
 
         #[cfg(not(feature = "runtime-benchmarks"))]
         /// Currency type that this works on.
@@ -97,7 +104,6 @@ pub mod pallet {
             + FunMutate<Self::AccountId>
             + FunBalanced<Self::AccountId>
             + FunsInspect<Self::AccountId>;
-
         #[cfg(feature = "runtime-benchmarks")]
         /// Currency type that this works on.
         type Assets: FunInspect<Self::AccountId>
@@ -105,58 +111,37 @@ pub mod pallet {
             + FunMutate<Self::AccountId>
             + FunBalanced<Self::AccountId>
             + FunsInspect<Self::AccountId>;
-
         type AssetsHold: FunHoldMutate<
             Self::AccountId,
             AssetId = AssetIdOf<Self>,
             Balance = BalanceOf<Self>,
             Reason = Self::RuntimeHoldReason,
         >;
-
+        type BlockNumberProvider: BlockNumberProvider;
         type FeeHandler: FeeHandler<Self>;
-
-        type SenderOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
-
-        type BeneficiaryOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
-
-        type DisputeResolver: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
-
-        type PaymentId: PaymentId<Self> + Member + Parameter + MaxEncodedLen;
-
         type Scheduler: ScheduleNamed<
             BlockNumberFor<Self>,
             CallOf<Self>,
             Self::PalletsOrigin,
             Hasher = Self::Hashing,
         >;
-
         /// The preimage provider used to look up call hashes to get the call.
         type Preimages: QueryPreimage<H = Self::Hashing> + StorePreimage;
-
-        /// The overarching hold reason.
-        type RuntimeHoldReason: From<HoldReason>;
-
-        /// Weight information for extrinsics in this pallet.
-        type WeightInfo: WeightInfo;
-
         /// A hook that
         type OnPaymentStatusChanged: OnPaymentStatusChanged<Self::PaymentId, BalanceOf<Self>>;
 
+        // Parameters: A set of constant parameters to configure limits.
+
         #[pallet::constant]
         type PalletId: Get<PalletId>;
-
         #[pallet::constant]
         type IncentivePercentage: Get<Percent>;
-
         #[pallet::constant]
         type MaxRemarkLength: Get<u32>;
-
         #[pallet::constant]
         type MaxFees: Get<u32>;
-
         #[pallet::constant]
         type MaxDiscounts: Get<u32>;
-
         /// Buffer period - number of blocks to wait before user can claim
         /// canceled payment
         #[pallet::constant]
@@ -348,7 +333,7 @@ pub mod pallet {
                     );
 
                     // set the payment to requested refund
-                    let current_block = frame_system::Pallet::<T>::block_number();
+                    let current_block = T::BlockNumberProvider::current_block_number();
                     let cancel_block = current_block
                         .checked_add(&T::CancelBufferBlockLength::get())
                         .ok_or(Error::<T>::MathError)?;
@@ -508,7 +493,7 @@ pub mod pallet {
                         fail!(Error::<T>::InvalidAction);
                     };
                     ensure!(
-                        cancel_block > frame_system::Pallet::<T>::block_number(),
+                        cancel_block > T::BlockNumberProvider::current_block_number(),
                         Error::<T>::InvalidAction
                     );
 

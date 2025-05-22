@@ -292,6 +292,7 @@ impl fc_pallet_payments::Config for Test {
     type RuntimeCall = RuntimeCall;
     type Assets = Assets;
     type AssetsHold = AssetsHolder;
+    type BlockNumberProvider = System;
     type FeeHandler = ();
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;
