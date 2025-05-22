@@ -44,25 +44,52 @@ pub mod pallet {
     where
         AssetIdOf<Self, I>: MaybeSerializeDeserialize,
     {
+        // Primitives: Some overarching types that come from the system (or the system depends on).
+
         /// The overarching type for events.
         type RuntimeEvent: From<Event<Self, I>>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         /// A type that defines the weights different calls and methods benchmark.
         type WeightInfo: WeightInfo;
+
+        // Origins: Types that manage authorization rules to allow or deny some caller origins to
+        // execute a method.
+
+        /// An origin authorized to create an inventory.
+        type CreateInventoryOrigin: EnsureOriginWithArg<
+            Self::RuntimeOrigin,
+            InventoryIdFor<Self, I>,
+            Success = Self::AccountId,
+        >;
+        /// An origin authorized to manage a specific inventory.
+        type InventoryAdminOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, InventoryIdFor<Self, I>>;
+
+        // Types: A set of parameter types that the pallet uses to handle information.
+
+        /// A type that represents the identification of a merchant.
+        type MerchantId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
+        /// A type that represents the unique identification of an inventory from a merchant.
+        type InventoryId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
+        /// A type that represents the SKU of an item.
+        type ItemSKU: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
+        /// A type that represents the store configuration for setting up a new listings
+        /// inventory. It is expected to be set to default.
+        type CollectionConfig: Default;
+        /// A type that represents the store configuration for setting up a new listings
+        /// item. It is expected to be set to default.
+        type ItemConfig: Default;
+
+        // Dependencies: The external components this pallet depends on.
 
         /// A type that handles the native token and system balances.
         #[cfg(not(feature = "runtime-benchmarks"))]
         type Balances: fungible::Inspect<Self::AccountId>;
-
         #[cfg(feature = "runtime-benchmarks")]
         /// A type that handles the native token and system balances.
         type Balances: fungible::Inspect<Self::AccountId> + fungible::Mutate<Self::AccountId>;
-
         /// An associated type of assets system. This system must be the same one
         /// that `Payment` uses.
         type Assets: frame_support::traits::fungibles::Inspect<Self::AccountId>;
-
         /// An associated type of nonfungibles system. This is used to store the inventories and
         /// items.
         type Nonfungibles: nonfungibles_v2::Inspect<
@@ -75,16 +102,12 @@ pub mod pallet {
                 ItemId = Self::ItemSKU,
             > + nonfungibles_v2::Create<
                 Self::AccountId,
-                pallet_nfts::CollectionConfig<
-                    NativeBalanceOf<Self, I>,
-                    BlockNumberFor<Self>,
-                    InventoryIdFor<Self, I>,
-                >,
+                Self::CollectionConfig,
                 CollectionId = InventoryIdFor<Self, I>,
                 ItemId = Self::ItemSKU,
             > + nonfungibles_v2::Mutate<
                 Self::AccountId,
-                pallet_nfts::ItemConfig,
+                Self::ItemConfig,
                 CollectionId = InventoryIdFor<Self, I>,
                 ItemId = Self::ItemSKU,
             > + nonfungibles_v2::Transfer<
@@ -93,30 +116,16 @@ pub mod pallet {
                 ItemId = Self::ItemSKU,
             >;
 
-        /// Limit size for attribute keys on the `Nonfungibles` system.
-        type NonfungiblesKeyLimit: Get<u32>;
+        // Parameters: A set of constant parameters to configure limits.
 
+        /// Limit size for attribute keys on the `Nonfungibles` system.
+        #[pallet::constant]
+        type NonfungiblesKeyLimit: Get<u32>;
         /// Limit size for attribute values on the `Nonfungibles` system.
+        #[pallet::constant]
         type NonfungiblesValueLimit: Get<u32>;
 
-        /// An origin authorized to create an inventory.
-        type CreateInventoryOrigin: EnsureOriginWithArg<
-            Self::RuntimeOrigin,
-            InventoryIdFor<Self, I>,
-            Success = Self::AccountId,
-        >;
-
-        /// An origin authorized to manage a specific inventory.
-        type InventoryAdminOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, InventoryIdFor<Self, I>>;
-
-        /// A type that represents the identification of a merchant.
-        type MerchantId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
-
-        /// A type that represents the unique identification of an inventory from a merchant.
-        type InventoryId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
-
-        /// A type that represents the SKU of an item.
-        type ItemSKU: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
+        // Benchmarking: Types to handle benchmarks.
 
         #[cfg(feature = "runtime-benchmarks")]
         /// Helper for executing pallet benchmarks

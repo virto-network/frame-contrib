@@ -1,15 +1,12 @@
 use super::*;
-use crate::{
-    mock::*,
-    types::{PaymentDetail, PaymentState},
-    Payment as PaymentStore, PaymentId,
-};
 use frame_support::{
     assert_err, assert_ok, traits::fungibles, weights::constants::WEIGHT_REF_TIME_PER_NANOS,
 };
+use mock::{Hooks, *};
+use sp_runtime::Perbill;
+use types::{PaymentDetail, PaymentState};
 use weights::SubstrateWeight;
-
-use sp_runtime::{BoundedVec, Perbill};
+use Payment as PaymentStore;
 
 const ASSERT_PAYMENT_CREATION: bool = true;
 

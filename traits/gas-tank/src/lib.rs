@@ -1,7 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use frame_support::Parameter;
-use sp_runtime::traits::BlockNumber;
 use sp_runtime::DispatchResult;
 
 #[cfg(test)]
@@ -43,7 +42,7 @@ pub trait GasFueler {
 pub trait MakeTank {
     type TankId: Parameter;
     type Gas: Parameter;
-    type BlockNumber: BlockNumber;
+    type BlockNumber;
 
     /// Creates a new tank, allowing to specify a max gas `capacity` and a `periodicity` after
     /// which the tank gets renewed.

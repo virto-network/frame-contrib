@@ -221,17 +221,19 @@ where
 impl fc_pallet_listings::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
-    type Balances = Balances;
-    type Assets = Assets;
-    type Nonfungibles = ListingsCatalog;
-    type NonfungiblesKeyLimit = ();
-    type NonfungiblesValueLimit = ();
     type CreateInventoryOrigin = EnsureSigned<AccountId>;
     type InventoryAdminOrigin = EnsureSigned<AccountId>;
     type MerchantId = [u8; 32];
     type InventoryId = u32;
     type ItemSKU = u32;
-
+    type CollectionConfig =
+        pallet_nfts::CollectionConfig<Balance, BlockNumberFor<Self>, InventoryIdFor<Self>>;
+    type ItemConfig = pallet_nfts::ItemConfig;
+    type Balances = Balances;
+    type Assets = Assets;
+    type Nonfungibles = ListingsCatalog;
+    type NonfungiblesKeyLimit = ();
+    type NonfungiblesValueLimit = ();
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = Self;
 }
@@ -290,6 +292,7 @@ impl fc_pallet_payments::Config for Test {
     type RuntimeCall = RuntimeCall;
     type Assets = Assets;
     type AssetsHold = AssetsHolder;
+    type BlockNumberProvider = System;
     type FeeHandler = ();
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;
@@ -350,6 +353,7 @@ impl Config for Test {
     type Listings = Listings;
     type Payments = Payments;
     type Scheduler = Scheduler;
+    type BlockNumberProvider = System;
     type MaxLifetimeForCheckoutOrder = MaxLifetimeForCheckoutOrder;
     type MaxCartLen = MaxCartLen;
     type MaxItemLen = MaxItemLen;

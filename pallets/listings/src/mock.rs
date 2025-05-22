@@ -7,7 +7,9 @@ use frame_support::{
     derive_impl,
     traits::{EnsureOriginWithArg, Get},
 };
-use frame_system::{EnsureNever, EnsureRoot, EnsureSigned, RawOrigin};
+use frame_system::{
+    pallet_prelude::BlockNumberFor, EnsureNever, EnsureRoot, EnsureSigned, RawOrigin,
+};
 use sp_core::{parameter_types, ConstU32};
 use sp_io::TestExternalities;
 use sp_runtime::{
@@ -106,68 +108,9 @@ impl pallet_nfts::Config for Test {
     type OffchainSignature = MultiSignature;
     type OffchainPublic = AccountPublic;
     #[cfg(feature = "runtime-benchmarks")]
-    type Helper = OwnersCatalogBenchmarkHelper<Self>;
+    type Helper = benchmarks::OwnersCatalogBenchmarkHelper<Self>;
     type WeightInfo = ();
     type BlockNumberProvider = System;
-}
-#[cfg(feature = "runtime-benchmarks")]
-use core::marker::PhantomData;
-
-#[cfg(feature = "runtime-benchmarks")]
-pub struct OwnersCatalogBenchmarkHelper<T, I = ()>(PhantomData<(T, I)>);
-
-#[cfg(feature = "runtime-benchmarks")]
-impl<T, I: 'static>
-    pallet_nfts::BenchmarkHelper<
-        InventoryIdFor<Test>,
-        ItemIdOf<Test>,
-        sp_runtime::MultiSigner,
-        sp_runtime::AccountId32,
-        MultiSignature,
-    > for OwnersCatalogBenchmarkHelper<T, I>
-where
-    T: pallet_nfts::Config<I>,
-{
-    fn collection(i: u16) -> InventoryIdFor<Test> {
-        fn convert(i: u16) -> [u8; 32] {
-            let high = (i >> 8) as u8;
-            let low = (i & 0xFF) as u8;
-            let mut j = [0u8; 32];
-
-            for idx in 0..16 {
-                j[2 * idx] = high;
-                j[2 * idx + 1] = low;
-            }
-
-            j
-        }
-
-        InventoryId(convert(i), 1u16.into())
-    }
-
-    fn item(i: u16) -> ItemIdOf<Test> {
-        i.into()
-    }
-
-    fn signer() -> (sp_runtime::MultiSigner, sp_runtime::AccountId32) {
-        <() as pallet_nfts::BenchmarkHelper<
-            u16,
-            u16,
-            sp_runtime::MultiSigner,
-            sp_runtime::AccountId32,
-            MultiSignature,
-        >>::signer()
-    }
-
-    fn sign(signer: &sp_runtime::MultiSigner, message: &[u8]) -> MultiSignature {
-        <() as pallet_nfts::BenchmarkHelper<
-            u16,
-            u16,
-            sp_runtime::MultiSigner,
-            sp_runtime::AccountId32,
-            MultiSignature,
-        >>::sign(signer, message)
-    }
 }
 
 pub struct EnsureAccountIdInventories;
@@ -202,24 +145,89 @@ impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<AccountIdBytes, Id>>
 impl pallet_listings::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
-    type Balances = Balances;
-    type Assets = Assets;
-    type Nonfungibles = ListingsCatalog;
-    type NonfungiblesKeyLimit = <Self as pallet_nfts::Config>::KeyLimit;
-    type NonfungiblesValueLimit = <Self as pallet_nfts::Config>::ValueLimit;
     type CreateInventoryOrigin = EnsureAccountIdInventories;
     type InventoryAdminOrigin = EnsureAccountIdInventories;
     type MerchantId = AccountIdBytes;
     type InventoryId = u32;
     type ItemSKU = u32;
+    type CollectionConfig =
+        pallet_nfts::CollectionConfig<Balance, BlockNumberFor<Self>, InventoryIdFor<Self>>;
+    type ItemConfig = pallet_nfts::ItemConfig;
+    type Balances = Balances;
+    type Assets = Assets;
+    type Nonfungibles = ListingsCatalog;
+    type NonfungiblesKeyLimit = <Self as pallet_nfts::Config>::KeyLimit;
+    type NonfungiblesValueLimit = <Self as pallet_nfts::Config>::ValueLimit;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = Self;
 }
 
 #[cfg(feature = "runtime-benchmarks")]
-impl pallet_listings::BenchmarkHelper<InventoryIdFor<Test>> for Test {
-    fn inventory_id() -> InventoryIdFor<Test> {
-        InventoryId([0u8; 32], 0)
+mod benchmarks {
+    use super::*;
+    use pallet_nfts::BenchmarkHelper;
+    use sp_runtime::{AccountId32, MultiSignature, MultiSigner};
+
+    pub struct OwnersCatalogBenchmarkHelper<T, I = ()>(core::marker::PhantomData<(T, I)>);
+
+    impl<T, I: 'static>
+        BenchmarkHelper<
+            InventoryIdFor<Test>,
+            ItemIdOf<Test>,
+            MultiSigner,
+            AccountId32,
+            MultiSignature,
+        > for OwnersCatalogBenchmarkHelper<T, I>
+    where
+        T: pallet_nfts::Config<I>,
+    {
+        fn collection(i: u16) -> InventoryIdFor<Test> {
+            fn convert(i: u16) -> [u8; 32] {
+                let high = (i >> 8) as u8;
+                let low = (i & 0xFF) as u8;
+                let mut j = [0u8; 32];
+
+                for idx in 0..16 {
+                    j[2 * idx] = high;
+                    j[2 * idx + 1] = low;
+                }
+
+                j
+            }
+
+            InventoryId(convert(i), 1u16.into())
+        }
+
+        fn item(i: u16) -> ItemIdOf<Test> {
+            i.into()
+        }
+
+        fn signer() -> (sp_runtime::MultiSigner, sp_runtime::AccountId32) {
+            <() as BenchmarkHelper<
+                u16,
+                u16,
+                sp_runtime::MultiSigner,
+                sp_runtime::AccountId32,
+                MultiSignature,
+            >>::signer()
+        }
+
+        fn sign(signer: &sp_runtime::MultiSigner, message: &[u8]) -> MultiSignature {
+            <() as BenchmarkHelper<
+                u16,
+                u16,
+                sp_runtime::MultiSigner,
+                sp_runtime::AccountId32,
+                MultiSignature,
+            >>::sign(signer, message)
+        }
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    impl crate::BenchmarkHelper<InventoryIdFor<Test>> for Test {
+        fn inventory_id() -> InventoryIdFor<Test> {
+            InventoryId([0u8; 32], 0)
+        }
     }
 }
 

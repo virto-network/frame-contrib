@@ -264,6 +264,7 @@ impl Config for Test {
     type RuntimeCall = RuntimeCall;
     type Assets = Assets;
     type AssetsHold = AssetsHolder;
+    type BlockNumberProvider = System;
     type FeeHandler = MockFeeHandler;
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;

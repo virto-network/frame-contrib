@@ -1,6 +1,8 @@
 use super::*;
 
 pub type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
+pub type BlockNumberFor<T, I> =
+    <<T as Config<I>>::BlockNumberProvider as BlockNumberProvider>::BlockNumber;
 pub(crate) type MerchantIdOf<T, I = ()> =
     <<T as Config<I>>::Listings as InspectItem<AccountIdOf<T>>>::MerchantId;
 pub type InventoryIdOf<T, I = ()> =

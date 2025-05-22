@@ -3,11 +3,12 @@ use super::*;
 
 use self::{
     types::{
-        AccountIdOf, AssetIdOf, CommunityIdOf, DecisionMethodFor, MembershipIdOf, NativeBalanceOf,
-        PalletsOriginOf, PollIndexOf, RuntimeCallFor, Vote,
+        AccountIdOf, AssetIdOf, BlockNumberFor, CommunityIdOf, DecisionMethodFor, MembershipIdOf,
+        NativeBalanceOf, PalletsOriginOf, PollIndexOf, RuntimeCallFor, Vote,
     },
     CommunityDecisionMethod, DecisionMethod, Event, FreezeReason, Pallet as Communities,
 };
+use alloc::{vec, vec::Vec};
 use frame_benchmarking::v2::*;
 use frame_contrib_traits::memberships::{Inspect, Rank};
 use frame_support::traits::{
@@ -15,10 +16,7 @@ use frame_support::traits::{
     fungibles::Mutate as FunsMutate,
     OriginTrait,
 };
-use frame_system::{
-    pallet_prelude::{BlockNumberFor, OriginFor},
-    RawOrigin,
-};
+use frame_system::{pallet_prelude::OriginFor, RawOrigin};
 use sp_runtime::traits::{Hash, StaticLookup};
 
 type RuntimeEventFor<T> = <T as Config>::RuntimeEvent;
@@ -32,7 +30,7 @@ fn setup_account<T: Config>(
     index: u32,
     seed: u32,
 ) -> Result<AccountIdOf<T>, BenchmarkError> {
-    let who = frame_benchmarking::account(name, index, seed);
+    let who = account(name, index, seed);
 
     let initial_balance: NativeBalanceOf<T> = 1_000_000_000_000_000u128
         .try_into()

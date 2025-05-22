@@ -163,35 +163,35 @@ parameter_types! {
     pub const RootAccount: AccountId = AccountId::new([0xff; 32]);
 }
 impl pallet_nfts::Config for Test {
-    type ApprovalsLimit = ();
-    type AttributeDepositBase = ();
-    type CollectionDeposit = ();
+    type RuntimeEvent = RuntimeEvent;
     type CollectionId = CommunityId;
+    type ItemId = MembershipId;
+    type Currency = ();
+    type ForceOrigin = EnsureRoot<AccountId>;
     type CreateOrigin = AsEnsureOriginWithArg<
         EitherOf<EnsureRootWithSuccess<AccountId, RootAccount>, EnsureSigned<AccountId>>,
     >;
-    type Currency = ();
-    type DepositPerByte = ();
-    type Features = ();
-    type ForceOrigin = EnsureRoot<AccountId>;
-    type ItemAttributesApprovalsLimit = ();
-    type ItemDeposit = ();
-    type ItemId = MembershipId;
-    type KeyLimit = ConstU32<64>;
     type Locker = ();
-    type MaxAttributesPerCall = ();
-    type MaxDeadlineDuration = ();
-    type MaxTips = ();
+    type CollectionDeposit = ();
+    type ItemDeposit = ();
     type MetadataDepositBase = ();
-    type OffchainPublic = AccountPublic;
-    type OffchainSignature = MultiSignature;
-    type RuntimeEvent = RuntimeEvent;
+    type AttributeDepositBase = ();
+    type DepositPerByte = ();
     type StringLimit = ();
+    type KeyLimit = ConstU32<64>;
     type ValueLimit = ConstU32<10>;
-    type WeightInfo = ();
-
+    type ApprovalsLimit = ();
+    type ItemAttributesApprovalsLimit = ();
+    type MaxTips = ();
+    type MaxDeadlineDuration = ();
+    type MaxAttributesPerCall = ();
+    type Features = ();
+    type OffchainSignature = MultiSignature;
+    type OffchainPublic = AccountPublic;
     #[cfg(feature = "runtime-benchmarks")]
     type Helper = NftsBenchmarksHelper;
+
+    type WeightInfo = ();
     type BlockNumberProvider = System;
 }
 
@@ -212,8 +212,8 @@ parameter_types! {
 }
 
 impl pallet_preimage::Config for Test {
-    type WeightInfo = ();
     type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = ();
     type Currency = Balances;
     type ManagerOrigin = EnsureSigned<AccountId>;
     type Consideration = HoldConsideration<AccountId, Balances, PreimageHoldReason, ConvertDeposit>;
@@ -448,26 +448,28 @@ type AnyoneElsePays = EnsureSignedPays<Test, ConstU64<10>, RootAccount>;
 pub type MembershipsManager = NonFungiblesMemberships<Nfts>;
 
 impl Config for Test {
-    type PalletId = CommunitiesPalletId;
-    type CommunityId = CommunityId;
-    type MembershipId = MembershipId;
-
-    type Assets = Assets;
-    type AssetsFreezer = AssetsFreezer;
-    type Balances = Balances;
-    type ItemConfig = pallet_nfts::ItemConfig;
-    type MemberMgmt = MembershipsManager;
-    type Polls = Referenda;
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeOrigin = RuntimeOrigin;
+    type RuntimeCall = RuntimeCall;
+    type RuntimeFreezeReason = RuntimeFreezeReason;
+    type WeightInfo = WeightInfo;
 
     type CreateOrigin = EitherOf<RootCreatesCommunitiesForFree, AnyoneElsePays>;
     type AdminOrigin = EnsureCommunity<Self>;
     type MemberMgmtOrigin = EnsureCommunity<Self>;
 
-    type RuntimeCall = RuntimeCall;
-    type RuntimeOrigin = RuntimeOrigin;
-    type RuntimeEvent = RuntimeEvent;
-    type RuntimeFreezeReason = RuntimeFreezeReason;
-    type WeightInfo = WeightInfo;
+    type CommunityId = CommunityId;
+    type MembershipId = MembershipId;
+    type ItemConfig = pallet_nfts::ItemConfig;
+    type MemberMgmt = MembershipsManager;
+
+    type Polls = Referenda;
+    type Assets = Assets;
+    type AssetsFreezer = AssetsFreezer;
+    type Balances = Balances;
+    type BlockNumberProvider = System;
+
+    type PalletId = CommunitiesPalletId;
 
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = CommunityBenchmarkHelper;
@@ -572,7 +574,7 @@ impl TestEnvBuilder {
         self
     }
 
-    pub(crate) fn build(self) -> sp_io::TestExternalities {
+    pub(crate) fn build(self) -> TestExternalities {
         let t = RuntimeGenesisConfig {
             assets: self.assets_config,
             balances: pallet_balances::GenesisConfig {

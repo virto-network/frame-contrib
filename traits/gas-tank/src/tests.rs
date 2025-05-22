@@ -6,14 +6,16 @@ use frame_support::{
     traits::{ConstU128, ConstU32},
     weights::Weight,
 };
+use frame_system::pallet_prelude::BlockNumberFor;
 use frame_system::EnsureNever;
-use impl_nonfungibles::{NonFungibleGasTank, WeightTank, ATTR_MEMBERSHIP_GAS};
+use impl_nonfungibles::{NonFungibleGasTank, WeightTank};
 use sp_runtime::{
     traits::{IdentifyAccount, IdentityLookup, Verify},
     MultiSignature,
 };
 
 type Block = frame_system::mocking::MockBlock<Test>;
+type BlockNumber = BlockNumberFor<Test>;
 
 pub type AccountPublic = <MultiSignature as Verify>::Signer;
 pub type AccountId = <AccountPublic as IdentifyAccount>::AccountId;
@@ -45,7 +47,7 @@ mod runtime {
     pub type Memberships = pallet_nfts;
 }
 
-#[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl frame_system::Config for Test {
     type AccountId = AccountId;
     type Lookup = IdentityLookup<Self::AccountId>;
@@ -53,7 +55,7 @@ impl frame_system::Config for Test {
     type AccountData = pallet_balances::AccountData<Balance>;
 }
 
-#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig)]
 impl pallet_balances::Config for Test {
     type AccountStore = System;
     type Balance = Balance;
@@ -99,7 +101,7 @@ parameter_types! {
 }
 
 pub type MembershipsGas =
-    NonFungibleGasTank<Test, Memberships, pallet_nfts::ItemConfig, ToggleBasedSelector>;
+    NonFungibleGasTank<Test, System, Memberships, pallet_nfts::ItemConfig, ToggleBasedSelector>;
 
 parameter_types! {
     const CollectionOwner: AccountId = AccountId::new([0u8;32]);
@@ -134,7 +136,7 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
             (
                 1,
                 SmallMember::get(),
-                WeightTank::<Test> {
+                WeightTank::<BlockNumber> {
                     capacity_per_period: Some(SmallTank::get()),
                     ..Default::default()
                 },
@@ -142,7 +144,7 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
             (
                 2,
                 MediumMember::get(),
-                WeightTank::<Test> {
+                WeightTank::<BlockNumber> {
                     capacity_per_period: Some(MediumTank::get()),
                     ..Default::default()
                 },
@@ -150,7 +152,7 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
             (
                 3,
                 LargeMember::get(),
-                WeightTank::<Test> {
+                WeightTank::<BlockNumber> {
                     capacity_per_period: Some(LargeTank::get()),
                     ..Default::default()
                 },
@@ -163,12 +165,9 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
                 &Default::default(),
                 true,
             ));
-            assert_ok!(Memberships::set_typed_attribute(
-                &collection_id,
-                &item,
-                &ATTR_MEMBERSHIP_GAS,
-                &tank
-            ));
+            assert_ok!(
+                tank.put::<Test, Memberships, pallet_nfts::ItemConfig>(&collection_id, &item)
+            );
         }
     });
     ext

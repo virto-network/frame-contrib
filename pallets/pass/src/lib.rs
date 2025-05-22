@@ -8,10 +8,7 @@ extern crate alloc;
 extern crate core;
 
 use core::fmt::Debug;
-use fc_traits_authn::{
-    util::AuthorityFromPalletId, Authenticator, DeviceChallengeResponse, DeviceId,
-    ExtrinsicContext, HashedUserId, UserAuthenticator, UserChallengeResponse,
-};
+use fc_traits_authn::*;
 use frame_support::{
     pallet_prelude::*,
     storage::StorageDoubleMap as _,
@@ -27,7 +24,7 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use sp_runtime::{
-    traits::{Dispatchable, StaticLookup},
+    traits::{BlockNumberProvider, Dispatchable, StaticLookup},
     DispatchResult,
 };
 
@@ -51,6 +48,7 @@ pub use weights::*;
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
+    use types::BlockNumberFor;
 
     #[pallet::config]
     pub trait Config<I: 'static = ()>: frame_system::Config {
@@ -89,13 +87,14 @@ pub mod pallet {
         type Balances: Inspect<Self::AccountId> + Mutate<Self::AccountId>;
         /// A single or composite authenticator that allows the pallet to handle the actions
         /// regarding assertion to register devices and authenticating with credentials.
-        type Authenticator: Authenticator<Authority = AuthorityFromPalletId<Self::PalletId>>;
+        type Authenticator: Authenticator<Authority = util::AuthorityFromPalletId<Self::PalletId>>;
         /// The `Scheduler` system.
         type Scheduler: Named<
-            BlockNumberFor<Self>,
+            BlockNumberFor<Self, I>,
             <Self as Config<I>>::RuntimeCall,
             Self::PalletsOrigin,
         >;
+        type BlockNumberProvider: BlockNumberProvider;
 
         // Considerations: Costs that are "taken from [the caller's] account temporarily in order to
         // offset the cost to the chain of holding some data Footprint in state".
@@ -115,7 +114,7 @@ pub mod pallet {
         type PalletId: Get<PalletId>;
         /// The maximum duration of a session
         #[pallet::constant]
-        type MaxSessionDuration: Get<BlockNumberFor<Self>>;
+        type MaxSessionDuration: Get<BlockNumberFor<Self, I>>;
 
         // Benchmarking: Types to handle benchmarks.
 
@@ -168,7 +167,7 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type SessionKeys<T: Config<I>, I: 'static = ()> =
-        CountedStorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T>)>;
+        CountedStorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T, I>)>;
 
     /// Counts how many sessions a pass account has registered and holds an amount to the account.
     #[pallet::storage]
@@ -191,7 +190,7 @@ pub mod pallet {
         },
         SessionCreated {
             session_key: T::AccountId,
-            until: BlockNumberFor<T>,
+            until: BlockNumberFor<T, I>,
         },
         SessionRemoved {
             session_key: T::AccountId,
@@ -256,7 +255,7 @@ pub mod pallet {
         pub fn add_session_key(
             origin: OriginFor<T>,
             session: AccountIdLookupOf<T>,
-            duration: Option<BlockNumberFor<T>>,
+            duration: Option<BlockNumberFor<T, I>>,
         ) -> DispatchResult {
             let address = &Self::ensure_signer_is_pass_account(origin)?;
             let session_key = &T::Lookup::lookup(session)?;
@@ -442,7 +441,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
     fn schedule_next_removal(
         session_key: &T::AccountId,
-        duration: Option<BlockNumberFor<T>>,
+        duration: Option<types::BlockNumberFor<T, I>>,
     ) -> DispatchResult {
         Self::cancel_scheduled_session_key_removal(session_key);
 
