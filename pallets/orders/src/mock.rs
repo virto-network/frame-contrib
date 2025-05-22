@@ -352,6 +352,7 @@ impl Config for Test {
     type Listings = Listings;
     type Payments = Payments;
     type Scheduler = Scheduler;
+    type BlockNumberProvider = System;
     type MaxLifetimeForCheckoutOrder = MaxLifetimeForCheckoutOrder;
     type MaxCartLen = MaxCartLen;
     type MaxItemLen = MaxItemLen;

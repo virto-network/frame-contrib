@@ -12,11 +12,16 @@ use frame_contrib_traits::{
     listings::{item::Item, item::ItemPrice, InspectItem, MutateItem},
     payments::{OnPaymentStatusChanged, PaymentInspect, PaymentMutate},
 };
-use frame_support::pallet_prelude::*;
-use frame_support::traits::schedule::{DispatchTime, Priority};
-use frame_support::traits::{schedule::v3::Named, Bounded, BoundedInline, Incrementable};
+use frame_support::{
+    dispatch::{GetDispatchInfo, PostDispatchInfo},
+    pallet_prelude::*,
+    traits::{
+        schedule::{v3::Named, DispatchTime, Priority},
+        Bounded, BoundedInline, CallerTrait, Incrementable,
+    },
+};
 use frame_system::pallet_prelude::*;
-use sp_runtime::traits::{Hash, TrailingZeroInput};
+use sp_runtime::traits::{BlockNumberProvider, Dispatchable, Hash, TrailingZeroInput};
 
 #[cfg(feature = "runtime-benchmarks")]
 use frame_contrib_traits::listings::InventoryLifecycle;
@@ -39,9 +44,6 @@ pub use weights::*;
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::dispatch::{GetDispatchInfo, PostDispatchInfo};
-    use frame_support::traits::{CallerTrait, Incrementable};
-    use sp_runtime::traits::Dispatchable;
 
     #[pallet::config]
     pub trait Config<I: 'static = ()>: frame_system::Config {
@@ -110,16 +112,18 @@ pub mod pallet {
         type Payments: PaymentInspect<Self::AccountId> + PaymentMutate<Self::AccountId>;
         /// The `Scheduler` system.
         type Scheduler: Named<
-            BlockNumberFor<Self>,
+            types::BlockNumberFor<Self, I>,
             <Self as Config<I>>::RuntimeCall,
             Self::PalletsOrigin,
         >;
+        /// Component that provides the current block number.
+        type BlockNumberProvider: BlockNumberProvider;
 
         // Parameters: A set of constant parameters to configure limits.
 
         /// The time after which an unpaid order in `Checkout` status is automatically cancelled.
         #[pallet::constant]
-        type MaxLifetimeForCheckoutOrder: Get<BlockNumberFor<Self>>;
+        type MaxLifetimeForCheckoutOrder: Get<types::BlockNumberFor<Self, I>>;
         /// Determines the maximum amount of carts (regardless of origin restrictions) an account
         /// can have.
         #[pallet::constant]
