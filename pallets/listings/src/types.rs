@@ -104,7 +104,9 @@ impl<MerchantId: Copy, Id: Copy> From<&(MerchantId, Id)> for InventoryId<Merchan
     }
 }
 
-impl<MerchantId: Copy, Id: Copy + Incrementable> Incrementable for InventoryId<MerchantId, Id> {
+impl<MerchantId: Copy + Incrementable, Id: Copy + Incrementable> Incrementable
+    for InventoryId<MerchantId, Id>
+{
     fn increment(&self) -> Option<Self> {
         // Increment shouldn't happen for inventory, but
         // we'll implement it anyway.
@@ -112,7 +114,7 @@ impl<MerchantId: Copy, Id: Copy + Incrementable> Incrementable for InventoryId<M
     }
 
     fn initial_value() -> Option<Self> {
-        None
+        Some(Self(MerchantId::initial_value()?, Id::initial_value()?))
     }
 }
 
