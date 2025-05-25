@@ -15,3 +15,6 @@ impl-trait-for-tuples.workspace = true
 [features]
 default = ["std"]
 std = ["codec/std", "frame-support/std", "scale-info/std"]
+runtime-benchmarks = [
+	"frame-support/runtime-benchmarks"
+]

@@ -28,4 +28,5 @@ runtime-benchmarks = [
 	"fc-traits-gas-tank/runtime-benchmarks",
 	"fc-traits-memberships/runtime-benchmarks",
 	"fc-traits-tracks/runtime-benchmarks",
+	"fc-traits-payments/runtime-benchmarks"
 ]

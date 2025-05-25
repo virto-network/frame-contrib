@@ -42,7 +42,8 @@ runtime-benchmarks = [
 	"pallet-preimage/runtime-benchmarks",
 	"pallet-scheduler/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
-	"pallet-assets-holder/runtime-benchmarks"
+	"pallet-assets-holder/runtime-benchmarks",
+	"fc-traits-payments/runtime-benchmarks"
 ]
 std = [
 	"codec/std",

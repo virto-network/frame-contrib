@@ -15,6 +15,37 @@ impl<T: Config> Inspect<AccountIdOf<T>> for Pallet<T> {
 
         Some(Payment::new(creator, beneficiary, asset, amount))
     }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn sender_costs(
+        asset: &Self::AssetId,
+        sender: &AccountIdOf<T>,
+        beneficiary: &AccountIdOf<T>,
+        amount: &Self::Balance,
+    ) -> Self::Balance {
+        T::FeeHandler::apply_fees(asset, sender, beneficiary, amount, None)
+            .sender_pays
+            .iter()
+            .fold(
+                T::IncentivePercentage::get().mul_floor(*amount),
+                |amount, (_, fee, _)| amount.saturating_add(*fee),
+            )
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn beneficiary_costs(
+        asset: &Self::AssetId,
+        sender: &AccountIdOf<T>,
+        beneficiary: &AccountIdOf<T>,
+        amount: &Self::Balance,
+    ) -> Self::Balance {
+        T::FeeHandler::apply_fees(asset, sender, beneficiary, amount, None)
+            .beneficiary_pays
+            .iter()
+            .fold(Zero::zero(), |amount, (_, fee, _)| {
+                amount.saturating_add(*fee)
+            })
+    }
 }
 
 impl<T: Config> Mutate<AccountIdOf<T>> for Pallet<T> {

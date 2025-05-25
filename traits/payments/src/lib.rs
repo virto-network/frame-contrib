@@ -52,6 +52,22 @@ pub trait Inspect<AccountId> {
 
     /// Given an `Id`, returns the details of a payment.
     fn details(id: &Self::Id) -> Option<Payment<AccountId, Self::AssetId, Self::Balance>>;
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn sender_costs(
+        asset: &Self::AssetId,
+        sender: &AccountId,
+        beneficiary: &AccountId,
+        amount: &Self::Balance,
+    ) -> Self::Balance;
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn beneficiary_costs(
+        asset: &Self::AssetId,
+        sender: &AccountId,
+        beneficiary: &AccountId,
+        amount: &Self::Balance,
+    ) -> Self::Balance;
 }
 
 pub trait Mutate<AccountId>: Inspect<AccountId> {
