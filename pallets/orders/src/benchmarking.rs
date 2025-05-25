@@ -5,6 +5,7 @@ use frame_benchmarking::v2::*;
 use frame_contrib_traits::listings::InventoryLifecycle;
 use frame_support::traits::fungible::{Inspect, Mutate as FungibleMutate};
 use frame_support::traits::fungibles::{Create, Mutate};
+use frame_support::traits::DefensiveSaturating;
 
 fn assert_has_event<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>::RuntimeEvent) {
     frame_system::Pallet::<T>::assert_has_event(generic_event.into());
@@ -78,6 +79,19 @@ fn prepare_asset_account<T: Config<I>, I: 'static>(
     Ok(())
 }
 
+fn prepare_owner<T: Config<I>, I: 'static>(
+    owner: &AccountIdOf<T>,
+    amount: usize,
+) -> DispatchResult {
+    let amount = <T::BenchmarkHelper as BenchmarkHelper<T, I>>::InventoryDeposit::get()
+        .defensive_saturating_add(
+            <T::BenchmarkHelper as BenchmarkHelper<T, I>>::ItemDeposit::get()
+                .defensive_saturating_mul((amount as u32).into()),
+        );
+    <T::BenchmarkHelper as BenchmarkHelper<T, I>>::Balances::mint_into(owner, amount.into())?;
+    Ok(())
+}
+
 fn prepare_items<T: Config<I>, I: 'static>(
     asset_id: &PaymentAssetIdOf<T, I>,
     prices: impl Iterator<Item = PaymentBalanceOf<T, I>>,
@@ -85,14 +99,16 @@ fn prepare_items<T: Config<I>, I: 'static>(
 where
     PaymentAssetIdOf<T, I>: Default,
 {
+    let prices = prices.into_iter().enumerate().collect::<Vec<_>>();
+
     let owner = &prepare_named_account::<T, I>("merchant_owner");
+    prepare_owner::<T, I>(owner, prices.len())?;
     let inventory_id = T::BenchmarkHelper::inventory_id();
 
     T::Listings::create(inventory_id, owner)?;
 
     prices
         .into_iter()
-        .enumerate()
         .map(|(i, amount)| {
             let item_id = T::BenchmarkHelper::item_id(i);
             T::Listings::publish(
@@ -113,6 +129,7 @@ where
 #[instance_benchmarks(
 where
     PaymentAssetIdOf<T, I>: Default,
+    crate::types::BalanceOf<T, I>: From<u32>,
 )]
 mod benchmarks {
     use super::*;

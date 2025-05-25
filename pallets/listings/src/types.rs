@@ -179,7 +179,7 @@ pub mod test_utils {
         Debug,
         Default,
     )]
-    #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
     pub struct SignedMerchantId(pub [u8; 32]);
 
     impl From<[u8; 32]> for SignedMerchantId {

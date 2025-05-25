@@ -81,9 +81,14 @@ pub use benchmarks::*;
 mod benchmarks {
     use super::*;
     use frame_support::traits::{
-        fungible::Mutate as FunMutate,
+        fungible::{Inspect, Mutate as FunMutate},
         fungibles::{Create, Mutate},
     };
+
+    pub(crate) type BalanceOf<T, I> = <<<T as Config<I>>::BenchmarkHelper as BenchmarkHelper<
+        T,
+        I,
+    >>::Balances as Inspect<AccountIdOf<T>>>::Balance;
 
     pub trait BenchmarkHelper<T: Config<I>, I: 'static = ()> {
         /// The native `Balances` system.
@@ -91,6 +96,8 @@ mod benchmarks {
         /// The `Assets` system bound to the configuration `Listings` system.
         type Assets: Create<T::AccountId, AssetId = PaymentAssetIdOf<T, I>, Balance = PaymentBalanceOf<T, I>>
             + Mutate<T::AccountId, AssetId = PaymentAssetIdOf<T, I>, Balance = PaymentBalanceOf<T, I>>;
+        type InventoryDeposit: Get<BalanceOf<T, I>>;
+        type ItemDeposit: Get<BalanceOf<T, I>>;
 
         /// The identifier of the inventory created to gather the items for the order.
         fn inventory_id() -> (MerchantIdOf<T, I>, InventoryIdOf<T, I>);

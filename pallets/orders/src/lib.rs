@@ -6,6 +6,7 @@
 //! `Listings` component, which can be paid off using the `Payments` component.
 
 extern crate alloc;
+extern crate core;
 
 use alloc::vec::Vec;
 use frame_contrib_traits::{

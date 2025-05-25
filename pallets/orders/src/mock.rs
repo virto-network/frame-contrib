@@ -3,13 +3,13 @@
 use crate::{self as fc_pallet_orders, Config};
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use core::cell::Cell;
-
 #[cfg(feature = "runtime-benchmarks")]
 use {
     crate::types::{InventoryIdOf, MerchantIdOf},
     fc_pallet_listings::InventoryId,
 };
 
+use fc_pallet_listings::test_utils::SignedMerchantId;
 use fc_pallet_listings::{InventoryIdFor, ItemIdOf, ItemPrice};
 use frame_support::{
     derive_impl,
@@ -128,8 +128,6 @@ impl pallet_assets_holder::Config for Test {
     type RuntimeEvent = RuntimeEvent;
 }
 
-pub type AccountIdBytes = [u8; 32];
-
 impl pallet_nfts::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type CollectionId = InventoryIdFor<Self>;
@@ -177,7 +175,7 @@ where
     T: pallet_nfts::Config<I>,
 {
     fn collection(i: u16) -> InventoryIdFor<Test> {
-        fn convert(i: u16) -> [u8; 32] {
+        fn convert(i: u16) -> SignedMerchantId {
             let high = (i >> 8) as u8;
             let low = (i & 0xFF) as u8;
             let mut j = [0u8; 32];
@@ -187,7 +185,7 @@ where
                 j[2 * idx + 1] = low;
             }
 
-            j
+            j.into()
         }
 
         InventoryId(convert(i), 1u16.into())
@@ -223,7 +221,7 @@ impl fc_pallet_listings::Config for Test {
     type WeightInfo = ();
     type CreateInventoryOrigin = EnsureSigned<AccountId>;
     type InventoryAdminOrigin = EnsureSigned<AccountId>;
-    type MerchantId = [u8; 32];
+    type MerchantId = SignedMerchantId;
     type InventoryId = u32;
     type ItemSKU = u32;
     type CollectionConfig =
@@ -241,7 +239,7 @@ impl fc_pallet_listings::Config for Test {
 #[cfg(feature = "runtime-benchmarks")]
 impl fc_pallet_listings::BenchmarkHelper<InventoryIdFor<Test>> for Test {
     fn inventory_id() -> InventoryIdFor<Test> {
-        InventoryId([0u8; 32], 0)
+        InventoryId([0u8; 32].into(), 0)
     }
 }
 
@@ -365,6 +363,8 @@ impl Config for Test {
 impl fc_pallet_orders::BenchmarkHelper<Test> for Test {
     type Balances = Balances;
     type Assets = Assets;
+    type InventoryDeposit = <Test as pallet_nfts::Config>::CollectionDeposit;
+    type ItemDeposit = <Test as pallet_nfts::Config>::ItemDeposit;
 
     fn inventory_id() -> (MerchantIdOf<Test>, InventoryIdOf<Test>) {
         (AliceStore::get(), 1)
@@ -386,8 +386,8 @@ pub const BOB: AccountId = AccountId::new([2u8; 32]);
 pub const EVE: AccountId = AccountId::new([5u8; 32]);
 
 parameter_types! {
-    pub AliceStore: AccountIdBytes = ALICE.to_raw_vec().try_into().unwrap();
-    pub BobStore: AccountIdBytes = BOB.to_raw_vec().try_into().unwrap();
+    pub AliceStore: SignedMerchantId = ALICE.to_raw_vec().into();
+    pub BobStore: SignedMerchantId = BOB.to_raw_vec().into();
 }
 
 #[derive(Default)]
