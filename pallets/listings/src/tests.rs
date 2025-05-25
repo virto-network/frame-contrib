@@ -21,7 +21,10 @@ mod create_inventory {
     fn fails_if_create_origin_is_invalid() {
         new_test_ext().execute_with(|| {
             assert_noop!(
-                Listings::create_inventory(RuntimeOrigin::signed(ALICE), InventoryId([2u8; 32], 1)),
+                Listings::create_inventory(
+                    RuntimeOrigin::signed(ALICE),
+                    InventoryId([2u8; 32].into(), 1)
+                ),
                 DispatchError::BadOrigin,
             );
         })
@@ -32,7 +35,10 @@ mod create_inventory {
         new_test_ext().execute_with(|| {
             <Balances as fungible::Mutate<AccountId>>::set_balance(&ALICE, 2);
             assert_noop!(
-                Listings::create_inventory(RuntimeOrigin::signed(ALICE), InventoryId([1u8; 32], 1)),
+                Listings::create_inventory(
+                    RuntimeOrigin::signed(ALICE),
+                    InventoryId([1u8; 32].into(), 1)
+                ),
                 pallet_balances::Error::<Test>::InsufficientBalance
             );
         })
@@ -42,7 +48,10 @@ mod create_inventory {
     fn fails_if_inventory_already_exists() {
         new_test_ext().execute_with(|| {
             assert_noop!(
-                Listings::create_inventory(RuntimeOrigin::signed(ROOT), InventoryId([0u8; 32], 1)),
+                Listings::create_inventory(
+                    RuntimeOrigin::signed(ROOT),
+                    InventoryId([0u8; 32].into(), 1)
+                ),
                 ListingsError::AlreadyExistingInventory,
             );
         })
@@ -59,12 +68,12 @@ mod create_inventory {
 
             assert_ok!(Listings::create_inventory(
                 RuntimeOrigin::signed(ALICE),
-                InventoryId([1u8; 32], 1),
+                InventoryId([1u8; 32].into(), 1),
             ));
 
             System::assert_has_event(
                 ListingsEvent::InventoryCreated {
-                    merchant: [1u8; 32],
+                    merchant: [1u8; 32].into(),
                     id: 1,
                     owner: ALICE,
                 }
@@ -83,7 +92,7 @@ mod archive_inventory {
             assert_noop!(
                 Listings::archive_inventory(
                     RuntimeOrigin::signed(ALICE),
-                    InventoryId([2u8; 32], 1)
+                    InventoryId([2u8; 32].into(), 1)
                 ),
                 ListingsError::UnknownInventory,
             );
@@ -96,7 +105,7 @@ mod archive_inventory {
             assert_noop!(
                 Listings::archive_inventory(
                     RuntimeOrigin::signed(ALICE),
-                    InventoryId([0u8; 32], 1)
+                    InventoryId([0u8; 32].into(), 1)
                 ),
                 DispatchError::BadOrigin,
             );
@@ -106,7 +115,7 @@ mod archive_inventory {
     #[test]
     fn it_works() {
         new_test_ext().execute_with(|| {
-            let inventory_id = InventoryId([0u8; 32], 1);
+            let inventory_id = InventoryId([0u8; 32].into(), 1);
 
             assert_ok!(Listings::archive_inventory(
                 RuntimeOrigin::signed(ROOT),
@@ -122,7 +131,7 @@ mod archive_inventory {
     #[test]
     fn fails_if_inventory_is_already_archived() {
         new_test_ext().execute_with(|| {
-            let inventory_id = InventoryId([0u8; 32], 1);
+            let inventory_id = InventoryId([0u8; 32].into(), 1);
 
             assert_ok!(Listings::archive_inventory(
                 RuntimeOrigin::signed(ROOT),
@@ -145,7 +154,7 @@ mod publish_item {
             assert_noop!(
                 Listings::publish_item(
                     RuntimeOrigin::signed(ALICE),
-                    InventoryId([0u8; 32], 2),
+                    InventoryId([0u8; 32].into(), 2),
                     1,
                     BoundedVec::truncate_from(b"Item name".to_vec()),
                     None,
@@ -160,13 +169,13 @@ mod publish_item {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::archive_inventory(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1)
+                InventoryId([0u8; 32].into(), 1)
             ));
 
             assert_noop!(
                 Listings::publish_item(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     BoundedVec::truncate_from(b"Item name".to_vec()),
                     None,
@@ -182,7 +191,7 @@ mod publish_item {
             assert_noop!(
                 Listings::publish_item(
                     RuntimeOrigin::signed(ALICE),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     BoundedVec::truncate_from(b"Item name".to_vec()),
                     None,
@@ -198,7 +207,7 @@ mod publish_item {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::publish_item(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
                 1,
                 BoundedVec::truncate_from(b"Item name".to_vec()),
                 None,
@@ -206,7 +215,7 @@ mod publish_item {
 
             System::assert_has_event(
                 ListingsEvent::ItemPublished {
-                    inventory_id: InventoryId([0u8; 32], 1),
+                    inventory_id: InventoryId([0u8; 32].into(), 1),
                     id: 1,
                 }
                 .into(),
@@ -217,7 +226,7 @@ mod publish_item {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::publish_item(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
                 1,
                 BoundedVec::truncate_from(b"Item name".to_vec()),
                 Some(ItemPrice {
@@ -228,7 +237,7 @@ mod publish_item {
 
             System::assert_has_event(
                 ListingsEvent::ItemPriceSet {
-                    inventory_id: InventoryId([0u8; 32], 1),
+                    inventory_id: InventoryId([0u8; 32].into(), 1),
                     id: 1,
                     price: ItemPrice {
                         asset: 1,
@@ -246,7 +255,7 @@ mod publish_item {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::publish_item(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
                 1,
                 BoundedVec::truncate_from(b"Item name".to_vec()),
                 None,
@@ -255,7 +264,7 @@ mod publish_item {
             assert_noop!(
                 Listings::publish_item(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     BoundedVec::truncate_from(b"Item name".to_vec()),
                     None,
@@ -271,7 +280,7 @@ fn new_test_ext_with_item() -> sp_io::TestExternalities {
     t.execute_with(|| {
         assert_ok!(Listings::publish_item(
             RuntimeOrigin::signed(ROOT),
-            InventoryId([0u8; 32], 1),
+            InventoryId([0u8; 32].into(), 1),
             1,
             BoundedVec::truncate_from(b"Item name".to_vec()),
             None,
@@ -289,7 +298,7 @@ mod set_item_price {
             assert_noop!(
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 2),
+                    InventoryId([0u8; 32].into(), 2),
                     1,
                     ItemPrice {
                         asset: 1,
@@ -302,7 +311,7 @@ mod set_item_price {
             assert_noop!(
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     2,
                     ItemPrice {
                         asset: 1,
@@ -319,13 +328,13 @@ mod set_item_price {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::archive_inventory(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
             ));
 
             assert_noop!(
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     ItemPrice {
                         asset: 1,
@@ -343,7 +352,7 @@ mod set_item_price {
             assert_noop!(
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ALICE),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     ItemPrice {
                         asset: 1,
@@ -360,7 +369,7 @@ mod set_item_price {
         new_test_ext().execute_with(|| {
             assert_ok!(Catalog::transfer(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
                 1,
                 BOB,
             ));
@@ -368,7 +377,7 @@ mod set_item_price {
             assert_noop!(
                 Listings::set_item_price(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     ItemPrice {
                         asset: 1,
@@ -385,13 +394,13 @@ mod set_item_price {
         new_test_ext().execute_with(|| {
             assert_ok!(Catalog::transfer(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
                 1,
                 BOB,
             ));
             assert_ok!(Listings::mark_item_can_transfer(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
                 1,
                 false,
             ));
@@ -399,7 +408,7 @@ mod set_item_price {
             assert_noop!(
                 Listings::set_item_price(
                     RuntimeOrigin::signed(BOB),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     ItemPrice {
                         asset: 1,
@@ -416,13 +425,13 @@ mod set_item_price {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::mark_item_not_for_resale(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
                 1,
                 true
             ));
             assert_ok!(Catalog::transfer(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
                 1,
                 BOB,
             ));
@@ -430,7 +439,7 @@ mod set_item_price {
             assert_noop!(
                 Listings::set_item_price(
                     RuntimeOrigin::signed(BOB),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     ItemPrice {
                         asset: 1,
@@ -447,7 +456,7 @@ mod set_item_price {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::set_item_price(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
                 1,
                 ItemPrice {
                     asset: 1,
@@ -457,7 +466,7 @@ mod set_item_price {
 
             System::assert_has_event(
                 ListingsEvent::ItemPriceSet {
-                    inventory_id: InventoryId([0u8; 32], 1),
+                    inventory_id: InventoryId([0u8; 32].into(), 1),
                     id: 1,
                     price: ItemPrice {
                         asset: 1,
@@ -480,7 +489,7 @@ mod mark_item_can_transfer {
             assert_noop!(
                 Listings::mark_item_can_transfer(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 2),
+                    InventoryId([0u8; 32].into(), 2),
                     1,
                     false
                 ),
@@ -490,7 +499,7 @@ mod mark_item_can_transfer {
             assert_noop!(
                 Listings::mark_item_can_transfer(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     2,
                     false
                 ),
@@ -504,13 +513,13 @@ mod mark_item_can_transfer {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::archive_inventory(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
             ));
 
             assert_noop!(
                 Listings::mark_item_can_transfer(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     false,
                 ),
@@ -525,7 +534,7 @@ mod mark_item_can_transfer {
             assert_noop!(
                 Listings::mark_item_can_transfer(
                     RuntimeOrigin::signed(ALICE),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     false,
                 ),
@@ -538,7 +547,7 @@ mod mark_item_can_transfer {
     fn it_works() {
         new_test_ext().execute_with(|| {
             let caller = RuntimeOrigin::signed(ROOT);
-            let inventory_id = InventoryId([0u8; 32], 1);
+            let inventory_id = InventoryId([0u8; 32].into(), 1);
             let id = 1;
 
             assert_ok!(Listings::mark_item_can_transfer(
@@ -572,7 +581,7 @@ mod mark_item_not_for_resale {
             assert_noop!(
                 Listings::mark_item_not_for_resale(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 2),
+                    InventoryId([0u8; 32].into(), 2),
                     1,
                     true
                 ),
@@ -582,7 +591,7 @@ mod mark_item_not_for_resale {
             assert_noop!(
                 Listings::mark_item_not_for_resale(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     2,
                     true
                 ),
@@ -596,13 +605,13 @@ mod mark_item_not_for_resale {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::archive_inventory(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
             ));
 
             assert_noop!(
                 Listings::mark_item_not_for_resale(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     false,
                 ),
@@ -617,7 +626,7 @@ mod mark_item_not_for_resale {
             assert_noop!(
                 Listings::mark_item_not_for_resale(
                     RuntimeOrigin::signed(ALICE),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     true,
                 ),
@@ -630,7 +639,7 @@ mod mark_item_not_for_resale {
     fn it_works() {
         new_test_ext().execute_with(|| {
             let caller = RuntimeOrigin::signed(ROOT);
-            let inventory_id = InventoryId([0u8; 32], 1);
+            let inventory_id = InventoryId([0u8; 32].into(), 1);
             let id = 1;
 
             assert_ok!(Listings::mark_item_not_for_resale(
@@ -665,7 +674,7 @@ mod set_item_attribute {
             assert_noop!(
                 Listings::set_item_attribute(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 2),
+                    InventoryId([0u8; 32].into(), 2),
                     1,
                     BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec()),
                     Some(BoundedVec::truncate_from(b"ATTRIBUTE_VALUE".to_vec())),
@@ -678,7 +687,7 @@ mod set_item_attribute {
             assert_noop!(
                 Listings::set_item_attribute(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 2),
+                    InventoryId([0u8; 32].into(), 2),
                     1,
                     BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec()),
                     Some(BoundedVec::truncate_from(b"ATTRIBUTE_VALUE".to_vec())),
@@ -693,13 +702,13 @@ mod set_item_attribute {
         new_test_ext().execute_with(|| {
             assert_ok!(Listings::archive_inventory(
                 RuntimeOrigin::signed(ROOT),
-                InventoryId([0u8; 32], 1),
+                InventoryId([0u8; 32].into(), 1),
             ));
 
             assert_noop!(
                 Listings::set_item_attribute(
                     RuntimeOrigin::signed(ROOT),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec()),
                     Some(BoundedVec::truncate_from(b"ATTRIBUTE_VALUE".to_vec())),
@@ -715,7 +724,7 @@ mod set_item_attribute {
             assert_noop!(
                 Listings::set_item_attribute(
                     RuntimeOrigin::signed(ALICE),
-                    InventoryId([0u8; 32], 1),
+                    InventoryId([0u8; 32].into(), 1),
                     1,
                     BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec()),
                     Some(BoundedVec::truncate_from(b"ATTRIBUTE_VALUE".to_vec())),
@@ -729,7 +738,7 @@ mod set_item_attribute {
     fn it_works() {
         new_test_ext().execute_with(|| {
             let caller = RuntimeOrigin::signed(ROOT);
-            let inventory_id = InventoryId([0u8; 32], 1);
+            let inventory_id = InventoryId([0u8; 32].into(), 1);
             let id = 1;
 
             let key = BoundedVec::truncate_from(b"ATTRIBUTE_KEY".to_vec());

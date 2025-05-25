@@ -1,6 +1,8 @@
 //! Test environment for template pallet.
 
-use crate::{self as pallet_listings, InventoryId, InventoryIdFor, ItemIdOf};
+use crate::{
+    self as pallet_listings, test_utils::SignedMerchantId, InventoryId, InventoryIdFor, ItemIdOf,
+};
 use mock_helpers::ExtHelper;
 
 use frame_support::{
@@ -73,8 +75,6 @@ impl pallet_assets::Config for Test {
     type Freezer = ();
 }
 
-pub type AccountIdBytes = [u8; 32];
-
 parameter_types! {
     pub CollectionDeposit: Balance = 1000;
     pub ItemDeposit: Balance = 100;
@@ -115,18 +115,18 @@ impl pallet_nfts::Config for Test {
 
 pub struct EnsureAccountIdInventories;
 
-impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<AccountIdBytes, Id>>
+impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<SignedMerchantId, Id>>
     for EnsureAccountIdInventories
 {
     type Success = AccountId;
 
     fn try_origin(
         o: RuntimeOrigin,
-        InventoryId(account_bytes, _): &InventoryId<AccountIdBytes, Id>,
+        InventoryId(account_bytes, _): &InventoryId<SignedMerchantId, Id>,
     ) -> Result<Self::Success, RuntimeOrigin> {
         match Into::<Result<RawOrigin<AccountId>, RuntimeOrigin>>::into(o.clone())? {
             RawOrigin::Signed(ref who)
-                if <AccountId as AsRef<[u8]>>::as_ref(who) == &*account_bytes =>
+                if account_bytes.eq(<AccountId as AsRef<[u8]>>::as_ref(who)) =>
             {
                 Ok(who.clone())
             }
@@ -136,9 +136,9 @@ impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<AccountIdBytes, Id>>
 
     #[cfg(feature = "runtime-benchmarks")]
     fn try_successful_origin(
-        InventoryId(public, _): &InventoryId<AccountIdBytes, Id>,
+        InventoryId(public, _): &InventoryId<SignedMerchantId, Id>,
     ) -> Result<RuntimeOrigin, ()> {
-        Ok(RuntimeOrigin::signed(AccountId::new(*public)))
+        Ok(RuntimeOrigin::signed(AccountId::new(public.0)))
     }
 }
 
@@ -147,7 +147,7 @@ impl pallet_listings::Config for Test {
     type WeightInfo = ();
     type CreateInventoryOrigin = EnsureAccountIdInventories;
     type InventoryAdminOrigin = EnsureAccountIdInventories;
-    type MerchantId = AccountIdBytes;
+    type MerchantId = SignedMerchantId;
     type InventoryId = u32;
     type ItemSKU = u32;
     type CollectionConfig =
@@ -195,7 +195,7 @@ mod benchmarks {
                 j
             }
 
-            InventoryId(convert(i), 1u16.into())
+            InventoryId(convert(i).into(), 1u16.into())
         }
 
         fn item(i: u16) -> ItemIdOf<Test> {
@@ -226,7 +226,7 @@ mod benchmarks {
     #[cfg(feature = "runtime-benchmarks")]
     impl crate::BenchmarkHelper<InventoryIdFor<Test>> for Test {
         fn inventory_id() -> InventoryIdFor<Test> {
-            InventoryId([0u8; 32], 0)
+            InventoryId([0u8; 32].into(), 0)
         }
     }
 }
@@ -269,7 +269,7 @@ impl ExtBuilder {
             .unwrap();
 
         pallet_listings::GenesisConfig::<Test> {
-            inventories: vec![(([0u8; 32], 1), ROOT)],
+            inventories: vec![(([0u8; 32].into(), 1), ROOT)],
             items: vec![],
         }
         .assimilate_storage(&mut storage)

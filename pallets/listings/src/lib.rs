@@ -32,6 +32,7 @@ mod types;
 pub mod weights;
 
 pub use pallet::*;
+pub use types::test_utils;
 pub use types::*;
 pub use weights::*;
 

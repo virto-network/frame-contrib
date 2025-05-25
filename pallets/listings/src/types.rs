@@ -161,3 +161,79 @@ impl<T: Incrementable> Incrementable for ItemType<T> {
 pub trait BenchmarkHelper<InventoryId> {
     fn inventory_id() -> InventoryId;
 }
+
+pub mod test_utils {
+    use super::*;
+    use core::ops::Deref;
+
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        Debug,
+        Default,
+    )]
+    #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+    pub struct SignedMerchantId(pub [u8; 32]);
+
+    impl From<[u8; 32]> for SignedMerchantId {
+        fn from(value: [u8; 32]) -> Self {
+            Self(value)
+        }
+    }
+
+    impl From<Vec<u8>> for SignedMerchantId {
+        fn from(value: Vec<u8>) -> Self {
+            Self(
+                value
+                    .try_into()
+                    .expect("test `SignedMerchantId` won't exceed 32 bytes"),
+            )
+        }
+    }
+
+    impl Incrementable for SignedMerchantId {
+        fn increment(&self) -> Option<Self> {
+            let mut inner = self.0;
+            let mut i = 0;
+            loop {
+                if inner[i] == 255 {
+                    inner[i] = 0;
+                    i += 1;
+                    if i == 32 {
+                        break;
+                    }
+                } else {
+                    inner[i] += 1;
+                    break;
+                }
+            }
+
+            Some(Self(inner))
+        }
+
+        fn initial_value() -> Option<Self> {
+            Some([0u8; 32].into())
+        }
+    }
+
+    impl PartialEq<[u8]> for SignedMerchantId {
+        fn eq(&self, other: &[u8]) -> bool {
+            self.0 == *other
+        }
+    }
+
+    impl Deref for SignedMerchantId {
+        type Target = [u8; 32];
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+}
