@@ -133,6 +133,7 @@ where
 )]
 mod benchmarks {
     use super::*;
+    use frame_support::traits::fungibles::Inspect;
     use sp_runtime::Saturating;
 
     #[benchmark]
@@ -243,8 +244,10 @@ mod benchmarks {
             .into_iter()
             .map(|(full_id, _)| (full_id, Some(beneficiary.clone())));
 
-        let price = items.clone().fold(
-            Into::<PaymentBalanceOf<T, I>>::into(1u32),
+        let amount = items.clone().fold::<PaymentBalanceOf<T, I>, _>(
+            <T::BenchmarkHelper as BenchmarkHelper<T, I>>::Assets::minimum_balance(
+                asset_id.clone(),
+            ),
             |price, ((ref inventory_id, ref id), _)| {
                 let item = T::Listings::item(inventory_id, id).expect("item already created; qed");
                 let ItemPrice { amount, .. } =
@@ -253,8 +256,10 @@ mod benchmarks {
             },
         );
 
+        log::trace!(target: LOG_TARGET, "prepare_account({caller_account:?})");
         prepare_account::<T, I>(&caller_account);
-        prepare_asset_account::<T, I>(asset_id, &caller_account, price)?;
+        log::trace!(target: LOG_TARGET, "prepare_asset_account({asset_id:?}, {caller_account:?}, {amount:?})");
+        prepare_asset_account::<T, I>(asset_id, &caller_account, amount)?;
 
         Pallet::<T, I>::set_cart_items(caller.clone(), order_id.clone(), items.collect())?;
         Pallet::<T, I>::checkout(caller.clone(), order_id.clone())?;
@@ -267,9 +272,5 @@ mod benchmarks {
         Ok(())
     }
 
-    impl_benchmark_test_suite!(
-        Pallet,
-        sp_io::TestExternalities::default(),
-        crate::mock::Test
-    );
+    impl_benchmark_test_suite!(Pallet, sp_io::TestExternalities::default(), mock::Test);
 }
