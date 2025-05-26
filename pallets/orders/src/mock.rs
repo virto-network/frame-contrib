@@ -268,8 +268,10 @@ impl PaymentId {
     }
 }
 
-impl fc_pallet_payments::PaymentId<Test> for PaymentId {
-    fn next(_sender: &AccountId, _beneficiary: &AccountId) -> Option<Self> {
+impl fc_pallet_payments::GeneratePaymentId<AccountId> for PaymentId {
+    type PaymentId = Self;
+
+    fn generate(_: &AccountId, _: &AccountId) -> Option<Self> {
         LAST_ID.with(|id| {
             let new_id = id.get() + 1;
             id.set(new_id);
@@ -315,20 +317,21 @@ impl FeeHandler<Test> for MinBalanceFeeHandler {
 impl fc_pallet_payments::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type PalletsOrigin = OriginCaller;
+    type RuntimeHoldReason = RuntimeHoldReason;
     type RuntimeCall = RuntimeCall;
-    type Assets = Assets;
-    type AssetsHold = AssetsHolder;
-    type BlockNumberProvider = System;
-    type FeeHandler = MinBalanceFeeHandler;
+    type WeightInfo = ();
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;
     type DisputeResolver = EnsureRootWithSuccess<AccountId, RootAccount>;
     type PaymentId = PaymentId;
+    type Assets = Assets;
+    type AssetsHold = AssetsHolder;
+    type BlockNumberProvider = System;
+    type FeeHandler = MinBalanceFeeHandler;
     type Scheduler = Scheduler;
     type Preimages = ();
-    type RuntimeHoldReason = RuntimeHoldReason;
-    type WeightInfo = ();
     type OnPaymentStatusChanged = Orders;
+    type GeneratePaymentId = PaymentId;
     type PalletId = PaymentPalletId;
     type IncentivePercentage = IncentivePercentage;
     type MaxRemarkLength = MaxRemarkLength;

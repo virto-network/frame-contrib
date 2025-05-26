@@ -587,11 +587,11 @@ fn request_payment() {
 fn next_id_works() {
     new_test_ext().execute_with(|| {
         assert_eq!(
-            mock::PaymentId::next(&SENDER_ACCOUNT, &PAYMENT_BENEFICIARY),
+            mock::PaymentId::generate(&SENDER_ACCOUNT, &PAYMENT_BENEFICIARY),
             Some(mock::PaymentId(1))
         );
         assert_eq!(
-            mock::PaymentId::next(&SENDER_ACCOUNT, &PAYMENT_BENEFICIARY),
+            mock::PaymentId::generate(&SENDER_ACCOUNT, &PAYMENT_BENEFICIARY),
             Some(mock::PaymentId(2))
         );
     });

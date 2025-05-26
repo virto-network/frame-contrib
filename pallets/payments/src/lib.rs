@@ -53,8 +53,9 @@ pub mod types;
 
 pub use types::*;
 
-pub trait PaymentId<T: frame_system::Config>: Copy + Clone {
-    fn next(sender: &T::AccountId, beneficiary: &T::AccountId) -> Option<Self>;
+pub trait GeneratePaymentId<AccountId> {
+    type PaymentId;
+    fn generate(sender: &AccountId, beneficiary: &AccountId) -> Option<Self::PaymentId>;
 }
 
 #[frame_support::pallet]
@@ -94,7 +95,7 @@ pub mod pallet {
 
         // Types: A set of parameter types that the pallet uses to handle information.
 
-        type PaymentId: PaymentId<Self> + Member + Parameter + MaxEncodedLen;
+        type PaymentId: Parameter + Copy + MaxEncodedLen;
 
         // Dependencies: The external components this pallet depends on.
 
@@ -127,8 +128,10 @@ pub mod pallet {
         >;
         /// The preimage provider used to look up call hashes to get the call.
         type Preimages: QueryPreimage<H = Self::Hashing> + StorePreimage;
-        /// A hook that
+        /// A hook that processes when the status of a payment changes.
         type OnPaymentStatusChanged: OnPaymentStatusChanged<Self::PaymentId, BalanceOf<Self>>;
+        /// A provider that generates the `PaymentId` type given the parties.
+        type GeneratePaymentId: GeneratePaymentId<Self::AccountId, PaymentId = Self::PaymentId>;
 
         // Parameters: A set of constant parameters to configure limits.
 
@@ -586,8 +589,8 @@ impl<T: Config> Pallet<T> {
         incentive_percentage: Percent,
         remark: Option<&[u8]>,
     ) -> Result<(T::PaymentId, PaymentDetail<T>), DispatchError> {
-        let payment_id =
-            T::PaymentId::next(sender, &beneficiary).ok_or(Error::<T>::NoPaymentIdAvailable)?;
+        let payment_id = T::GeneratePaymentId::generate(sender, &beneficiary)
+            .ok_or(Error::<T>::NoPaymentIdAvailable)?;
         Payment::<T>::try_mutate(
             sender,
             payment_id,

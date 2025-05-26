@@ -261,20 +261,21 @@ parameter_types! {
 impl Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type PalletsOrigin = OriginCaller;
+    type RuntimeHoldReason = RuntimeHoldReason;
     type RuntimeCall = RuntimeCall;
-    type Assets = Assets;
-    type AssetsHold = AssetsHolder;
-    type BlockNumberProvider = System;
-    type FeeHandler = MockFeeHandler;
+    type WeightInfo = ();
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;
     type DisputeResolver = frame_system::EnsureRootWithSuccess<u64, ConstU64<ROOT_ACCOUNT>>;
     type PaymentId = PaymentId;
+    type Assets = Assets;
+    type AssetsHold = AssetsHolder;
+    type BlockNumberProvider = System;
+    type FeeHandler = MockFeeHandler;
     type Scheduler = Scheduler;
     type Preimages = ();
-    type RuntimeHoldReason = RuntimeHoldReason;
-    type WeightInfo = ();
     type OnPaymentStatusChanged = OnPaymentStatusHooks;
+    type GeneratePaymentId = PaymentId;
     type PalletId = PaymentPalletId;
     type IncentivePercentage = IncentivePercentage;
     type MaxRemarkLength = MaxRemarkLength;
@@ -338,8 +339,10 @@ use core::cell::Cell;
 thread_local! {
     pub static LAST_ID: Cell<u32>  = const { Cell::new(0) };
 }
-impl pallet_payments::PaymentId<Test> for PaymentId {
-    fn next(_sender: &AccountId, _beneficiary: &AccountId) -> Option<Self> {
+impl pallet_payments::GeneratePaymentId<AccountId> for PaymentId {
+    type PaymentId = Self;
+
+    fn generate(_: &AccountId, _: &AccountId) -> Option<Self> {
         LAST_ID.with(|id| {
             let new_id = id.get() + 1;
             id.set(new_id);
