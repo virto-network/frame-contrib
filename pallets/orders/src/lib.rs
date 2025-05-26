@@ -344,7 +344,6 @@ pub mod pallet {
         pub fn pay(origin: OriginFor<T>, order_id: T::OrderId) -> DispatchResult {
             let who = &T::PaymentOrigin::ensure_origin(origin)?;
 
-            log::trace!(target: LOG_TARGET, "processing payment for order {order_id:?}");
             Order::<T, I>::try_mutate(order_id.clone(), |order| -> DispatchResult {
                 let Some((owner, details)) = order else {
                     return Err(Error::<T, I>::OrderNotFound.into());
@@ -364,34 +363,13 @@ pub mod pallet {
                         return Err(Error::<T, I>::ItemNotForSale.into());
                     };
 
-                    #[cfg(feature = "runtime-benchmarks")]
-                    {
-                        use frame_support::traits::{
-                            fungibles::Inspect,
-                            tokens::{Fortitude, Preservation},
-                        };
-                        let balance =
-                            <T::BenchmarkHelper as BenchmarkHelper<T, I>>::Assets::reducible_balance(
-                                asset.clone(),
-                                who,
-                                Preservation::Preserve,
-                                Fortitude::Polite,
-                            );
-                        log::trace!(target: LOG_TARGET, "\tremaining balance for {who:?}: {balance:?} ({asset:?})");
-                        log::trace!(target: LOG_TARGET, "\tcreate payment for {order_item:?}: {amount:?} ({asset:?})");
-                    }
                     let payment_id = T::Payments::create(
                         &who.clone(),
                         asset,
                         amount,
                         &item.owner,
                         Some(order_item.clone()),
-                    ).inspect_err(|e| {
-                        #[cfg(feature = "runtime-benchmarks")]
-                        log::error!(target: LOG_TARGET, "\tpayment error for {order_item:?}: {e:?}");
-                    })?;
-
-                    order_item.payment_id = Some(payment_id.clone());
+                    )?;
 
                     Payment::<T, I>::insert(
                         payment_id,

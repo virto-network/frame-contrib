@@ -235,6 +235,7 @@ mod benchmarks {
             T::CreateOrigin::ensure_origin(caller.clone()).map_err(|_| DispatchError::BadOrigin)?;
         let (_, max_items) = T::OrderAdminOrigin::ensure_origin(caller.clone())
             .map_err(|_| DispatchError::BadOrigin)?;
+        let seller_account = account("merchant_owner", 0, 0);
 
         let (asset_id, order_id, items) = setup::<T, I>(max_carts, max_items, caller.clone())?;
 
@@ -256,10 +257,24 @@ mod benchmarks {
             },
         );
 
-        log::trace!(target: LOG_TARGET, "prepare_account({caller_account:?})");
+        let sender_costs = items.clone().fold::<PaymentBalanceOf<T, I>, _>(
+            Zero::zero(),
+            |costs, ((ref inventory_id, ref id), _)| {
+                let item = T::Listings::item(inventory_id, id).expect("item already created; qed");
+                let ItemPrice { amount, .. } =
+                    item.price.expect("prices given for every item; qed");
+                let payment_costs =
+                    T::Payments::sender_costs(&asset_id, &caller_account, &seller_account, &amount);
+                costs.saturating_add(payment_costs)
+            },
+        );
+
         prepare_account::<T, I>(&caller_account);
-        log::trace!(target: LOG_TARGET, "prepare_asset_account({asset_id:?}, {caller_account:?}, {amount:?})");
-        prepare_asset_account::<T, I>(asset_id, &caller_account, amount)?;
+        prepare_asset_account::<T, I>(
+            asset_id.clone(),
+            &caller_account,
+            amount.saturating_add(sender_costs),
+        )?;
 
         Pallet::<T, I>::set_cart_items(caller.clone(), order_id.clone(), items.collect())?;
         Pallet::<T, I>::checkout(caller.clone(), order_id.clone())?;

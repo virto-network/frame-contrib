@@ -53,24 +53,25 @@ runtime-benchmarks = [
 ]
 
 std = [
-  "codec/std",
-  "fc-pallet-listings/std",
-  "fc-pallet-payments/std",
-  "frame-benchmarking/std",
-  "frame-contrib-traits/std",
-  "frame-support/std",
-  "frame-system/std",
-  "mock-helpers/std",
-  "pallet-assets/std",
-  "pallet-balances/std",
-  "pallet-nfts/std",
-  "pallet-preimage/std",
-  "pallet-scheduler/std",
-  "scale-info/std",
-  "sp-core/std",
-  "sp-io/std",
-  "sp-runtime/std",
-  "pallet-assets-holder/std"
+	"codec/std",
+	"fc-pallet-listings/std",
+	"fc-pallet-payments/std",
+	"frame-benchmarking/std",
+	"frame-contrib-traits/std",
+	"frame-support/std",
+	"frame-system/std",
+	"mock-helpers/std",
+	"pallet-assets/std",
+	"pallet-balances/std",
+	"pallet-nfts/std",
+	"pallet-preimage/std",
+	"pallet-scheduler/std",
+	"scale-info/std",
+	"sp-core/std",
+	"sp-io/std",
+	"sp-runtime/std",
+	"pallet-assets-holder/std",
+	"log/std"
 ]
 
 try-runtime = [

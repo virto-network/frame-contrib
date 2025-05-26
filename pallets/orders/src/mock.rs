@@ -3,6 +3,7 @@
 use crate::{self as fc_pallet_orders, Config};
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use core::cell::Cell;
+use fc_pallet_payments::FeeHandler;
 #[cfg(feature = "runtime-benchmarks")]
 use {
     crate::types::{InventoryIdOf, MerchantIdOf},
@@ -26,7 +27,7 @@ use sp_core::{parameter_types, ByteArray};
 use sp_io::TestExternalities;
 use sp_runtime::{
     traits::{IdentifyAccount, IdentityLookup, Verify},
-    BuildStorage, MultiSignature, Percent,
+    BoundedVec, BuildStorage, MultiSignature, Percent,
 };
 
 pub type Block = frame_system::mocking::MockBlock<Test>;
@@ -280,8 +281,35 @@ impl fc_pallet_payments::PaymentId<Test> for PaymentId {
 parameter_types! {
     pub const RootAccount: AccountId = AccountId::new([0u8; 32]);
     pub const PaymentPalletId: PalletId = PalletId(*b"fcp/pays");
-    pub const IncentivePercentage: Percent = Percent::from_percent(0);
+    pub const IncentivePercentage: Percent = Percent::from_percent(10);
     pub const MaxRemarkLength: u32 = 256;
+}
+
+pub struct MinBalanceFeeHandler;
+
+// Min balance as fees for both recipient and sender
+impl FeeHandler<Test> for MinBalanceFeeHandler {
+    fn apply_fees(
+        asset: &fc_pallet_payments::AssetIdOf<Test>,
+        _sender: &AccountId,
+        _beneficiary: &AccountId,
+        _amount: &fc_pallet_payments::BalanceOf<Test>,
+        _remark: Option<&[u8]>,
+    ) -> fc_pallet_payments::Fees<Test> {
+        use frame_support::traits::fungibles::Inspect;
+        fc_pallet_payments::Fees {
+            sender_pays: BoundedVec::truncate_from(vec![(
+                RootAccount::get(),
+                Assets::minimum_balance(asset.clone()),
+                true,
+            )]),
+            beneficiary_pays: BoundedVec::truncate_from(vec![(
+                RootAccount::get(),
+                Assets::minimum_balance(asset.clone()),
+                true,
+            )]),
+        }
+    }
 }
 
 impl fc_pallet_payments::Config for Test {
@@ -291,7 +319,7 @@ impl fc_pallet_payments::Config for Test {
     type Assets = Assets;
     type AssetsHold = AssetsHolder;
     type BlockNumberProvider = System;
-    type FeeHandler = ();
+    type FeeHandler = MinBalanceFeeHandler;
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;
     type DisputeResolver = EnsureRootWithSuccess<AccountId, RootAccount>;

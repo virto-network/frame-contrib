@@ -3,7 +3,14 @@
 use super::{Error as ErrorT, Event as EventT, Order, Pallet};
 use crate::mock::*;
 use crate::NextOrderId;
-use frame_support::{assert_noop, assert_ok, traits::schedule::v3::Named};
+use frame_support::{
+    assert_noop, assert_ok,
+    traits::{
+        fungibles::{Inspect, Mutate},
+        schedule::v3::Named,
+    },
+};
+use sp_runtime::traits::Saturating;
 
 type Orders = Pallet<Test>;
 type Error = ErrorT<Test>;
@@ -473,6 +480,7 @@ mod pay {
         f: impl FnOnce(u32) -> T,
     ) -> T {
         ExtBuilder::default()
+            .with_account(RootAccount::get(), ExistentialDeposit::get())
             .with_account(ALICE, ExistentialDeposit::get())
             .with_account(BOB, ExistentialDeposit::get())
             .with_account(CHARLIE, ExistentialDeposit::get())
@@ -645,9 +653,19 @@ mod pay {
         let item_id = 3;
 
         new_test_ext(CHARLIE, vec![((inventory_id, item_id), None)], |order_id| {
-            let bob_asset_b_balance = Assets::balance(ASSET_A, &BOB);
+            let bob_asset_a_balance = Assets::balance(ASSET_A, &BOB);
+
+            let price = 15;
+            // 10 percent and minimum balance
+            let costs = IncentivePercentage::get()
+                .mul_floor(price)
+                .saturating_add(Assets::minimum_balance(ASSET_A));
+            assert_ok!(Assets::mint_into(ASSET_A, &BOB, costs));
 
             assert_ok!(Orders::pay(RuntimeOrigin::signed(BOB), order_id));
+
+            // Costs that BOB must pay are kept on hold.
+            assert_eq!(AssetsHolder::total_balance_on_hold(ASSET_A, &BOB), costs);
 
             // The scheduled `cancel` call is now removed.
             let (schedule_id, _) = Orders::schedule_cancel_params(&order_id);
@@ -677,8 +695,7 @@ mod pay {
             assert!(!Listings::transferable(&inventory_id, &item_id));
 
             // The balances hold (pun intended).
-            let price = 15;
-            assert_eq!(Assets::balance(ASSET_A, &BOB), bob_asset_b_balance - price);
+            assert_eq!(Assets::balance(ASSET_A, &BOB), bob_asset_a_balance - price);
             assert_eq!(AssetsHolder::total_balance_on_hold(ASSET_A, &ALICE), price);
 
             // Once BOB releases the payment (since CHARLIE received the payment), the item will be
@@ -689,7 +706,13 @@ mod pay {
                 PaymentId::last()
             ));
             assert!(Listings::transferable(&inventory_id, &item_id));
-            assert_eq!(Assets::balance(ASSET_A, &ALICE), alice_balance + price);
+
+            // 10 percent and minimum balance
+            let costs = Assets::minimum_balance(ASSET_A);
+            assert_eq!(
+                Assets::balance(ASSET_A, &ALICE),
+                alice_balance + price - costs
+            );
             assert_eq!(AssetsHolder::total_balance_on_hold(ASSET_A, &ALICE), 0);
 
             // Since all the items have been delivered, the order is now completed
