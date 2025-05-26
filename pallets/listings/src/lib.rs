@@ -302,6 +302,7 @@ pub mod pallet {
         /// - `name`: A valid name for the item.
         /// - `maybe_price`: Optionally, include the price of the item.
         #[pallet::call_index(2)]
+        #[pallet::weight(<T as Config<I>>::WeightInfo::publish_item(name.len() as u32))]
         pub fn publish_item(
             origin: OriginFor<T>,
             inventory_id: InventoryIdFor<T, I>,
@@ -459,9 +460,15 @@ pub mod pallet {
         #[pallet::call_index(6)]
         #[pallet::weight(
             if maybe_value.is_some() {
-                <T as Config<I>>::WeightInfo::set_item_attribute()
+                <T as Config<I>>::WeightInfo::set_item_attribute(
+                    key.len() as u32,
+                    maybe_value.clone().unwrap().len() as u32
+                )
             } else {
-                <T as Config<I>>::WeightInfo::clear_item_attribute()
+                <T as Config<I>>::WeightInfo::clear_item_attribute(
+                    key.len() as u32,
+                    0
+                )
             }
 		)]
         pub fn set_item_attribute(
