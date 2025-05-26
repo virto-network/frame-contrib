@@ -222,6 +222,7 @@ pub mod pallet {
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
         /// Creates a new cart.
         #[pallet::call_index(0)]
+        #[pallet::weight(<T as Config<I>>::WeightInfo::create_cart(1, maybe_items.clone().unwrap_or_default().len() as u32))]
         pub fn create_cart(
             origin: OriginFor<T>,
             maybe_items: Option<Vec<CartItemParameterOf<T, I>>>,
@@ -265,6 +266,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(1)]
+        #[pallet::weight(<T as Config<I>>::WeightInfo::set_cart_items(items.len() as u32))]
         pub fn set_cart_items(
             origin: OriginFor<T>,
             order_id: T::OrderId,
