@@ -15,6 +15,8 @@ pub trait Config<I: 'static = ()>: frame_system::Config {
     type AssetId: Parameter + MaxEncodedLen;
     type Balance: Balance;
 
+    type MaxMetadataLen: Get<u32>;
+
     type MaxKeyLen: Get<u32>;
     type MaxValueLen: Get<u32>;
 }
@@ -46,6 +48,8 @@ struct Inventory<T: Config<I>, I: 'static = ()> {
     active: bool,
     /// The limit of items
     items_limit: Option<u32>,
+    /// An optional metadata bound to an item.
+    metadata: Option<BoundedVec<u8, <T as Config<I>>::MaxMetadataLen>>,
     /// The map of attributes for the inventory.
     attributes: AttributesMapOf<T, I>,
 }
@@ -67,6 +71,8 @@ struct Item<T: Config<I>, I: 'static = ()> {
     transferable: bool,
     /// The item can be resold.
     can_resell: bool,
+    /// An optional metadata bound to an item.
+    metadata: Option<BoundedVec<u8, <T as Config<I>>::MaxMetadataLen>>,
     /// The map of attributes for the item.
     attributes: AttributesMapOf<T, I>,
 }
@@ -150,6 +156,7 @@ impl<T: Config<I>, I: 'static> InventoryLifecycle<T::AccountId> for MockListings
                 active: true,
                 items_limit: None,
                 attributes: BoundedBTreeMap::new(),
+                metadata: None,
             },
         );
         Ok(())
@@ -178,6 +185,43 @@ impl<T: Config<I>, I: 'static> MutateInventory for MockListings<T, I> {
             *items_limit = limit.map(|l| l as u32);
             Ok(())
         })
+    }
+
+    fn set_inventory_metadata<M: Encode>(
+        (merchant_id, inventory_id): &(Self::MerchantId, Self::InventoryId),
+        metadata: M,
+    ) -> DispatchResult {
+        Inventories::<T, I>::try_mutate(
+            merchant_id,
+            inventory_id,
+            |maybe_inventory| -> DispatchResult {
+                let Some(inventory) = maybe_inventory else {
+                    Err(DispatchError::Other("UnknownInventory"))?
+                };
+                let value = metadata.using_encoded(|v| {
+                    BoundedVec::try_from(v.to_vec())
+                        .map_err(|_| DispatchError::Other("MaxMetadataLenExceeded"))
+                })?;
+                inventory.metadata = Some(value);
+                Ok(())
+            },
+        )
+    }
+
+    fn clear_inventory_metadata(
+        (merchant_id, inventory_id): &(Self::MerchantId, Self::InventoryId),
+    ) -> DispatchResult {
+        Inventories::<T, I>::try_mutate(
+            merchant_id,
+            inventory_id,
+            |maybe_inventory| -> DispatchResult {
+                let Some(inventory) = maybe_inventory else {
+                    Err(DispatchError::Other("UnknownInventory"))?
+                };
+                inventory.metadata = None;
+                Ok(())
+            },
+        )
     }
 
     fn set_inventory_attribute<K: Encode, V: Encode>(
@@ -305,6 +349,7 @@ impl<T: Config<I>, I: 'static> MutateItem<T::AccountId> for MockListings<T, I> {
                 transferable: true,
                 can_resell: true,
                 attributes: Default::default(),
+                metadata: None,
             },
         );
         Ok(())
@@ -414,6 +459,37 @@ impl<T: Config<I>, I: 'static> MutateItem<T::AccountId> for MockListings<T, I> {
                 Err(DispatchError::Other("UnknownItem"))?
             };
             *price = None;
+            Ok(())
+        })
+    }
+
+    fn set_metadata<M: Encode>(
+        inventory_id: &item::InventoryIdOf<Self, T::AccountId>,
+        id: &Self::ItemId,
+        metadata: M,
+    ) -> DispatchResult {
+        Items::<T, I>::try_mutate(inventory_id, id, |maybe_item| {
+            let Some(item) = maybe_item else {
+                Err(DispatchError::Other("UnknownItem"))?
+            };
+            let value = metadata.using_encoded(|v| {
+                BoundedVec::try_from(v.to_vec())
+                    .map_err(|_| DispatchError::Other("MaxMetadataLenExceeded"))
+            })?;
+            item.metadata = Some(value);
+            Ok(())
+        })
+    }
+
+    fn clear_metadata(
+        inventory_id: &item::InventoryIdOf<Self, T::AccountId>,
+        id: &Self::ItemId,
+    ) -> DispatchResult {
+        Items::<T, I>::try_mutate(inventory_id, id, |maybe_item| {
+            let Some(item) = maybe_item else {
+                Err(DispatchError::Other("UnknownItem"))?
+            };
+            item.metadata = None;
             Ok(())
         })
     }

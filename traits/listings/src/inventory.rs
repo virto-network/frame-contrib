@@ -61,6 +61,15 @@ pub trait Mutate: Inspect {
         limit: Option<usize>,
     ) -> DispatchResult;
 
+    /// Sets some metadata to an inventory.
+    fn set_inventory_metadata<M: Encode>(
+        id: &(Self::MerchantId, Self::InventoryId),
+        metadata: M,
+    ) -> DispatchResult;
+
+    /// Clears the metadata of an inventory.
+    fn clear_inventory_metadata(id: &(Self::MerchantId, Self::InventoryId)) -> DispatchResult;
+
     /// Sets an attribute on an inventory.
     fn set_inventory_attribute<K: Encode, V: Encode>(
         id: &(Self::MerchantId, Self::InventoryId),

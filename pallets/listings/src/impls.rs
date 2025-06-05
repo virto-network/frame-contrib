@@ -66,6 +66,17 @@ mod inventory {
             Ok(())
         }
 
+        fn set_inventory_metadata<M: Encode>(
+            id: &InventoryIdTuple<T, I>,
+            metadata: M,
+        ) -> DispatchResult {
+            T::Nonfungibles::set_collection_metadata(None, &id.into(), metadata.encode().as_ref())
+        }
+
+        fn clear_inventory_metadata(id: &InventoryIdTuple<T, I>) -> DispatchResult {
+            T::Nonfungibles::clear_collection_metadata(None, &id.into())
+        }
+
         fn set_inventory_attribute<K: Encode, V: Encode>(
             id: &InventoryIdTuple<T, I>,
             key: &K,
@@ -328,6 +339,26 @@ mod item {
                 &ItemAttribute::Info,
                 &(name, None::<ItemPriceOf<T, I>>),
             )
+        }
+
+        fn set_metadata<M: Encode>(
+            inventory_id: &fc_traits_listings::item::InventoryIdOf<Self, AccountIdOf<T>>,
+            id: &Self::ItemId,
+            metadata: M,
+        ) -> DispatchResult {
+            T::Nonfungibles::set_item_metadata(
+                None,
+                &inventory_id.into(),
+                id,
+                metadata.encode().as_ref(),
+            )
+        }
+
+        fn clear_metadata(
+            inventory_id: &fc_traits_listings::item::InventoryIdOf<Self, AccountIdOf<T>>,
+            id: &Self::ItemId,
+        ) -> DispatchResult {
+            T::Nonfungibles::clear_item_metadata(None, &inventory_id.into(), id)
         }
 
         fn set_attribute<K: Encode, V: Encode>(

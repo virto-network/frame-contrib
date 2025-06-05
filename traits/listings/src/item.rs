@@ -148,6 +148,19 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
         id: &Self::ItemId,
     ) -> DispatchResult;
 
+    /// Sets some metadata to an item.
+    fn set_metadata<M: Encode>(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
+        metadata: M,
+    ) -> DispatchResult;
+
+    /// Clears the metadata of an inventory.
+    fn clear_metadata(
+        inventory_id: &InventoryIdOf<Self, AccountId>,
+        id: &Self::ItemId,
+    ) -> DispatchResult;
+
     /// Sets an arbitrary attribute on an existing item.
     fn set_attribute<K: Encode, V: Encode>(
         inventory_id: &InventoryIdOf<Self, AccountId>,
