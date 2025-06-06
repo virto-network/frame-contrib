@@ -10,13 +10,15 @@ pub use fc_traits_authn_proc::composite_authenticator;
 
 const LOG_TARGET: &str = "authn";
 
-pub mod composite_prelude {
+pub mod prelude {
     pub use crate::{
         Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
         ExtrinsicContext, HashedUserId, UserAuthenticator, UserChallengeResponse,
     };
     pub use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
-    pub use frame_support::{pallet_prelude::TypeInfo, traits::Get, DebugNoBound, EqNoBound};
+    pub use frame_support::{
+        pallet_prelude::TypeInfo, traits::Get, DebugNoBound, EqNoBound, Parameter,
+    };
 }
 
 #[macro_export]

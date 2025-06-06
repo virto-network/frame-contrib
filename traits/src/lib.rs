@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 // Re-export `composite_prelude` to prevent accidents when using the `composite_authenticator!` macro.
-pub use authn::composite_prelude;
+pub use authn::prelude;
 pub use fc_traits_authn as authn;
 
 pub use fc_traits_gas_tank as gas_tank;

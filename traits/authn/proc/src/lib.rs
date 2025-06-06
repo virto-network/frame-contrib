@@ -206,7 +206,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
 
     // Generate the full struct and impl code
     let expanded = quote! {
-        use #prelude_crate::composite_prelude::*;
+        use #prelude_crate::prelude::*;
 
         #vis struct #auth_struct;
 
