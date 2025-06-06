@@ -195,29 +195,51 @@ impl Config for Test {
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks {
     use super::*;
+    use core::cell::Cell;
     use pallet_pass::{CredentialOf, DeviceAttestationOf};
+    use sp_core::U256;
+    use sp_runtime::traits::TrailingZeroInput;
+
+    thread_local! {
+        pub static LAST_ID: Cell<U256>  = const { Cell::new(U256::zero()) };
+    }
 
     pub struct BenchmarkHelper;
 
+    impl BenchmarkHelper {
+        fn next_device() -> DeviceId {
+            LAST_ID.with(|id| {
+                let device_id: DeviceId =
+                    Decode::decode(&mut TrailingZeroInput::new(&id.get().encode()))
+                        .expect("infinite size, decodes to expected byte array; qed");
+                id.set(id.get().saturating_add(U256::one()));
+                device_id
+            })
+        }
+    }
+
     impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
-        fn device_attestation(
-            device_id: DeviceId,
-            xtc: &impl ExtrinsicContext,
-        ) -> DeviceAttestationOf<Test, ()> {
-            PassDeviceAttestation::AuthenticatorAAuthenticator(authenticator_a::DeviceAttestation {
-                device_id,
-                challenge: authenticator_a::Authenticator::generate(&(), xtc),
+        fn device_attestation(xtc: &impl ExtrinsicContext) -> DeviceAttestationOf<Test, ()> {
+            PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                device_id: Self::next_device(),
+                context: System::block_number(),
+                challenge: LastThreeBlocksChallenger::generate(&System::block_number(), xtc),
             })
         }
 
         fn credential(
             user_id: HashedUserId,
+            device_id: DeviceId,
             xtc: &impl ExtrinsicContext,
         ) -> CredentialOf<Test, ()> {
-            PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
-                user_id,
-                challenge: authenticator_a::Authenticator::generate(&(), xtc),
-            })
+            PassCredential::AuthenticatorB(
+                authenticator_b::Credential::new(
+                    user_id,
+                    System::block_number(),
+                    LastThreeBlocksChallenger::generate(&System::block_number(), xtc),
+                )
+                .sign(&device_id),
+            )
         }
     }
 }

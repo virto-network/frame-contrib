@@ -182,10 +182,17 @@ mod benchmarks {
         T: Config<I>,
         I: 'static,
     {
-        fn device_attestation(
-            device_id: fc_traits_authn::DeviceId,
+        /// Returns the attestation of a new device.
+        ///
+        /// This method must ensure that each returned device attestation contains a different
+        /// `device_id`.
+        fn device_attestation(xtc: &impl ExtrinsicContext) -> DeviceAttestationOf<T, I>;
+        /// Requests some credentials for authenticating an [`user_id`] using a device identified
+        /// by [`device_id`], and some [`xtc`].
+        fn credential(
+            user_id: HashedUserId,
+            device_id: DeviceId,
             xtc: &impl ExtrinsicContext,
-        ) -> DeviceAttestationOf<T, I>;
-        fn credential(user_id: HashedUserId, xtc: &impl ExtrinsicContext) -> CredentialOf<T, I>;
+        ) -> CredentialOf<T, I>;
     }
 }

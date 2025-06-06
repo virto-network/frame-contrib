@@ -38,16 +38,13 @@ fn prepare_register<T: Config<I>, I: 'static>(
 
 fn do_register<T: Config<I>, I: 'static>(
     hashed_user_id: HashedUserId,
-    device_id: DeviceId,
-) -> Result<(), BenchmarkError> {
+) -> Result<DeviceId, BenchmarkError> {
     let origin = prepare_register::<T, I>(hashed_user_id)
         .map_err(|_| BenchmarkError::Stop("Cannot prepare origin"))?;
-    Pallet::<T, I>::register(
-        origin,
-        hashed_user_id,
-        T::BenchmarkHelper::device_attestation(device_id, &[]),
-    )
-    .map_err(|_| BenchmarkError::Stop("Cannot register pass account"))
+    let attestation = T::BenchmarkHelper::device_attestation(&[]);
+    Pallet::<T, I>::register(origin, hashed_user_id, attestation.clone())
+        .map(|_| *(attestation.device_id()))
+        .map_err(|_| BenchmarkError::Stop("Cannot register pass account"))
 }
 
 #[allow(dead_code)]
@@ -79,14 +76,11 @@ mod benchmarks {
         let origin = prepare_register::<T, I>(user_id)?;
 
         let account_id = Pallet::<T, I>::address_for(user_id);
-        let device_id = [0u8; 32];
+        let attestation = T::BenchmarkHelper::device_attestation(&[]);
+        let device_id = *(attestation.clone().device_id());
 
         #[extrinsic_call]
-        _(
-            origin.into_caller(),
-            user_id,
-            T::BenchmarkHelper::device_attestation(device_id, &[]),
-        );
+        _(origin.into_caller(), user_id, attestation);
 
         // Verification code
         assert_has_event::<T, I>(
@@ -110,8 +104,7 @@ mod benchmarks {
     pub fn authenticate() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
-        let device_id = [0u8; 32];
-        do_register::<T, I>(user_id, device_id)?;
+        let device_id = do_register::<T, I>(user_id)?;
 
         let call: RuntimeCallFor<T> = frame_system::Call::remark {
             remark: b"Hello, world".to_vec(),
@@ -121,6 +114,7 @@ mod benchmarks {
             device_id,
             T::BenchmarkHelper::credential(
                 user_id,
+                device_id,
                 &TxBaseImplication((0u8, call.clone())).using_encoded(blake2_256),
             ),
         );
@@ -146,21 +140,18 @@ mod benchmarks {
     pub fn add_device() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
-        let device_id = [0u8; 32];
-        do_register::<T, I>(user_id, device_id)?;
+        do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
-        let new_device_id = [1u8; 32];
+        let attestation = T::BenchmarkHelper::device_attestation(&[]);
+        let new_device_id = *(attestation.clone().device_id());
         T::DeviceConsideration::ensure_successful(
             &address,
             Footprint::from_parts(2, DeviceOf::<T, I>::max_encoded_len()),
         );
 
         #[extrinsic_call]
-        _(
-            RawOrigin::Signed(address.clone()),
-            T::BenchmarkHelper::device_attestation(new_device_id, &[]),
-        );
+        _(RawOrigin::Signed(address.clone()), attestation);
 
         // Verification code
         assert_has_event::<T, I>(
@@ -178,20 +169,17 @@ mod benchmarks {
     pub fn remove_device() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
-        let device_id = [0u8; 32];
-        do_register::<T, I>(user_id, device_id)?;
+        do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
-        let new_device_id = [1u8; 32];
+        let attestation = T::BenchmarkHelper::device_attestation(&[]);
+        let new_device_id = *(attestation.clone().device_id());
         T::DeviceConsideration::ensure_successful(
             &address,
             Footprint::from_parts(2, DeviceOf::<T, I>::max_encoded_len()),
         );
 
-        Pallet::<T, I>::add_device(
-            RawOrigin::Signed(address.clone()).into(),
-            T::BenchmarkHelper::device_attestation(new_device_id, &[]),
-        )?;
+        Pallet::<T, I>::add_device(RawOrigin::Signed(address.clone()).into(), attestation)?;
 
         #[extrinsic_call]
         _(RawOrigin::Signed(address.clone()), new_device_id);
@@ -212,8 +200,7 @@ mod benchmarks {
     pub fn add_session_key() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
-        let device_id = [0u8; 32];
-        do_register::<T, I>(user_id, device_id)?;
+        do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
         let new_session_key: T::AccountId = account("session-key", 0, 0);
@@ -245,8 +232,7 @@ mod benchmarks {
     pub fn remove_session_key() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
-        let device_id = [0u8; 32];
-        do_register::<T, I>(user_id, device_id)?;
+        do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
         let session_key: T::AccountId = account("session-key", 0, 0);
