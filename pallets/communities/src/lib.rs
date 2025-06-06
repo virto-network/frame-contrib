@@ -211,24 +211,13 @@ pub mod pallet {
         /// This type represents an unique ID to identify a membership within a
         /// community
         type MembershipId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
-        /// The configuration of a membership item. Necessary for the effects of mutating and transferring membership items.
-        type ItemConfig: Default;
 
         // Dependencies: The external components this pallet depends on.
 
         /// Means to manage memberships of a community
         type MemberMgmt: Inspect<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>
-            + Manager<
-                Self::AccountId,
-                Self::ItemConfig,
-                Group = CommunityIdOf<Self>,
-                Membership = MembershipIdOf<Self>,
-            > + Rank<
-                Self::AccountId,
-                Self::ItemConfig,
-                Group = CommunityIdOf<Self>,
-                Membership = MembershipIdOf<Self>,
-            >;
+            + Manager<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>
+            + Rank<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>;
         /// Means to read and mutate the state of a poll.
         type Polls: Polling<
             Tally<Self>,

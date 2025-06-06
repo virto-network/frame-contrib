@@ -460,7 +460,6 @@ impl Config for Test {
 
     type CommunityId = CommunityId;
     type MembershipId = MembershipId;
-    type ItemConfig = pallet_nfts::ItemConfig;
     type MemberMgmt = MembershipsManager;
 
     type Polls = Referenda;
