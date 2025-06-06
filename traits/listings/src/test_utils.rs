@@ -187,9 +187,9 @@ impl<T: Config<I>, I: 'static> MutateInventory for MockListings<T, I> {
         })
     }
 
-    fn set_inventory_metadata<M: Encode>(
+    fn set_inventory_metadata(
         (merchant_id, inventory_id): &(Self::MerchantId, Self::InventoryId),
-        metadata: M,
+        metadata: &[u8],
     ) -> DispatchResult {
         Inventories::<T, I>::try_mutate(
             merchant_id,
@@ -198,10 +198,8 @@ impl<T: Config<I>, I: 'static> MutateInventory for MockListings<T, I> {
                 let Some(inventory) = maybe_inventory else {
                     Err(DispatchError::Other("UnknownInventory"))?
                 };
-                let value = metadata.using_encoded(|v| {
-                    BoundedVec::try_from(v.to_vec())
-                        .map_err(|_| DispatchError::Other("MaxMetadataLenExceeded"))
-                })?;
+                let value = BoundedVec::try_from(metadata.to_vec())
+                    .map_err(|_| DispatchError::Other("MaxMetadataLenExceeded"))?;
                 inventory.metadata = Some(value);
                 Ok(())
             },
@@ -463,19 +461,17 @@ impl<T: Config<I>, I: 'static> MutateItem<T::AccountId> for MockListings<T, I> {
         })
     }
 
-    fn set_metadata<M: Encode>(
+    fn set_metadata(
         inventory_id: &item::InventoryIdOf<Self, T::AccountId>,
         id: &Self::ItemId,
-        metadata: M,
+        metadata: &[u8],
     ) -> DispatchResult {
         Items::<T, I>::try_mutate(inventory_id, id, |maybe_item| {
             let Some(item) = maybe_item else {
                 Err(DispatchError::Other("UnknownItem"))?
             };
-            let value = metadata.using_encoded(|v| {
-                BoundedVec::try_from(v.to_vec())
-                    .map_err(|_| DispatchError::Other("MaxMetadataLenExceeded"))
-            })?;
+            let value = BoundedVec::try_from(metadata.to_vec())
+                .map_err(|_| DispatchError::Other("MaxMetadataLenExceeded"))?;
             item.metadata = Some(value);
             Ok(())
         })

@@ -66,11 +66,8 @@ mod inventory {
             Ok(())
         }
 
-        fn set_inventory_metadata<M: Encode>(
-            id: &InventoryIdTuple<T, I>,
-            metadata: M,
-        ) -> DispatchResult {
-            T::Nonfungibles::set_collection_metadata(None, &id.into(), metadata.encode().as_ref())
+        fn set_inventory_metadata(id: &InventoryIdTuple<T, I>, metadata: &[u8]) -> DispatchResult {
+            T::Nonfungibles::set_collection_metadata(None, &id.into(), metadata)
         }
 
         fn clear_inventory_metadata(id: &InventoryIdTuple<T, I>) -> DispatchResult {
@@ -341,17 +338,12 @@ mod item {
             )
         }
 
-        fn set_metadata<M: Encode>(
+        fn set_metadata(
             inventory_id: &fc_traits_listings::item::InventoryIdOf<Self, AccountIdOf<T>>,
             id: &Self::ItemId,
-            metadata: M,
+            metadata: &[u8],
         ) -> DispatchResult {
-            T::Nonfungibles::set_item_metadata(
-                None,
-                &inventory_id.into(),
-                id,
-                metadata.encode().as_ref(),
-            )
+            T::Nonfungibles::set_item_metadata(None, &inventory_id.into(), id, metadata)
         }
 
         fn clear_metadata(

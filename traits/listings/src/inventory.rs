@@ -62,9 +62,9 @@ pub trait Mutate: Inspect {
     ) -> DispatchResult;
 
     /// Sets some metadata to an inventory.
-    fn set_inventory_metadata<M: Encode>(
+    fn set_inventory_metadata(
         id: &(Self::MerchantId, Self::InventoryId),
-        metadata: M,
+        metadata: &[u8],
     ) -> DispatchResult;
 
     /// Clears the metadata of an inventory.

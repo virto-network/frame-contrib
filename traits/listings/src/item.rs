@@ -149,10 +149,10 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
     ) -> DispatchResult;
 
     /// Sets some metadata to an item.
-    fn set_metadata<M: Encode>(
+    fn set_metadata(
         inventory_id: &InventoryIdOf<Self, AccountId>,
         id: &Self::ItemId,
-        metadata: M,
+        metadata: &[u8],
     ) -> DispatchResult;
 
     /// Clears the metadata of an inventory.
