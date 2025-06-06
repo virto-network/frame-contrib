@@ -88,7 +88,7 @@ where
     NF::CollectionId: Parameter + Zero + 'static,
     NF::ItemId: Parameter + 'static,
 {
-    fn membership_attribute<K: Encode, V: Decode>(
+    fn membership_attribute<K: Encode, V: Parameter>(
         g: &Self::Group,
         m: &Self::Membership,
         key: &K,

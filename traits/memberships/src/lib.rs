@@ -64,7 +64,7 @@ pub trait InspectEnumerable<AccountId>: Inspect<AccountId> {
 
 pub trait Attributes<AccountId>: Inspect<AccountId> {
     /// Retrieves an attribute associated to the membership, if any
-    fn membership_attribute<K: Encode, V: Decode>(
+    fn membership_attribute<K: Encode, V: Parameter>(
         g: &Self::Group,
         m: &Self::Membership,
         key: &K,
