@@ -36,11 +36,10 @@ where
     }
 }
 
-impl<T, MA, MR, RS, AccountId, ItemConfig> Manager<AccountId, ItemConfig>
-    for WithHooks<T, MA, MR, RS>
+impl<T, MA, MR, RS, AccountId> Manager<AccountId> for WithHooks<T, MA, MR, RS>
 where
     AccountId: Clone,
-    T: Manager<AccountId, ItemConfig>,
+    T: Manager<AccountId>,
     MA: Get<Box<dyn OnMembershipAssigned<AccountId, T::Group, T::Membership>>>,
     MR: Get<Box<dyn OnMembershipReleased<T::Group, T::Membership>>>,
 {
@@ -61,12 +60,11 @@ where
     }
 }
 
-impl<T, MA, MR, RS, R, AccountId, ItemConfig> Rank<AccountId, ItemConfig, R>
-    for WithHooks<T, MA, MR, RS>
+impl<T, MA, MR, RS, R, AccountId> Rank<AccountId, R> for WithHooks<T, MA, MR, RS>
 where
     AccountId: Clone,
     R: Ord + Clone,
-    T: Rank<AccountId, ItemConfig, R>,
+    T: Rank<AccountId, R>,
     RS: Get<Box<dyn OnRankSet<T::Group, T::Membership, R>>>,
 {
     fn rank_of(group: &Self::Group, m: &Self::Membership) -> Option<R> {

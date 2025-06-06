@@ -21,18 +21,6 @@ mod impls;
 pub use hooks::*;
 pub use impls::WithHooks;
 
-pub trait Manager<AccountId, ItemConfig>: Inspect<AccountId> {
-    /// Transfers ownership of an unclaimed membership in the manager group to an account in the given group and activates it.
-    fn assign(
-        group: &Self::Group,
-        m: &Self::Membership,
-        who: &AccountId,
-    ) -> Result<(), DispatchError>;
-
-    /// Releases the ownership of a claimed membership in a given group.
-    fn release(group: &Self::Group, m: &Self::Membership) -> Result<(), DispatchError>;
-}
-
 /// Access data associated to a unique membership
 pub trait Inspect<AccountId> {
     type Group: Parameter;
@@ -51,15 +39,67 @@ pub trait Inspect<AccountId> {
             .is_some()
     }
 
-    // Check if an account owns the given membership and return the group it belongs to
+    /// Check if an account owns the given membership and return the group it belongs to
     fn check_membership(who: &AccountId, m: &Self::Membership) -> Option<Self::Group>;
 
     /// How many members exist in a group
     fn members_total(group: &Self::Group) -> u32;
 }
 
+/// Access lists of memberships.
+pub trait InspectEnumerable<AccountId>: Inspect<AccountId> {
+    /// Returns an optional iterator of the available memberships owned by a group (i.e. memberships
+    /// which haven't been activated), or `None` if the group doesn't exist.
+    fn group_available_memberships(
+        group: &Self::Group,
+    ) -> Box<dyn Iterator<Item = Self::Membership>>;
+
+    /// Returns an iterator of the memberships owned by the given account optionally filtering
+    /// by group
+    fn memberships_of(
+        who: &AccountId,
+        maybe_group: Option<Self::Group>,
+    ) -> Box<dyn Iterator<Item = (Self::Group, Self::Membership)>>;
+}
+
+pub trait Attributes<AccountId>: Inspect<AccountId> {
+    /// Retrieves an attribute associated to the membership, if any
+    fn membership_attribute<K: Encode, V: Decode>(
+        g: &Self::Group,
+        m: &Self::Membership,
+        key: &K,
+    ) -> Option<V>;
+
+    /// Sets some value for an attribute on a membership, if the membership exists
+    fn set_membership_attribute<K: Encode, V: Encode>(
+        g: &Self::Group,
+        m: &Self::Membership,
+        key: &K,
+        value: &V,
+    ) -> Result<(), DispatchError>;
+
+    /// Clears some value for an attribute on a membership, if any
+    fn clear_membership_attribute<K: Encode>(
+        g: &Self::Group,
+        m: &Self::Membership,
+        key: &K,
+    ) -> Result<(), DispatchError>;
+}
+
+pub trait Manager<AccountId>: Inspect<AccountId> {
+    /// Transfers ownership of an unclaimed membership in the manager group to an account in the given group and activates it.
+    fn assign(
+        group: &Self::Group,
+        m: &Self::Membership,
+        who: &AccountId,
+    ) -> Result<(), DispatchError>;
+
+    /// Releases the ownership of a claimed membership in a given group.
+    fn release(group: &Self::Group, m: &Self::Membership) -> Result<(), DispatchError>;
+}
+
 /// A membership with a rating system
-pub trait Rank<AccountId, ItemConfig, Rank = GenericRank>: Inspect<AccountId>
+pub trait Rank<AccountId, Rank = GenericRank>: Inspect<AccountId>
 where
     Rank: Eq + Ord,
 {

@@ -117,7 +117,7 @@ mod manager {
     use crate::{impl_nonfungibles, Manager, NonFungiblesMemberships};
     use frame_support::assert_ok;
 
-    type MembershipsManager = NonFungiblesMemberships<Memberships>;
+    type MembershipsManager = NonFungiblesMemberships<Memberships, pallet_nfts::ItemConfig>;
 
     #[test]
     fn assigning_and_releasing_moves_membership_to_special_account() {
@@ -176,7 +176,7 @@ mod with_hooks {
         );
     }
 
-    type NoHooksManager = WithHooks<NonFungiblesMemberships<Memberships>>;
+    type NoHooksManager = WithHooks<NonFungiblesMemberships<Memberships, pallet_nfts::ItemConfig>>;
 
     #[test]
     fn noop_hooks_by_default_works() {
@@ -197,7 +197,7 @@ mod with_hooks {
     }
 
     type MembershipsManager = WithHooks<
-        NonFungiblesMemberships<Memberships>,
+        NonFungiblesMemberships<Memberships, pallet_nfts::ItemConfig>,
         AddMembershipAssignedHook,
         AddMembershipReleasedHook,
         AddRankSetHook,

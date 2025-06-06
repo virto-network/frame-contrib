@@ -445,7 +445,7 @@ parameter_types! {
 type RootCreatesCommunitiesForFree = EnsureRootWithSuccess<AccountId, NoPay>;
 type AnyoneElsePays = EnsureSignedPays<Test, ConstU64<10>, RootAccount>;
 
-pub type MembershipsManager = NonFungiblesMemberships<Nfts>;
+pub type MembershipsManager = NonFungiblesMemberships<Nfts, pallet_nfts::ItemConfig>;
 
 impl Config for Test {
     type RuntimeEvent = RuntimeEvent;
