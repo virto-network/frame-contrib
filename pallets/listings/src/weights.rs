@@ -12,6 +12,7 @@ pub trait WeightInfo {
 	fn archive_inventory() -> Weight;
 	fn publish_item(q: u32) -> Weight;
 	fn set_item_price() -> Weight;
+	fn clear_item_price() -> Weight;
 	fn mark_item_can_transfer() -> Weight;
 	fn mark_item_not_for_resale() -> Weight;
 	fn set_item_attribute(p: u32, q: u32) -> Weight;
@@ -87,6 +88,22 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `ListingsCatalog::Item` (r:1 w:0)
 	/// Proof: `ListingsCatalog::Item` (`max_values`: None, `max_size`: Some(164), added: 2639, mode: `MaxEncodedLen`)
 	fn set_item_price() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `533`
+		//  Estimated: `6910`
+		// Minimum execution time: 68_375_000 picoseconds.
+		Weight::from_parts(70_371_000, 0)
+			.saturating_add(Weight::from_parts(0, 6910))
+			.saturating_add(T::DbWeight::get().reads(4))
+			.saturating_add(T::DbWeight::get().writes(2))
+	}
+	/// Storage: `ListingsCatalog::Collection` (r:1 w:1)
+	/// Proof: `ListingsCatalog::Collection` (`max_values`: None, `max_size`: Some(86), added: 2561, mode: `MaxEncodedLen`)
+	/// Storage: `ListingsCatalog::Attribute` (r:2 w:1)
+	/// Proof: `ListingsCatalog::Attribute` (`max_values`: None, `max_size`: Some(485), added: 2960, mode: `MaxEncodedLen`)
+	/// Storage: `ListingsCatalog::Item` (r:1 w:0)
+	/// Proof: `ListingsCatalog::Item` (`max_values`: None, `max_size`: Some(164), added: 2639, mode: `MaxEncodedLen`)
+	fn clear_item_price() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `533`
 		//  Estimated: `6910`
@@ -242,6 +259,22 @@ impl WeightInfo for () {
 	/// Storage: `ListingsCatalog::Item` (r:1 w:0)
 	/// Proof: `ListingsCatalog::Item` (`max_values`: None, `max_size`: Some(164), added: 2639, mode: `MaxEncodedLen`)
 	fn set_item_price() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `533`
+		//  Estimated: `6910`
+		// Minimum execution time: 68_375_000 picoseconds.
+		Weight::from_parts(70_371_000, 0)
+			.saturating_add(Weight::from_parts(0, 6910))
+			.saturating_add(RocksDbWeight::get().reads(4))
+			.saturating_add(RocksDbWeight::get().writes(2))
+	}
+	/// Storage: `ListingsCatalog::Collection` (r:1 w:1)
+	/// Proof: `ListingsCatalog::Collection` (`max_values`: None, `max_size`: Some(86), added: 2561, mode: `MaxEncodedLen`)
+	/// Storage: `ListingsCatalog::Attribute` (r:2 w:1)
+	/// Proof: `ListingsCatalog::Attribute` (`max_values`: None, `max_size`: Some(485), added: 2960, mode: `MaxEncodedLen`)
+	/// Storage: `ListingsCatalog::Item` (r:1 w:0)
+	/// Proof: `ListingsCatalog::Item` (`max_values`: None, `max_size`: Some(164), added: 2639, mode: `MaxEncodedLen`)
+	fn clear_item_price() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `533`
 		//  Estimated: `6910`
