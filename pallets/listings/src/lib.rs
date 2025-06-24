@@ -216,6 +216,11 @@ pub mod pallet {
             id: ItemIdOf<T, I>,
             price: ItemPriceOf<T, I>,
         },
+        /// The price for an item has been cleared.
+        ItemPriceCleared {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+        },
         /// An item has been marked either as _"not for resale"_ or not.
         MarkNotForResale {
             inventory_id: InventoryIdFor<T, I>,
@@ -383,6 +388,54 @@ pub mod pallet {
                 id,
                 price,
             });
+            Ok(())
+        }
+
+        /// Clears the price of an existing item. This removes the _"for sale"_ mark on an item and
+        /// disables it to be purchased by an external system.
+        ///
+        /// - `origin`: can be either
+        ///   - A valid [`InventoryAdminOrigin`][T::InventoryAdminOrigin] for the given inventory,
+        ///     after which the owner of the item must be the same owner of the inventory, or
+        ///   - A signed origin, where the caller must be the owner of the item, and the item must be
+        ///     transferable and enabled for resale.
+        /// - `inventory_id`: The identification of the inventory under which the item is published.
+        /// - `item_id`: An unique identification for the item that is published in the
+        ///    inventory.
+        #[pallet::call_index(7)]
+        pub fn clear_item_price(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+        ) -> DispatchResult {
+            Self::ensure_active_inventory(&inventory_id)?;
+            match T::InventoryAdminOrigin::ensure_origin(origin.clone(), &inventory_id) {
+                Ok(_) => Self::ensure_item_owned_by_creator(&inventory_id, &id)?,
+                Err(_) => {
+                    let item =
+                        Self::item(&inventory_id.into(), &id).ok_or(Error::<T, I>::UnknownItem)?;
+                    let creator = Self::creator(&inventory_id.into(), &id)
+                        .ok_or(Error::<T, I>::UnknownItem)?;
+
+                    let who = ensure_signed(origin)?;
+
+                    // The owner of an item can set a price for an item, and the item must be
+                    // transferable and enabled for resale.
+                    ensure!(item.owner == who, Error::<T, I>::NoPermission);
+                    ensure!(
+                        Self::transferable(&inventory_id.into(), &id),
+                        Error::<T, I>::ItemNonTransferable,
+                    );
+                    ensure!(
+                        Self::can_resell(&inventory_id.into(), &id) || item.owner == creator,
+                        Error::<T, I>::NotForResale
+                    );
+                }
+            }
+
+            Self::clear_price(&inventory_id.into(), &id)?;
+
+            Self::deposit_event(Event::ItemPriceCleared { inventory_id, id });
             Ok(())
         }
 
