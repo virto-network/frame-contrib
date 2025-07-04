@@ -15,19 +15,8 @@ mod benchmarks {
     use crate::frame_system::Call as SystemCall;
 
     #[benchmark]
-    pub fn initialize() -> Result<(), BenchmarkError> {
-        #[block]
-        {
-            Pallet::<T>::initialize();
-        }
-
-        Ok(())
-    }
-
-    #[benchmark]
     pub fn burn() -> Result<(), BenchmarkError> {
         // Setup code
-        Pallet::<T>::initialize();
         T::Balances::mint_into(
             &Pallet::<T>::event_horizon(),
             T::Balances::minimum_balance(),

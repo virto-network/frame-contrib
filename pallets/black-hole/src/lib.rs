@@ -87,10 +87,6 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<SystemBlockNumberFor<T>> for Pallet<T> {
-        fn on_initialize(_: SystemBlockNumberFor<T>) -> Weight {
-            Self::initialize()
-        }
-
         fn on_idle(_: SystemBlockNumberFor<T>, remaining_weight: Weight) -> Weight {
             if remaining_weight.all_lt(T::WeightInfo::burn()) {
                 return Zero::zero();
@@ -124,13 +120,6 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         pub fn event_horizon() -> T::AccountId {
             T::PalletId::get().into_account_truncating()
-        }
-
-        pub(crate) fn initialize() -> Weight {
-            if !frame_system::Pallet::<T>::account_exists(&Self::event_horizon()) {
-                frame_system::Pallet::<T>::inc_providers(&Self::event_horizon());
-            }
-            T::WeightInfo::initialize()
         }
 
         pub(crate) fn burn() -> Weight {

@@ -17,13 +17,6 @@ fn burning_works() {
         assert_eq!(Balances::total_balance(&ALICE), 10);
         assert_eq!(Balances::total_issuance(), 10);
 
-        // When the pallet is installed, the account does not exist.
-        assert!(!System::account_exists(&BlackHole::event_horizon()));
-
-        run_to_block(2);
-        // The account exists after `on_initialize`
-        assert!(System::account_exists(&BlackHole::event_horizon()));
-
         run_to_block(10);
         // If the pallet receives some funds to burn…
         assert_ok!(Balances::transfer(

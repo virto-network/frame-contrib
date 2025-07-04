@@ -8,7 +8,6 @@ use frame::weights_prelude::*;
 /// Weight functions needed for fc_pallet_black_hole.
 pub trait WeightInfo {
 	fn dispatch_as_event_horizon() -> Weight;
-	fn initialize() -> Weight;
 	fn burn() -> Weight;
 }
 
@@ -16,9 +15,6 @@ pub trait WeightInfo {
 pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	fn dispatch_as_event_horizon() -> Weight {
-		Weight::from_parts(8_586_000, 0)
-	}
-	fn initialize() -> Weight {
 		Weight::from_parts(8_586_000, 0)
 	}
 	fn burn() -> Weight {
@@ -29,9 +25,6 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 // For backwards compatibility and tests
 impl WeightInfo for () {
 	fn dispatch_as_event_horizon() -> Weight {
-		Weight::from_parts(8_586_000, 0)
-	}
-	fn initialize() -> Weight {
 		Weight::from_parts(8_586_000, 0)
 	}
 	fn burn() -> Weight {
