@@ -1,4 +1,5 @@
 use crate::mock::*;
+use crate::BlackHoleMass;
 use frame::prelude::DispatchError;
 use frame::testing_prelude::{
     assert_noop, assert_ok, frame_system,
@@ -49,6 +50,52 @@ fn burning_works() {
             .into(),
         );
         System::assert_last_event(fc_pallet_black_hole::Event::<Test>::BalanceBurned.into());
+    })
+}
+
+#[test]
+fn counts_the_burned_mass() {
+    new_test_ext().execute_with(|| {
+        // ALICE has funds
+        assert_ok!(Balances::mint_into(&ALICE, 21));
+
+        run_to_block(2);
+        assert_ok!(Balances::transfer(
+            &ALICE,
+            &BlackHole::event_horizon(),
+            5,
+            Preserve
+        ));
+
+        run_to_block(12);
+        assert_ok!(Balances::transfer(
+            &ALICE,
+            &BlackHole::event_horizon(),
+            5,
+            Preserve
+        ));
+
+        run_to_block(22);
+        assert_ok!(Balances::transfer(
+            &ALICE,
+            &BlackHole::event_horizon(),
+            5,
+            Preserve
+        ));
+
+        run_to_block(32);
+        assert_ok!(Balances::transfer(
+            &ALICE,
+            &BlackHole::event_horizon(),
+            5,
+            Preserve
+        ));
+
+        assert_eq!(Balances::total_issuance(), 6);
+        assert_eq!(Balances::total_balance(&ALICE), 1);
+        assert_eq!(Balances::total_balance(&BlackHole::event_horizon()), 5);
+
+        assert_eq!(BlackHoleMass::<Test>::get(), 15);
     })
 }
 

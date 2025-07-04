@@ -28,6 +28,8 @@ pub mod pallet {
     use frame::traits::{Block, Header};
     use fungible::{Inspect, Mutate};
 
+    pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
+    pub(crate) type BalanceOf<T> = <<T as Config>::Balances as Inspect<AccountIdOf<T>>>::Balance;
     pub(crate) type SystemBlockNumberFor<T> =
         <<<T as frame_system::Config>::Block as Block>::Header as Header>::Number;
     pub(crate) type BlockNumberFor<T> =
@@ -67,8 +69,12 @@ pub mod pallet {
         type BurnPeriod: Get<BlockNumberFor<Self>>;
     }
 
+    /// The last time a burn happened (0 if never).
     #[pallet::storage]
     pub type LastBurn<T> = StorageValue<_, BlockNumberFor<T>, ValueQuery>;
+    /// Counts the accumulated balance that's been burned so far.
+    #[pallet::storage]
+    pub type BlackHoleMass<T> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -132,16 +138,18 @@ pub mod pallet {
                 .saturating_sub(T::BurnPeriod::get()))
             {
                 let burn_account = Self::event_horizon();
+                let burn_balance = T::Balances::total_balance(&burn_account);
 
                 // Just burn it.
                 let _ = T::Balances::burn_from(
                     &burn_account,
-                    T::Balances::total_balance(&burn_account),
+                    burn_balance,
                     Preservation::Expendable,
                     Precision::Exact,
                     Fortitude::Force,
                 );
 
+                BlackHoleMass::<T>::set(BlackHoleMass::<T>::get().saturating_add(burn_balance));
                 LastBurn::<T>::set(T::BlockNumberProvider::current_block_number());
                 Self::deposit_event(Event::<T>::BalanceBurned);
             }
