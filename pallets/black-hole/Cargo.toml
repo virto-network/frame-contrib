@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 name = "fc-pallet-black-hole"
 repository.workspace = true
+readme = "README.md"
 version = "1.0.0"
 
 [package.metadata.docs.rs]
