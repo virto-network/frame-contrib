@@ -7,7 +7,9 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
 use frame::prelude::*;
+use fungible::{Inspect, Mutate};
 
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
@@ -26,7 +28,6 @@ pub use pallet::*;
 pub mod pallet {
     use super::*;
     use frame::traits::{Block, Header};
-    use fungible::{Inspect, Mutate};
 
     pub(crate) type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
     pub(crate) type BalanceOf<T> = <<T as Config>::Balances as Inspect<AccountIdOf<T>>>::Balance;

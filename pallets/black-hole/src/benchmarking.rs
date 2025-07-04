@@ -1,9 +1,6 @@
-use crate::{Config, Event, Pallet};
+use super::*;
 use alloc::vec;
-use frame::{
-    benchmarking::prelude::*,
-    prelude::fungible::{Inspect, Mutate},
-};
+use frame::benchmarking::prelude::*;
 
 fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
     frame_system::Pallet::<T>::assert_last_event(generic_event.into());
@@ -41,10 +38,8 @@ mod benchmarks {
         let call: Box<T::RuntimeCall> =
             Box::new(SystemCall::remark_with_event { remark: vec![] }.into());
 
-        #[block]
-        {
-            Pallet::<T>::dispatch_as_event_horizon(origin, call)?;
-        }
+        #[extrinsic_call]
+        _(origin as T::RuntimeOrigin, call);
 
         // Verify code
         frame_system::Pallet::<T>::assert_last_event(
