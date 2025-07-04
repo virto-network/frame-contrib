@@ -1,7 +1,6 @@
 use super::*;
 
 use crate::Pallet;
-use alloc::vec;
 use frame_benchmarking::v2::*;
 use frame_support::traits::{fungible::Unbalanced, tokens::Precision};
 use sp_runtime::traits::Bounded;
@@ -189,6 +188,25 @@ mod benchmarks {
             }
             .into(),
         );
+
+        Ok(())
+    }
+
+    #[benchmark]
+    pub fn clear_item_price() -> Result<(), BenchmarkError> {
+        // Setup code
+        let (origin, inventory_id, id) = setup_item::<T, I>()?;
+        let price = ItemPrice {
+            asset: Default::default(),
+            amount: 10u32.into(),
+        };
+        Pallet::<T, I>::set_item_price(origin.clone(), inventory_id, id, price.clone())?;
+
+        #[extrinsic_call]
+        _(origin as T::RuntimeOrigin, inventory_id, id);
+
+        // Verification code
+        assert_has_event::<T, I>(Event::<T, I>::ItemPriceCleared { inventory_id, id }.into());
 
         Ok(())
     }
