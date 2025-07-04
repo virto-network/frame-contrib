@@ -10,7 +10,6 @@ impl<T: Config + ReviveConfig, M: AddressMapper<T>> AddressMapper<T>
         if account_id.eq(&Pallet::<T>::event_horizon()) {
             return H160([0; 20]);
         }
-
         M::to_address(account_id)
     }
 
@@ -22,6 +21,9 @@ impl<T: Config + ReviveConfig, M: AddressMapper<T>> AddressMapper<T>
     }
 
     fn to_fallback_account_id(address: &H160) -> T::AccountId {
+        if address.is_zero() {
+            return Pallet::<T>::event_horizon();
+        }
         M::to_fallback_account_id(&address)
     }
 
