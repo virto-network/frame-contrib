@@ -17,7 +17,9 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+mod address_mapper;
 pub mod weights;
+
 pub use weights::*;
 
 pub use pallet::*;
