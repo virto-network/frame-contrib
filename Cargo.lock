@@ -1144,6 +1144,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-pallet-black-hole"
+version = "1.0.0"
+dependencies = [
+ "pallet-balances",
+ "parity-scale-codec",
+ "polkadot-sdk-frame",
+ "scale-info",
+]
+
+[[package]]
 name = "fc-pallet-communities"
 version = "1.0.0"
 dependencies = [
