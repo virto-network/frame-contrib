@@ -17,7 +17,10 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "revive")]
+mod address_mapper;
 pub mod weights;
+
 pub use weights::*;
 
 pub use pallet::*;
