@@ -110,6 +110,7 @@ pub mod pallet {
             call: Box<T::RuntimeCall>,
         ) -> DispatchResult {
             T::EventHorizonDispatchOrigin::ensure_origin(origin)?;
+            Self::do_initialize();
 
             call.dispatch(frame_system::RawOrigin::Signed(Self::event_horizon()).into())
                 .map(|_| ())
@@ -120,6 +121,13 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         pub fn event_horizon() -> T::AccountId {
             T::PalletId::get().into_account_truncating()
+        }
+
+        #[inline]
+        fn do_initialize() {
+            if !frame_system::Pallet::<T>::account_exists(&Self::event_horizon()) {
+                frame_system::Pallet::<T>::inc_providers(&Self::event_horizon());
+            }
         }
 
         pub(crate) fn burn() -> Weight {

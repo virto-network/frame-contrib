@@ -29,6 +29,10 @@ fn burning_works() {
         assert_eq!(Balances::total_balance(&BlackHole::event_horizon()), 5);
         assert_eq!(Balances::total_issuance(), 10);
 
+        // Assert that the pallet still has the funds before running `on_idle`.
+        run_to_block(11);
+        assert_eq!(Balances::total_balance(&BlackHole::event_horizon()), 5);
+
         run_to_block(12);
         // Poof! Funds are now burned.
         assert_eq!(Balances::total_balance(&ALICE), 5);
