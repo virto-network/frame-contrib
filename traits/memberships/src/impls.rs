@@ -36,6 +36,56 @@ where
     }
 }
 
+impl<T, MA, MR, RS, AccountId> InspectEnumerable<AccountId> for WithHooks<T, MA, MR, RS>
+where
+    AccountId: Clone,
+    T: InspectEnumerable<AccountId>,
+{
+    fn group_available_memberships(
+        group: &Self::Group,
+    ) -> Box<dyn Iterator<Item = Self::Membership>> {
+        T::group_available_memberships(group)
+    }
+
+    fn memberships_of(
+        who: &AccountId,
+        maybe_group: Option<Self::Group>,
+    ) -> Box<dyn Iterator<Item = (Self::Group, Self::Membership)>> {
+        T::memberships_of(who, maybe_group)
+    }
+}
+
+impl<T, MA, MR, RS, AccountId> Attributes<AccountId> for WithHooks<T, MA, MR, RS>
+where
+    AccountId: Clone,
+    T: Attributes<AccountId>,
+{
+    fn membership_attribute<K: Encode, V: Parameter>(
+        g: &Self::Group,
+        m: &Self::Membership,
+        key: &K,
+    ) -> Option<V> {
+        T::membership_attribute(g, m, key)
+    }
+
+    fn set_membership_attribute<K: Encode, V: Encode>(
+        g: &Self::Group,
+        m: &Self::Membership,
+        key: &K,
+        value: &V,
+    ) -> Result<(), DispatchError> {
+        T::set_membership_attribute(g, m, key, value)
+    }
+
+    fn clear_membership_attribute<K: Encode>(
+        g: &Self::Group,
+        m: &Self::Membership,
+        key: &K,
+    ) -> Result<(), DispatchError> {
+        T::clear_membership_attribute(g, m, key)
+    }
+}
+
 impl<T, MA, MR, RS, AccountId> Manager<AccountId> for WithHooks<T, MA, MR, RS>
 where
     AccountId: Clone,
