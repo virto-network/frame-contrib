@@ -24,7 +24,7 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use sp_runtime::{
-    traits::{BlockNumberProvider, Dispatchable, StaticLookup},
+    traits::{BlockNumberProvider, Dispatchable, Hash, StaticLookup},
     DispatchResult,
 };
 
@@ -189,7 +189,7 @@ pub mod pallet {
             device_id: DeviceId,
         },
         SessionCreated {
-            session_key: T::AccountId,
+            session_key_hash: T::Hash,
             until: BlockNumberFor<T, I>,
         },
         SessionRemoved {
@@ -210,6 +210,8 @@ pub mod pallet {
         /// register a new session.
         AccountForSessionKeyAlreadyExists,
         InvalidConsideration,
+        /// The registered session key is already in use by another Pass Account.
+        SessionKeyInUse,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -276,9 +278,14 @@ pub mod pallet {
                 T::AccountId,
             >::increment(address)?;
 
-            // Let's try to remove an existing session that uses the same session key (if any). This is
-            // so we ensure we decrease the provider counter correctly.
-            Self::try_remove_session_key(session_key)?;
+            if let Some((account, _)) = SessionKeys::<T, I>::get(session_key) {
+                // Ensure another user is not using this session key.
+                ensure!(&account == address, Error::<T, I>::SessionKeyInUse);
+
+                // Let's try to remove an existing session that uses the same session key (if any). This is
+                // so we ensure we decrease the provider counter correctly.
+                Self::try_remove_session_key(session_key)?;
+            }
 
             let until = duration
                 .unwrap_or(T::MaxSessionDuration::get())
@@ -287,7 +294,7 @@ pub mod pallet {
             Self::schedule_next_removal(session_key, duration)?;
 
             Self::deposit_event(Event::<T, I>::SessionCreated {
-                session_key: session_key.clone(),
+                session_key_hash: T::Hashing::hash(&session_key.encode()),
                 until,
             });
 

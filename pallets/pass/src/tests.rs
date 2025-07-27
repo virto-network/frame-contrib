@@ -442,6 +442,7 @@ mod authenticate {
 
 parameter_types! {
     pub Address: AccountId = Pass::address_for(AccountNameA::get());
+    pub AddressB: AccountId = Pass::address_for(AccountNameB::get());
 }
 
 mod add_device {
@@ -532,6 +533,7 @@ mod add_device {
 
 mod add_session_key {
     use super::*;
+    use sp_core::{blake2_256, H256};
 
     #[test]
     fn fails_if_bad_origin() {
@@ -573,10 +575,41 @@ mod add_session_key {
 
             System::assert_has_event(
                 Event::<Test>::SessionCreated {
-                    session_key: OTHER,
+                    session_key_hash: H256(blake2_256(&OTHER.encode())),
                     until: DURATION,
                 }
                 .into(),
+            );
+        })
+    }
+
+    #[test]
+    fn cannot_use_a_session_key_in_use_by_another_user() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Pass::register(
+                RuntimeOrigin::root(),
+                AccountNameB::get(),
+                PassDeviceAttestation::AuthenticatorAAuthenticator(
+                    authenticator_a::DeviceAttestation {
+                        device_id: OTHER_DEVICE,
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
+                    }
+                ),
+            ));
+
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                OTHER,
+                Some(DURATION)
+            ));
+
+            assert_noop!(
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(AddressB::get()),
+                    OTHER,
+                    Some(DURATION)
+                ),
+                Error::<Test>::SessionKeyInUse
             );
         })
     }
