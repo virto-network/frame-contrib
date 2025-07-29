@@ -219,7 +219,7 @@ mod benchmarks {
         // Verification code
         assert_has_event::<T, I>(
             Event::SessionCreated {
-                session_key: new_session_key,
+                session_key_hash: T::Hashing::hash(&new_session_key.encode()),
                 until: T::MaxSessionDuration::get(),
             }
             .into(),
