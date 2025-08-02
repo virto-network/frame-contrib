@@ -15,23 +15,28 @@ targets = ["x86_64-unknown-linux-gnu"]
 codec.workspace = true
 frame.workspace = true
 scale-info.workspace = true
+pallet-revive = { workspace = true, optional = true }
 
 [dev-dependencies]
 pallet-balances.workspace = true
 
 [features]
-default = ["std"]
+default = ["std", "revive"]
+revive = ["pallet-revive"]
 runtime-benchmarks = [
-  "frame/runtime-benchmarks",
-  "pallet-balances/runtime-benchmarks",
+	"frame/runtime-benchmarks",
+	"pallet-balances/runtime-benchmarks",
+	"pallet-revive?/runtime-benchmarks"
 ]
 std = [
-  "codec/std",
-  "frame/std",
-  "pallet-balances/std",
-  "scale-info/std",
+	"codec/std",
+	"frame/std",
+	"pallet-balances/std",
+	"scale-info/std",
+	"pallet-revive?/std"
 ]
 try-runtime = [
-  "frame/try-runtime",
-  "pallet-balances/try-runtime",
+	"frame/try-runtime",
+	"pallet-balances/try-runtime",
+	"pallet-revive?/try-runtime"
 ]

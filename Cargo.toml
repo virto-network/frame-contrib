@@ -46,6 +46,7 @@ pallet-balances = { version = "41.1.0", default-features = false }
 pallet-nfts = { version = "34.1.0", default-features = false }
 pallet-preimage = { version = "40.0.0", default-features = false }
 pallet-referenda = { version = "40.1.0", default-features = false }
+pallet-revive = { version = "0.6.1", default-features = false }
 pallet-scheduler = { version = "41.0.0", default-features = false }
 pallet-timestamp = { version = "39.0.0", default-features = false }
 pallet-transaction-payment = { version = "40.0.0", default-features = false }
