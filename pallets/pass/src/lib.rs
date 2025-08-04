@@ -363,9 +363,11 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         );
         let device =
             Devices::<T, I>::get(&address, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
-        device
+
+        let device = device
             .verify_user(credential, extrinsic_context)
             .ok_or(Error::<T, I>::CredentialInvalid)?;
+        Devices::<T, I>::insert(&address, device_id, device);
 
         Ok(address)
     }
