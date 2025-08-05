@@ -362,7 +362,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Error::<T, I>::AccountNotFound
         );
 
-        Devices::<T, I>::try_mutate(&address, &device_id, |maybe_device| {
+        Devices::<T, I>::try_mutate(&address, device_id, |maybe_device| {
             let Some(ref mut device) = maybe_device else {
                 Err(Error::<T, I>::DeviceNotFound)?
             };
