@@ -114,10 +114,10 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
     type Credential: UserChallengeResponse<CxOf<Self::Challenger>> + Send + Sync;
 
     fn verify_user(
-        &self,
+        &mut self,
         credential: &Self::Credential,
         xtc: &impl ExtrinsicContext,
-    ) -> Option<Self> {
+    ) -> Option<()> {
         log::trace!(target: LOG_TARGET, "Verifying user for credential: {:?}", credential);
 
         log::trace!(target: LOG_TARGET, "Assert authority {:?}", credential.authority());
@@ -139,7 +139,7 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
         self.verify_credential(credential)
     }
 
-    fn verify_credential(&self, credential: &Self::Credential) -> Option<Self>;
+    fn verify_credential(&mut self, credential: &Self::Credential) -> Option<()>;
 
     fn device_id(&self) -> &DeviceId;
 }

@@ -36,7 +36,7 @@ pub mod authenticator_a {
         pub(crate) challenge: Challenge,
     }
 
-    #[derive(TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, Clone)]
+    #[derive(TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen)]
     pub struct Device {
         pub(crate) device_id: DeviceId,
     }
@@ -77,8 +77,8 @@ pub mod authenticator_a {
         type Credential = Credential;
 
         // Note: This authenticator should pass intentionally, to pass on simpler tests
-        fn verify_credential(&self, _: &Self::Credential) -> Option<Self> {
-            Some(self.clone())
+        fn verify_credential(&mut self, _: &Self::Credential) -> Option<()> {
+            Some(())
         }
 
         fn device_id(&self) -> &DeviceId {
@@ -161,7 +161,7 @@ pub mod authenticator_b {
         pub(crate) challenge: Challenge,
     }
 
-    #[derive(TypeInfo, Encode, Decode, Clone, DecodeWithMemTracking, MaxEncodedLen)]
+    #[derive(TypeInfo, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen)]
     #[scale_info(skip_type_params(C))]
     pub struct Device<C> {
         pub(crate) device_id: DeviceId,
@@ -210,7 +210,7 @@ pub mod authenticator_b {
         }
     }
 
-    impl<C: Challenger + Clone + 'static> Authenticator for AuthenticatorB<C>
+    impl<C: Challenger + 'static> Authenticator for AuthenticatorB<C>
     where
         CxOf<C>: Parameter + Send + Sync + Copy + 'static,
     {
@@ -230,21 +230,19 @@ pub mod authenticator_b {
 
     impl<C> UserAuthenticator for Device<C>
     where
-        C: Challenger + Clone + 'static,
+        C: Challenger + 'static,
         CxOf<C>: Parameter + Send + Sync + Copy + 'static,
     {
         type Authority = PassAuthorityId;
         type Challenger = C;
         type Credential = Credential<CxOf<C>>;
 
-        fn verify_credential(&self, credential: &Self::Credential) -> Option<Self> {
+        fn verify_credential(&mut self, credential: &Self::Credential) -> Option<()> {
             credential.signature.and_then(|signature| {
                 (Credential::signature(self.device_id(), &credential).eq(&signature)
                     && credential.nonce == self.nonce)
-                    .then_some(Self {
-                        device_id: self.device_id,
-                        nonce: self.nonce + 1,
-                        _data: Default::default(),
+                    .then(|| {
+                        self.nonce = self.nonce + 1;
                     })
             })
         }

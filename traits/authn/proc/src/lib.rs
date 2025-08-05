@@ -166,7 +166,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             (
                 #device::#id(device),
                 #credential::#id(credential),
-            ) => device.verify_user(credential, xtc).map(#device::#id)
+            ) => device.verify_user(credential, xtc)
         }
     });
 
@@ -175,7 +175,7 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             (
                 #device::#id(device),
                 #credential::#id(credential),
-            ) => device.verify_credential(credential).map(#device::#id)
+            ) => device.verify_credential(credential)
         }
     });
 
@@ -279,14 +279,14 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             type Challenger = #auth_struct;
             type Credential = #credential;
 
-            fn verify_user(&self, credential: &Self::Credential, xtc: &impl ExtrinsicContext) -> Option<Self> {
+            fn verify_user(&mut self, credential: &Self::Credential, xtc: &impl ExtrinsicContext) -> Option<()> {
                 match (self, credential) {
                     #(#match_verify_user),*,
                     _ => None,
                 }
             }
 
-            fn verify_credential(&self, credential: &Self::Credential) -> Option<Self> {
+            fn verify_credential(&mut self, credential: &Self::Credential) -> Option<()> {
                 match (self, credential) {
                     #(#match_verify_credential),*,
                     _ => None,

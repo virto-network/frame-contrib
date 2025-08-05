@@ -361,13 +361,15 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Devices::<T, I>::contains_prefix(&address),
             Error::<T, I>::AccountNotFound
         );
-        let device =
-            Devices::<T, I>::get(&address, device_id).ok_or(Error::<T, I>::DeviceNotFound)?;
 
-        let device = device
-            .verify_user(credential, extrinsic_context)
-            .ok_or(Error::<T, I>::CredentialInvalid)?;
-        Devices::<T, I>::insert(&address, device_id, device);
+        Devices::<T, I>::try_mutate(&address, &device_id, |maybe_device| {
+            let Some(ref mut device) = maybe_device else {
+                Err(Error::<T, I>::DeviceNotFound)?
+            };
+            device
+                .verify_user(credential, extrinsic_context)
+                .ok_or(Error::<T, I>::CredentialInvalid)
+        })?;
 
         Ok(address)
     }

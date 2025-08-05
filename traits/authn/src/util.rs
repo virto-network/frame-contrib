@@ -42,8 +42,8 @@ where
     }
 }
 
-pub trait VerifyCredential<Cred>: Sized {
-    fn verify(&self, credential: &Cred) -> Option<Self>;
+pub trait VerifyCredential<Cred> {
+    fn verify(&mut self, credential: &Cred) -> Option<()>;
 }
 
 /// Convenient auto-implementor of the UserAuthenticator trait
@@ -68,8 +68,8 @@ where
     type Challenger = Ch;
     type Credential = Cred;
 
-    fn verify_credential(&self, credential: &Self::Credential) -> Option<Self> {
-        self.0.verify(credential).map(|s| Dev::new(s))
+    fn verify_credential(&mut self, credential: &Self::Credential) -> Option<()> {
+        self.0.verify(credential)
     }
 
     fn device_id(&self) -> &DeviceId {
@@ -176,8 +176,8 @@ pub mod dummy {
     }
 
     impl<A> VerifyCredential<DummyCredential<A>> for DummyAttestation<A> {
-        fn verify(&self, _: &DummyCredential<A>) -> Option<Self> {
-            self.0.then_some(self.clone())
+        fn verify(&mut self, _: &DummyCredential<A>) -> Option<()> {
+            self.0.then_some(())
         }
     }
 
