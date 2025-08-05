@@ -112,6 +112,12 @@ pub mod pallet {
         /// A unique identification for the pallet.
         #[pallet::constant]
         type PalletId: Get<PalletId>;
+        /// The maximum amount of devices an account might have
+        #[pallet::constant]
+        type MaxDevicesPerAccount: Get<u64>;
+        /// The maximum amount of sessions an account might have
+        #[pallet::constant]
+        type MaxSessionsPerAccount: Get<u64>;
         /// The maximum duration of a session
         #[pallet::constant]
         type MaxSessionDuration: Get<BlockNumberFor<Self, I>>;
@@ -212,6 +218,8 @@ pub mod pallet {
         InvalidConsideration,
         /// The registered session key is already in use by another Pass Account.
         SessionKeyInUse,
+        MaxDevicesExceeded,
+        MaxSessionsExceeded,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -262,9 +270,17 @@ pub mod pallet {
             let address = &Self::ensure_signer_is_pass_account(origin)?;
             let session_key = &T::Lookup::lookup(session)?;
 
+            let devices_count = SessionKeyConsiderations::<T, I>::get(address)
+                .map(|(_, c)| c)
+                .unwrap_or(0);
+            ensure!(
+                devices_count < T::MaxSessionsPerAccount::get(),
+                Error::<T, I>::MaxSessionsExceeded
+            );
+
             // We must ensure that there is no account registered for that session key.
             //
-            // Session keys are meant to be ephemeral, therefore they should never be tied to an
+            // Session keys are meant to be ephemeral. Therefore, they should never be tied to an
             // existing account.
             ensure!(
                 !frame_system::Pallet::<T>::account_exists(session_key),
@@ -378,6 +394,14 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         // Device attestations are considered "to be trusted", thus they don't require and extrinsic context.
         let device = T::Authenticator::verify_device(attestation.clone(), &[])
             .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
+
+        let devices_count = DeviceConsiderations::<T, I>::get(address)
+            .map(|(_, c)| c)
+            .unwrap_or(0);
+        ensure!(
+            devices_count < T::MaxDevicesPerAccount::get(),
+            Error::<T, I>::MaxDevicesExceeded
+        );
 
         ConsiderationHandler::<
             T::AccountId,

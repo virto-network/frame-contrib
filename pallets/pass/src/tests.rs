@@ -21,8 +21,9 @@ const SIGNER: AccountId = AccountId::new([1u8; 32]);
 const OTHER: AccountId = AccountId::new([2u8; 32]);
 const CHARLIE: AccountId = AccountId::new([3u8; 32]);
 
-const THE_DEVICE: DeviceId = [0u8; 32];
-const OTHER_DEVICE: DeviceId = [1u8; 32];
+const THE_DEVICE: DeviceId = [10u8; 32];
+const OTHER_DEVICE: DeviceId = [11u8; 32];
+const THIRD_DEVICE: DeviceId = [12u8; 32];
 
 parameter_types! {
     pub AccountNameA: HashedUserId = <Test as frame_system::Config>::Hashing::hash(
@@ -526,6 +527,43 @@ mod add_device {
                     device_id: OTHER_DEVICE,
                 }
                 .into(),
+            );
+        });
+    }
+
+    #[test]
+    fn device_limit_works() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Balances::mint_into(
+                &Address::get(),
+                ExistentialDeposit::get()
+                    + ItemStoragePrice::convert(Footprint::from_parts(
+                        1,
+                        DeviceOf::<Test>::max_encoded_len(),
+                    ))
+            ));
+
+            assert_ok!(Pass::add_device(
+                RuntimeOrigin::signed(Address::get()),
+                PassDeviceAttestation::AuthenticatorAAuthenticator(
+                    authenticator_a::DeviceAttestation {
+                        device_id: OTHER_DEVICE,
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
+                    }
+                ),
+            ));
+
+            assert_noop!(
+                Pass::add_device(
+                    RuntimeOrigin::signed(Address::get()),
+                    PassDeviceAttestation::AuthenticatorAAuthenticator(
+                        authenticator_a::DeviceAttestation {
+                            device_id: THIRD_DEVICE,
+                            challenge: authenticator_a::Authenticator::generate(&(), &[]),
+                        }
+                    ),
+                ),
+                Error::<Test>::MaxDevicesExceeded
             );
         });
     }
