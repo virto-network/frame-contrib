@@ -43,10 +43,10 @@ where
 }
 
 pub trait VerifyCredential<Cred> {
-    fn verify(&self, credential: &Cred) -> Option<()>;
+    fn verify(&mut self, credential: &Cred) -> Option<()>;
 }
 
-/// Convenient auto-implemtator of the UserAuthenticator trait
+/// Convenient auto-implementor of the UserAuthenticator trait
 #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug)]
 #[scale_info(skip_type_params(A, Ch, Cred))]
 pub struct Dev<T, A, Ch, Cred>(T, PhantomData<(A, Ch, Cred)>);
@@ -68,7 +68,7 @@ where
     type Challenger = Ch;
     type Credential = Cred;
 
-    fn verify_credential(&self, credential: &Self::Credential) -> Option<()> {
+    fn verify_credential(&mut self, credential: &Self::Credential) -> Option<()> {
         self.0.verify(credential)
     }
 
@@ -176,7 +176,7 @@ pub mod dummy {
     }
 
     impl<A> VerifyCredential<DummyCredential<A>> for DummyAttestation<A> {
-        fn verify(&self, _: &DummyCredential<A>) -> Option<()> {
+        fn verify(&mut self, _: &DummyCredential<A>) -> Option<()> {
             self.0.then_some(())
         }
     }

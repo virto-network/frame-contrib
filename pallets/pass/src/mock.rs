@@ -238,6 +238,7 @@ mod benchmarks {
                 authenticator_b::Credential::new(
                     user_id,
                     System::block_number(),
+                    0,
                     LastThreeBlocksChallenger::generate(&System::block_number(), xtc),
                 )
                 .sign(&device_id),

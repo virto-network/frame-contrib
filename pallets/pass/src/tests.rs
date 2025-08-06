@@ -234,6 +234,7 @@ mod authenticate {
                         authenticator_b::Credential::new(
                             AccountNameA::get(),
                             System::block_number(),
+                            0,
                             LastThreeBlocksChallenger::generate(&System::block_number(), &[])
                         )
                         .sign(&THE_DEVICE)
@@ -265,6 +266,7 @@ mod authenticate {
                     &PassCredential::AuthenticatorB(authenticator_b::Credential::new(
                         AccountNameA::get(),
                         System::block_number(),
+                        0,
                         LastThreeBlocksChallenger::generate(&System::block_number(), &[])
                     )),
                     &[]
@@ -313,6 +315,7 @@ mod authenticate {
                         authenticator_b::Credential::new(
                             AccountNameA::get(),
                             System::block_number(),
+                            0,
                             LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                         )
                         .sign(&OTHER_DEVICE)
@@ -353,6 +356,7 @@ mod authenticate {
                         authenticator_b::Credential::new(
                             AccountNameA::get(),
                             System::block_number(),
+                            0,
                             LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                         )
                         .sign(&OTHER_DEVICE)
@@ -382,6 +386,7 @@ mod authenticate {
                 authenticator_b::Credential::new(
                     AccountNameA::get(),
                     System::block_number(),
+                    0,
                     LastThreeBlocksChallenger::generate(&System::block_number(), &[1]),
                 )
                 .sign(&THE_DEVICE),
@@ -431,6 +436,67 @@ mod authenticate {
                     authenticator_b::Credential::new(
                         AccountNameA::get(),
                         System::block_number(),
+                        0,
+                        LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    )
+                    .sign(&THE_DEVICE)
+                ),
+                &[],
+            ));
+        });
+    }
+
+    #[test]
+    fn updating_device_after_verify_credential_works() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(Pass::register(
+                RuntimeOrigin::root(),
+                AccountNameA::get(),
+                PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                    device_id: THE_DEVICE,
+                    context: System::block_number(),
+                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                }),
+            ));
+
+            assert_ok!(Pass::authenticate(
+                &THE_DEVICE,
+                &PassCredential::AuthenticatorB(
+                    authenticator_b::Credential::new(
+                        AccountNameA::get(),
+                        System::block_number(),
+                        0,
+                        LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    )
+                    .sign(&THE_DEVICE)
+                ),
+                &[],
+            ));
+
+            assert_noop!(
+                Pass::authenticate(
+                    &THE_DEVICE,
+                    &PassCredential::AuthenticatorB(
+                        authenticator_b::Credential::new(
+                            AccountNameA::get(),
+                            System::block_number(),
+                            0,
+                            LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                        )
+                        .sign(&THE_DEVICE)
+                    ),
+                    &[]
+                ),
+                Error::<Test>::CredentialInvalid
+            );
+
+            assert_ok!(Pass::authenticate(
+                &THE_DEVICE,
+                &PassCredential::AuthenticatorB(
+                    authenticator_b::Credential::new(
+                        AccountNameA::get(),
+                        System::block_number(),
+                        1,
                         LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
                     )
                     .sign(&THE_DEVICE)
@@ -857,6 +923,7 @@ mod dispatch {
                 authenticator_b::Credential::new(
                     AccountNameA::get(),
                     System::block_number(),
+                    0,
                     LastThreeBlocksChallenger::generate(
                         &System::block_number(),
                         &extrinsic_context,

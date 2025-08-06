@@ -82,7 +82,7 @@ pub trait Authenticator {
         attestation: Self::DeviceAttestation,
         xtc: &impl ExtrinsicContext,
     ) -> Option<Self::Device> {
-        log::trace!(target: LOG_TARGET, "Verifying device with attestation: {:?}", attestation);
+        log::trace!(target: LOG_TARGET, "Verifying device with attestation: {attestation:?}");
 
         log::trace!(target: LOG_TARGET, "Assert authority {:?}", attestation.authority());
         attestation
@@ -92,7 +92,7 @@ pub trait Authenticator {
         log::trace!(target: LOG_TARGET, "Authority verified");
 
         let (cx, challenge) = &attestation.used_challenge();
-        log::trace!(target: LOG_TARGET, "Check challenge {:?} (with cx={cx:?}, xtc={xtc:?})", challenge);
+        log::trace!(target: LOG_TARGET, "Check challenge {challenge:?} (with cx={cx:?}, xtc={xtc:?})");
         Self::Challenger::check_challenge(cx, xtc, challenge)?;
         log::trace!(target: LOG_TARGET, "Challenge checked");
 
@@ -114,11 +114,11 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
     type Credential: UserChallengeResponse<CxOf<Self::Challenger>> + Send + Sync;
 
     fn verify_user(
-        &self,
+        &mut self,
         credential: &Self::Credential,
         xtc: &impl ExtrinsicContext,
     ) -> Option<()> {
-        log::trace!(target: LOG_TARGET, "Verifying user for credential: {:?}", credential);
+        log::trace!(target: LOG_TARGET, "Verifying user for credential: {credential:?}");
 
         log::trace!(target: LOG_TARGET, "Assert authority {:?}", credential.authority());
         credential
@@ -128,7 +128,7 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
         log::trace!(target: LOG_TARGET, "Authority verified");
 
         let (cx, challenge) = &credential.used_challenge();
-        log::trace!(target: LOG_TARGET, "Check challenge {:?}", challenge);
+        log::trace!(target: LOG_TARGET, "Check challenge {challenge:?}");
         Self::Challenger::check_challenge(cx, xtc, challenge)?;
         log::trace!(target: LOG_TARGET, "Challenge checked");
 
@@ -139,7 +139,7 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
         self.verify_credential(credential)
     }
 
-    fn verify_credential(&self, credential: &Self::Credential) -> Option<()>;
+    fn verify_credential(&mut self, credential: &Self::Credential) -> Option<()>;
 
     fn device_id(&self) -> &DeviceId;
 }

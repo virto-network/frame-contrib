@@ -77,7 +77,7 @@ pub mod authenticator_a {
         type Credential = Credential;
 
         // Note: This authenticator should pass intentionally, to pass on simpler tests
-        fn verify_credential(&self, _: &Self::Credential) -> Option<()> {
+        fn verify_credential(&mut self, _: &Self::Credential) -> Option<()> {
             Some(())
         }
 
@@ -123,9 +123,15 @@ pub mod authenticator_a {
     }
 }
 
+#[derive(Clone)]
 pub struct LastThreeBlocksChallenger;
 impl Challenger for LastThreeBlocksChallenger {
     type Context = BlockNumberFor<Test>;
+
+    fn generate(context: &Self::Context, xtc: &impl ExtrinsicContext) -> Challenge {
+        let (hash, _) = RandomnessFromBlockNumber::random(&(context, xtc.as_ref()).encode());
+        hash.0
+    }
 
     fn check_challenge(
         cx: &Self::Context,
@@ -135,11 +141,6 @@ impl Challenger for LastThreeBlocksChallenger {
         let block_number = System::block_number();
         let range = block_number.saturating_sub(3)..=block_number;
         (range.contains(cx) && challenge.eq(&Self::generate(cx, xtc))).then_some(())
-    }
-
-    fn generate(context: &Self::Context, xtc: &impl ExtrinsicContext) -> Challenge {
-        let (hash, _) = RandomnessFromBlockNumber::random(&(context, xtc.as_ref()).encode());
-        hash.0
     }
 }
 
@@ -164,6 +165,7 @@ pub mod authenticator_b {
     #[scale_info(skip_type_params(C))]
     pub struct Device<C> {
         pub(crate) device_id: DeviceId,
+        pub(crate) nonce: u32,
         _data: PhantomData<C>,
     }
 
@@ -172,15 +174,17 @@ pub mod authenticator_b {
         pub(crate) user_id: HashedUserId,
         pub(crate) context: Cx,
         pub(crate) challenge: Challenge,
+        pub(crate) nonce: u32,
         pub(crate) signature: Option<[u8; 32]>,
     }
 
     impl<Cx> Credential<Cx> {
-        pub fn new(user_id: HashedUserId, context: Cx, challenge: Challenge) -> Self {
+        pub fn new(user_id: HashedUserId, context: Cx, nonce: u32, challenge: Challenge) -> Self {
             Self {
                 user_id,
                 context,
                 challenge,
+                nonce,
                 signature: None,
             }
         }
@@ -194,7 +198,15 @@ pub mod authenticator_b {
 
         // A dummy "signature", to test the signing capabilities
         pub fn signature(signer: &DeviceId, credential: &Self) -> [u8; 32] {
-            blake2_256(&(signer, credential.user_id, credential.challenge).encode())
+            blake2_256(
+                &(
+                    signer,
+                    credential.user_id,
+                    credential.nonce,
+                    credential.challenge,
+                )
+                    .encode(),
+            )
         }
     }
 
@@ -210,6 +222,7 @@ pub mod authenticator_b {
         fn unpack_device(attestation: Self::DeviceAttestation) -> Self::Device {
             Device {
                 device_id: attestation.device_id,
+                nonce: 0,
                 _data: PhantomData,
             }
         }
@@ -224,11 +237,13 @@ pub mod authenticator_b {
         type Challenger = C;
         type Credential = Credential<CxOf<C>>;
 
-        fn verify_credential(&self, credential: &Self::Credential) -> Option<()> {
+        fn verify_credential(&mut self, credential: &Self::Credential) -> Option<()> {
             credential.signature.and_then(|signature| {
-                Credential::signature(self.device_id(), &credential)
-                    .eq(&signature)
-                    .then_some(())
+                (Credential::signature(self.device_id(), &credential).eq(&signature)
+                    && credential.nonce == self.nonce)
+                    .then(|| {
+                        self.nonce = self.nonce + 1;
+                    })
             })
         }
 
