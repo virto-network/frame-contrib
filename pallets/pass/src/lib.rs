@@ -155,7 +155,7 @@ pub mod pallet {
     pub type RegistrarConsiderations<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, T::AccountId, (T::RegistrarConsideration, u64)>;
 
-    // Storage
+    /// A map of the devices registered on behalf of an account.
     #[pallet::storage]
     pub type Devices<T: Config<I>, I: 'static = ()> = StorageDoubleMap<
         _,
@@ -165,6 +165,11 @@ pub mod pallet {
         DeviceId,
         DeviceOf<T, I>,
     >;
+
+    /// A list the ids of the devices registered in the pallet.
+    #[pallet::storage]
+    pub type DeviceIds<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, DeviceId, ()>;
 
     /// Counts how many devices a pass account has registered and holds an amount to the account.
     #[pallet::storage]
@@ -220,6 +225,8 @@ pub mod pallet {
         SessionKeyInUse,
         MaxDevicesExceeded,
         MaxSessionsExceeded,
+        /// The device to register already exists.
+        DeviceAlreadyExists,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -395,8 +402,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         attestation: DeviceAttestationOf<T, I>,
     ) -> DispatchResult {
         let device_id = attestation.device_id();
-        // Device attestations are considered "to be trusted", thus they don't require and extrinsic context.
-        let device = T::Authenticator::verify_device(attestation.clone(), &[])
+        ensure!(
+            !DeviceIds::<T, I>::contains_key(device_id),
+            Error::<T, I>::DeviceAlreadyExists
+        );
+
+        // Devices are expected to be registered on behalf of an user
+        let device = T::Authenticator::verify_device(attestation.clone(), &address.encode())
             .ok_or(Error::<T, I>::DeviceAttestationInvalid)?;
 
         let devices_count = DeviceConsiderations::<T, I>::get(address)
@@ -415,6 +427,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         >::increment(address)?;
 
         Devices::<T, I>::insert(address, device_id, device);
+        DeviceIds::<T, I>::insert(device_id, ());
 
         Self::deposit_event(Event::<T, I>::DeviceAdded {
             who: address.clone(),
@@ -438,6 +451,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         >::decrement(address)?;
 
         Devices::<T, I>::remove(address, id);
+        DeviceIds::<T, I>::remove(id);
 
         Self::deposit_event(Event::<T, I>::DeviceRemoved {
             who: address.clone(),
