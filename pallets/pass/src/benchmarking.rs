@@ -41,7 +41,8 @@ fn do_register<T: Config<I>, I: 'static>(
 ) -> Result<DeviceId, BenchmarkError> {
     let origin = prepare_register::<T, I>(hashed_user_id)
         .map_err(|_| BenchmarkError::Stop("Cannot prepare origin"))?;
-    let attestation = T::BenchmarkHelper::device_attestation(&[]);
+    let account_address = Pallet::<T, I>::address_for(hashed_user_id);
+    let attestation = T::BenchmarkHelper::device_attestation(&account_address.encode());
     Pallet::<T, I>::register(origin, hashed_user_id, attestation.clone())
         .map(|_| *(attestation.device_id()))
         .map_err(|_| BenchmarkError::Stop("Cannot register pass account"))
@@ -76,7 +77,7 @@ mod benchmarks {
         let origin = prepare_register::<T, I>(user_id)?;
 
         let account_id = Pallet::<T, I>::address_for(user_id);
-        let attestation = T::BenchmarkHelper::device_attestation(&[]);
+        let attestation = T::BenchmarkHelper::device_attestation(&account_id.encode());
         let device_id = *(attestation.clone().device_id());
 
         #[extrinsic_call]
@@ -143,7 +144,7 @@ mod benchmarks {
         do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
-        let attestation = T::BenchmarkHelper::device_attestation(&[]);
+        let attestation = T::BenchmarkHelper::device_attestation(&address.encode());
         let new_device_id = *(attestation.clone().device_id());
         T::DeviceConsideration::ensure_successful(
             &address,
@@ -172,7 +173,7 @@ mod benchmarks {
         do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
-        let attestation = T::BenchmarkHelper::device_attestation(&[]);
+        let attestation = T::BenchmarkHelper::device_attestation(&address.encode());
         let new_device_id = *(attestation.clone().device_id());
         T::DeviceConsideration::ensure_successful(
             &address,
