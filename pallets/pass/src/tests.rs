@@ -223,7 +223,10 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    challenge: LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &Address::get(),
+                    ),
                 }),
             ));
 
@@ -255,7 +258,10 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    challenge: LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &Address::get(),
+                    ),
                 }),
             ));
 
@@ -303,7 +309,10 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: OTHER_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    challenge: LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &address,
+                    ),
                 }),
             )
             .expect("adding device on an existing account works; qed");
@@ -336,7 +345,10 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    challenge: LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &Address::get(),
+                    ),
                 }),
             ));
             assert_ok!(Pass::register(
@@ -345,7 +357,10 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: OTHER_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    challenge: LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &AddressB::get(),
+                    ),
                 }),
             ));
 
@@ -378,7 +393,10 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    challenge: LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &Address::get(),
+                    ),
                 }),
             ));
 
@@ -426,7 +444,10 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    challenge: LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &Address::get(),
+                    ),
                 }),
             ));
 
@@ -455,7 +476,10 @@ mod authenticate {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    challenge: LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &Address::get(),
+                    ),
                 }),
             ));
 
@@ -543,6 +567,26 @@ mod add_device {
                     ),
                 ),
                 DispatchError::BadOrigin
+            );
+        });
+    }
+
+    #[test]
+    fn fails_if_invalid_challenge() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_noop!(
+                Pass::add_device(
+                    RuntimeOrigin::signed(Address::get()),
+                    PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+                        device_id: OTHER_DEVICE,
+                        context: System::block_number(),
+                        challenge: LastThreeBlocksChallenger::generate(
+                            &System::block_number(),
+                            &[]
+                        ),
+                    }),
+                ),
+                Error::<Test>::DeviceAttestationInvalid
             );
         });
     }
@@ -906,7 +950,10 @@ mod dispatch {
                 PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                     device_id: THE_DEVICE,
                     context: System::block_number(),
-                    challenge: LastThreeBlocksChallenger::generate(&System::block_number(), &[]),
+                    challenge: LastThreeBlocksChallenger::generate(
+                        &System::block_number(),
+                        &Address::get(),
+                    ),
                 }),
             ));
             assert_ok!(Balances::mint_into(&Address::get(), Balance::MAX));
