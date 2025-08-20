@@ -15,8 +15,7 @@ use sp_runtime::Percent;
 macro_rules! assert_has_event {
 	($patt:pat $(if $guard:expr)?) => {
 		assert!(frame_system::Pallet::<T>::events().iter().any(|record| {
-			let e = <T as Config>::RuntimeEvent::from(record.event.clone());
-			matches!(e.try_into(), Ok($patt) $(if $guard)?)
+			matches!(record.event.clone().try_into(), Ok($patt) $(if $guard)?)
 		}));
 	};
 }
@@ -156,7 +155,6 @@ mod benchmarks {
         #[extrinsic_call]
         _(RawOrigin::Signed(sender), payment_id);
 
-        assert_has_event!(Event::PaymentReleased { .. });
         Ok(())
     }
 

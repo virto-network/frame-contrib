@@ -54,21 +54,36 @@ pub mod pallet {
     }
 
     #[pallet::config]
-    pub trait Config<I: 'static = ()>: frame_system::Config + pallet_referenda::Config<I> {
-        type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+    pub trait Config<I: 'static = ()>:
+        frame_system::Config<RuntimeEvent: From<Event<Self, I>>> + pallet_referenda::Config<I>
+    {
+        // Primitives: Some overarching types that come from the system (or the system depends on).
 
-        type UpdateOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, TrackIdOf<Self, I>>;
-
-        type RuntimeEvent: From<Event<Self, I>>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
-        type TrackId: Parameter + Member + Copy + MaxEncodedLen + Ord;
-
-        type MaxTracks: Get<u32>;
-
+        /// Weight information for extrinsics in this pallet.
         type WeightInfo: WeightInfo;
 
+        // Origins: Types that manage authorization rules to allow or deny some caller origins to
+        // execute a method.
+
+        /// An origin that is authorized to mutate the list of origins.
+        type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+        /// An origin that is authorized to mutate an existing origin.
+        type UpdateOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, TrackIdOf<Self, I>>;
+
+        // Types: A set of parameter types that the pallet uses to handle information.
+
+        /// The ID of a single track.
+        type TrackId: Parameter + Member + Copy + MaxEncodedLen + Ord;
+
+        // Parameters: A set of constant parameters to configure limits.
+
+        /// The maximum amount of tracks which can be configured in this module
+        type MaxTracks: Get<u32>;
+
+        // Benchmarking: Types to handle benchmarks.
         #[cfg(feature = "runtime-benchmarks")]
+
+        /// A helper trait to set up benchmark tests.
         type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }
 

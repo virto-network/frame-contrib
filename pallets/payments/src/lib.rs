@@ -19,7 +19,6 @@ use sp_io::hashing::blake2_256;
 use alloc::vec::Vec;
 use fc_traits_payments::{OnPaymentStatusChanged, PaymentMutate};
 use frame_support::{
-    dispatch::{GetDispatchInfo, PostDispatchInfo},
     ensure, fail,
     pallet_prelude::*,
     traits::{
@@ -40,7 +39,7 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use sp_runtime::{
-    traits::{BlockNumberProvider, CheckedAdd, CheckedSub, Dispatchable, Get, StaticLookup},
+    traits::{BlockNumberProvider, CheckedAdd, CheckedSub, Get, StaticLookup},
     ArithmeticError, DispatchError, Percent, Saturating,
 };
 use types::BlockNumberFor;
@@ -66,24 +65,20 @@ pub mod pallet {
     use frame_support::traits::fungibles::Create as FunCreate;
 
     #[pallet::config]
-    pub trait Config: frame_system::Config {
+    pub trait Config:
+        frame_system::Config<
+        RuntimeEvent: From<Event<Self>> + TryInto<Event<Self>>,
+        RuntimeCall: From<Call<Self>>,
+    >
+    {
         // Primitives: Some overarching types that come from the system (or the system depends on).
 
-        /// The overarching event type
-        type RuntimeEvent: TryInto<Event<Self>>
-            + From<Event<Self>>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// The caller origin, overarching type of all pallets origins.
         type PalletsOrigin: From<frame_system::RawOrigin<Self::AccountId>>
             + CallerTrait<Self::AccountId>
             + MaxEncodedLen;
         /// The overarching hold reason.
         type RuntimeHoldReason: From<HoldReason>;
-        /// The overarching call type.
-        type RuntimeCall: Parameter
-            + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>
-            + GetDispatchInfo
-            + From<Call<Self>>;
         /// Weight information for extrinsics in this pallet.
         type WeightInfo: WeightInfo;
 
@@ -341,7 +336,7 @@ pub mod pallet {
                         .checked_add(&T::CancelBufferBlockLength::get())
                         .ok_or(Error::<T>::MathError)?;
                     let cancel_call =
-                        <T as Config>::RuntimeCall::from(pallet::Call::<T>::cancel { payment_id });
+                        T::RuntimeCall::from(pallet::Call::<T>::cancel { payment_id });
 
                     T::Scheduler::schedule_named(
                         ("payment", payment_id).using_encoded(blake2_256),

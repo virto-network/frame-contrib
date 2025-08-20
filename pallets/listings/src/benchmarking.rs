@@ -5,7 +5,7 @@ use frame_benchmarking::v2::*;
 use frame_support::traits::{fungible::Unbalanced, tokens::Precision};
 use sp_runtime::traits::Bounded;
 
-fn assert_has_event<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>::RuntimeEvent) {
+fn assert_has_event<T: Config<I>, I: 'static>(generic_event: T::RuntimeEvent) {
     frame_system::Pallet::<T>::assert_has_event(generic_event.into())
 }
 

@@ -91,7 +91,6 @@ impl GasBurner for DummyGasBurner {
 }
 
 impl Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type GasTank = DummyGasBurner;
     #[cfg(feature = "runtime-benchmarks")]

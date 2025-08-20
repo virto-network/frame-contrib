@@ -27,13 +27,16 @@ pub mod pallet {
     use super::*;
 
     #[pallet::config]
-    pub trait Config: frame_system::Config {
-        /// The overarching runtime event type
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+    pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
+        // Primitives: Some overarching types that come from the system (or the system depends on).
         /// The Weight info
         type WeightInfo: WeightInfo;
+
+        // Dependencies: The external components this pallet depends on.
         /// A type that handles gas tanks
         type GasTank: GasBurner<AccountId = Self::AccountId, Gas = Weight>;
+
+        // Benchmarking: Types to handle benchmarks.
         /// A helper to prepare benchmarking tests
         #[cfg(feature = "runtime-benchmarks")]
         type BenchmarkHelper: BenchmarkHelper<Self>;

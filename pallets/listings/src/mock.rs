@@ -143,7 +143,6 @@ impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<SignedMerchantId, Id>>
 }
 
 impl pallet_listings::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type CreateInventoryOrigin = EnsureAccountIdInventories;
     type InventoryAdminOrigin = EnsureAccountIdInventories;

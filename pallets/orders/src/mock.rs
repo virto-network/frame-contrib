@@ -218,7 +218,6 @@ where
 }
 
 impl fc_pallet_listings::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type CreateInventoryOrigin = EnsureSigned<AccountId>;
     type InventoryAdminOrigin = EnsureSigned<AccountId>;
@@ -315,10 +314,8 @@ impl FeeHandler<Test> for MinBalanceFeeHandler {
 }
 
 impl fc_pallet_payments::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type PalletsOrigin = OriginCaller;
     type RuntimeHoldReason = RuntimeHoldReason;
-    type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;
@@ -371,7 +368,6 @@ impl EnsureOrigin<RuntimeOrigin> for LimitsPerAccountId {
 }
 
 impl Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type PalletsOrigin = OriginCaller;
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();

@@ -259,10 +259,8 @@ parameter_types! {
 }
 
 impl Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type PalletsOrigin = OriginCaller;
     type RuntimeHoldReason = RuntimeHoldReason;
-    type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
     type SenderOrigin = EnsureSigned<AccountId>;
     type BeneficiaryOrigin = EnsureSigned<AccountId>;

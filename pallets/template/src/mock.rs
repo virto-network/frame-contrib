@@ -30,7 +30,6 @@ impl pallet_balances::Config for Test {
 
 impl Config for Test {
     type WeightInfo = ();
-    type RuntimeEvent = RuntimeEvent;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

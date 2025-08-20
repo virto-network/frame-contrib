@@ -163,9 +163,7 @@ pub type RegistrationStoragePrice = LinearStoragePrice<ExistentialDeposit, Const
 pub type ItemStoragePrice = LinearStoragePrice<ConstU64<100>, ConstU64<1>, Balance>;
 
 impl Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type PalletsOrigin = OriginCaller;
-    type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
     type RegisterOrigin = EitherOf<
         // Root does not pay

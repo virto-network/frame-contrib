@@ -41,15 +41,13 @@ pub mod pallet {
     use super::*;
 
     #[pallet::config]
-    pub trait Config<I: 'static = ()>: frame_system::Config
+    pub trait Config<I: 'static = ()>:
+        frame_system::Config<RuntimeEvent: From<Event<Self, I>>>
     where
         AssetIdOf<Self, I>: MaybeSerializeDeserialize,
     {
         // Primitives: Some overarching types that come from the system (or the system depends on).
 
-        /// The overarching type for events.
-        type RuntimeEvent: From<Event<Self, I>>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// A type that defines the weights different calls and methods benchmark.
         type WeightInfo: WeightInfo;
 

@@ -37,11 +37,9 @@ pub mod pallet {
         <<T as Config>::BlockNumberProvider as BlockNumberProvider>::BlockNumber;
 
     #[pallet::config]
-    pub trait Config: frame_system::Config {
+    pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
         // Primitives: Some overarching types that come from the system (or the system depends on).
 
-        /// The overarching runtime event type
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// The Weight info
         type WeightInfo: WeightInfo;
 

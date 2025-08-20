@@ -24,7 +24,7 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use sp_runtime::{
-    traits::{BlockNumberProvider, Dispatchable, Hash, StaticLookup},
+    traits::{BlockNumberProvider, Hash, StaticLookup},
     DispatchResult,
 };
 
@@ -51,20 +51,13 @@ pub mod pallet {
     use types::BlockNumberFor;
 
     #[pallet::config]
-    pub trait Config<I: 'static = ()>: frame_system::Config {
+    pub trait Config<I: 'static = ()>:
+        frame_system::Config<RuntimeCall: From<Call<Self, I>>, RuntimeEvent: From<Event<Self, I>>>
+    {
         // Primitives: Some overarching types that come from the system (or the system depends on).
 
-        /// The overarching event type.
-        type RuntimeEvent: From<Event<Self, I>>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// The caller origin, overarching type of all pallets origins.
         type PalletsOrigin: From<frame_system::Origin<Self>>;
-        /// The overarching call type.
-        type RuntimeCall: Parameter
-            + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin>
-            + Debug
-            + From<Call<Self, I>>
-            + From<frame_system::Call<Self>>;
         /// The weight information for this pallet.
         type WeightInfo: WeightInfo;
 
@@ -89,11 +82,7 @@ pub mod pallet {
         /// regarding assertion to register devices and authenticating with credentials.
         type Authenticator: Authenticator<Authority = util::AuthorityFromPalletId<Self::PalletId>>;
         /// The `Scheduler` system.
-        type Scheduler: Named<
-            BlockNumberFor<Self, I>,
-            <Self as Config<I>>::RuntimeCall,
-            Self::PalletsOrigin,
-        >;
+        type Scheduler: Named<BlockNumberFor<Self, I>, Self::RuntimeCall, Self::PalletsOrigin>;
         type BlockNumberProvider: BlockNumberProvider;
 
         // Considerations: Costs that are "taken from [the caller's] account temporarily in order to
@@ -497,7 +486,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         let duration = duration
             .unwrap_or(T::MaxSessionDuration::get())
             .min(T::MaxSessionDuration::get());
-        let call: <T as Config<I>>::RuntimeCall = Call::remove_session_key {
+        let call: T::RuntimeCall = Call::remove_session_key {
             session_key: session_key.clone(),
         }
         .into();
