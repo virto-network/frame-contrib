@@ -118,14 +118,13 @@ use alloc::{boxed::Box, vec::Vec};
 use core::num::NonZeroU8;
 use frame_contrib_traits::memberships::{self as membership, Inspect, Manager, Rank};
 use frame_support::{
-    dispatch::{GetDispatchInfo, PostDispatchInfo},
     pallet_prelude::*,
-    traits::{fungible, fungibles, EnsureOrigin, IsSubType, OriginTrait, Polling},
+    traits::{fungible, fungibles, EnsureOrigin, OriginTrait, Polling},
     Blake2_128Concat, Parameter,
 };
 use frame_system::pallet_prelude::{ensure_signed, OriginFor};
 use sp_runtime::traits::AccountIdConversion;
-use sp_runtime::traits::{BlockNumberProvider, Dispatchable, StaticLookup};
+use sp_runtime::traits::{BlockNumberProvider, StaticLookup};
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
@@ -160,33 +159,17 @@ pub mod pallet {
     /// Configure the pallet by specifying the parameters and types on which it
     /// depends.
     #[pallet::config]
-    pub trait Config: frame_system::Config
+    pub trait Config:
+        frame_system::Config<
+        RuntimeEvent: From<Event<Self>>,
+        RuntimeCall: From<Call<Self>>,
+        RuntimeOrigin: From<Origin<Self>>,
+    >
     where
         AssetIdOf<Self>: MaybeSerializeDeserialize,
     {
         // Primitives: Some overarching types that come from the system (or the system depends on).
 
-        /// Because this pallet emits events, it depends on the runtime's
-        /// definition of an event.
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-        /// The `RuntimeOrigin` type used by dispatchable calls.
-        type RuntimeOrigin: Into<Result<frame_system::Origin<Self>, RuntimeOriginFor<Self>>>
-            + From<frame_system::Origin<Self>>
-            + From<Origin<Self>>
-            + Clone
-            + OriginTrait<
-                Call = RuntimeCallFor<Self>,
-                AccountId = Self::AccountId,
-                PalletsOrigin = PalletsOriginOf<Self>,
-            >;
-        /// The overarching call type.
-        type RuntimeCall: Parameter
-            + Dispatchable<RuntimeOrigin = RuntimeOriginFor<Self>, PostInfo = PostDispatchInfo>
-            + GetDispatchInfo
-            + From<Call<Self>>
-            + From<frame_system::Call<Self>>
-            + IsSubType<Call<Self>>
-            + IsType<<Self as frame_system::Config>::RuntimeCall>;
         /// The overarching freeze reason.
         type RuntimeFreezeReason: From<FreezeReason>;
         /// Type representing the weight of this pallet

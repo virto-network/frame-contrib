@@ -47,6 +47,7 @@ impl pallet_preimage::Config for Test {
     type ManagerOrigin = EnsureRoot<u64>;
     type Consideration = ();
 }
+
 parameter_types! {
     pub MaxWeight: Weight = Weight::from_parts(2_000_000_000_000, u64::MAX);
 }
@@ -57,9 +58,9 @@ impl pallet_scheduler::Config for Test {
     type RuntimeCall = RuntimeCall;
     type MaximumWeight = MaxWeight;
     type ScheduleOrigin = EnsureRoot<u64>;
+    type OriginPrivilegeCmp = EqualPrivilegeOnly;
     type MaxScheduledPerBlock = ConstU32<100>;
     type WeightInfo = ();
-    type OriginPrivilegeCmp = EqualPrivilegeOnly;
     type Preimages = Preimage;
     type BlockNumberProvider = System;
 }
@@ -126,12 +127,11 @@ parameter_types! {
     pub const MaxTracks: u32 = u8::MAX as u32;
 }
 impl Config for Test {
-    type TrackId = u32;
-    type RuntimeEvent = RuntimeEvent;
-    type MaxTracks = MaxTracks;
+    type WeightInfo = ();
     type AdminOrigin = EnsureRoot<u64>;
     type UpdateOrigin = EnsureOriginToTrack;
-    type WeightInfo = ();
+    type TrackId = u32;
+    type MaxTracks = MaxTracks;
 
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = BenchmarkHelper;

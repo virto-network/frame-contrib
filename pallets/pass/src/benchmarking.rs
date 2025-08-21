@@ -14,9 +14,7 @@ use sp_runtime::traits::{
     Hash, TxBaseImplication,
 };
 
-type RuntimeEventFor<T, I> = <T as Config<I>>::RuntimeEvent;
-
-fn assert_has_event<T: Config<I>, I: 'static>(generic_event: RuntimeEventFor<T, I>) {
+fn assert_has_event<T: Config<I>, I: 'static>(generic_event: T::RuntimeEvent) {
     frame_system::Pallet::<T>::assert_has_event(generic_event.into());
 }
 
@@ -65,7 +63,6 @@ where
     T::Hash: Into<HashedUserId>,
     DispatchInfoOf<RuntimeCallFor<T>>: From<DispatchInfo>,
     OriginFor<T>: From<frame_system::Origin<T>> + AsTransactionAuthorizedOrigin,
-    RuntimeEventFor<T, I>: From<frame_system::Event<T>>,
 )]
 mod benchmarks {
     use super::*;

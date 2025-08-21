@@ -71,6 +71,14 @@ jobs:
         shell: bash
         run: sudo apt update && sudo apt install -y protobuf-compiler
 
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32v1-none
+          components: rust-src
+
       - uses: actions/checkout@v4
 
       - name: Rust Cache

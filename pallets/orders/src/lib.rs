@@ -27,8 +27,6 @@ use sp_runtime::traits::{BlockNumberProvider, Dispatchable, Hash, TrailingZeroIn
 #[cfg(feature = "runtime-benchmarks")]
 use frame_contrib_traits::listings::InventoryLifecycle;
 
-const LOG_TARGET: &str = "fc_pallet_orders";
-
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
 
@@ -49,12 +47,11 @@ pub mod pallet {
     use super::*;
 
     #[pallet::config]
-    pub trait Config<I: 'static = ()>: frame_system::Config {
+    pub trait Config<I: 'static = ()>:
+        frame_system::Config<RuntimeEvent: From<Event<Self, I>>>
+    {
         // Primitives: Some overarching types that come from the system (or the system depends on).
 
-        /// The overarching event type.
-        type RuntimeEvent: From<Event<Self, I>>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// The caller origin, overarching type of all pallets origins.
         type PalletsOrigin: From<frame_system::RawOrigin<Self::AccountId>>
             + CallerTrait<Self::AccountId>

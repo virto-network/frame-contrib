@@ -19,7 +19,7 @@ use frame_support::traits::{
 use frame_system::{pallet_prelude::OriginFor, RawOrigin};
 use sp_runtime::traits::{Hash, StaticLookup};
 
-type RuntimeEventFor<T> = <T as Config>::RuntimeEvent;
+type RuntimeEventFor<T> = <T as frame_system::Config>::RuntimeEvent;
 
 fn assert_has_event<T: Config>(generic_event: RuntimeEventFor<T>) {
     frame_system::Pallet::<T>::assert_has_event(generic_event.into());
@@ -176,8 +176,7 @@ mod benchmarks {
         let (id, _, _, community_origin) = community_params::<T>(None);
 
         let community_account = Communities::<T>::community_account(&id);
-        let signed_origin: <T as Config>::RuntimeOrigin =
-            RawOrigin::Signed(community_account.clone()).into();
+        let signed_origin: T::RuntimeOrigin = RawOrigin::Signed(community_account.clone()).into();
         let signed_origin_caller: PalletsOriginOf<T> = signed_origin.into_caller();
 
         Communities::<T>::create(RawOrigin::Root.into(), signed_origin_caller, id)?;

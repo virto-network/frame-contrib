@@ -271,12 +271,11 @@ parameter_types! {
     pub const MaxTracks: u32 = u32::MAX;
 }
 impl fc_pallet_referenda_tracks::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type TrackId = CommunityId;
-    type MaxTracks = MaxTracks;
+    type WeightInfo = ();
     type AdminOrigin = EnsureRoot<AccountId>;
     type UpdateOrigin = EnsureOriginToTrack;
-    type WeightInfo = ();
+    type TrackId = CommunityId;
+    type MaxTracks = MaxTracks;
 
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = TracksBenchmarkHelper;
@@ -286,9 +285,9 @@ parameter_types! {
         pub static AlarmInterval: u64 = 1;
 }
 impl pallet_referenda::Config for Test {
-    type WeightInfo = ();
     type RuntimeCall = RuntimeCall;
     type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = ();
     type Scheduler = Scheduler;
     type Currency = pallet_balances::Pallet<Self>;
     type SubmitOrigin = EnsureSigned<AccountId>;
@@ -448,9 +447,6 @@ type AnyoneElsePays = EnsureSignedPays<Test, ConstU64<10>, RootAccount>;
 pub type MembershipsManager = NonFungiblesMemberships<Nfts, pallet_nfts::ItemConfig>;
 
 impl Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type RuntimeOrigin = RuntimeOrigin;
-    type RuntimeCall = RuntimeCall;
     type RuntimeFreezeReason = RuntimeFreezeReason;
     type WeightInfo = WeightInfo;
 

@@ -50,7 +50,6 @@ parameter_types! {
 }
 
 impl fc_pallet_black_hole::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type EventHorizonDispatchOrigin = EnsureRoot<AccountId>;
     type Balances = Balances;

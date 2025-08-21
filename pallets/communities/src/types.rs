@@ -24,8 +24,8 @@ pub type AccountIdLookupOf<T> = <<T as frame_system::Config>::Lookup as StaticLo
 pub type PalletsOriginOf<T> =
     <<T as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin;
 pub type MembershipIdOf<T> = <T as Config>::MembershipId;
-pub type RuntimeCallFor<T> = <T as Config>::RuntimeCall;
-pub type RuntimeOriginFor<T> = <T as Config>::RuntimeOrigin;
+pub type RuntimeCallFor<T> = <T as frame_system::Config>::RuntimeCall;
+pub type RuntimeOriginFor<T> = <T as frame_system::Config>::RuntimeOrigin;
 pub type BlockNumberFor<T> =
     <<T as Config>::BlockNumberProvider as BlockNumberProvider>::BlockNumber;
 

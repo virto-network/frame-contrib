@@ -20,7 +20,7 @@ pub type ChargableOnDisputes = bool;
 pub type Fee<T> = (AccountIdOf<T>, BalanceOf<T>, ChargableOnDisputes);
 pub type FeesSummaryForRole<T> = (Vec<Fee<T>>, BalanceOf<T>, BalanceOf<T>);
 pub type FeeDetails<T> = BoundedVec<Fee<T>, MaxFeesOf<T>>;
-pub type CallOf<T> = <T as Config>::RuntimeCall;
+pub type CallOf<T> = <T as frame_system::Config>::RuntimeCall;
 pub type PreimagesOf<T> = <T as Config>::Preimages;
 pub type BoundedCallOf<T> = Bounded<CallOf<T>, <T as frame_system::Config>::Hashing>;
 
