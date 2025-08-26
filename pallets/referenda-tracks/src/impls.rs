@@ -1,13 +1,16 @@
 use super::*;
 
+use alloc::borrow::Cow;
 use frame_support::ensure;
 use sp_runtime::{BoundedVec, DispatchError, DispatchResult};
+
+type OriginOf<T> = <<T as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin;
 
 impl<T: Config<I>, I: 'static> pallet_referenda::TracksInfo<BalanceOf<T, I>, BlockNumberFor<T, I>>
     for Pallet<T, I>
 {
     type Id = T::TrackId;
-    type RuntimeOrigin = <T::RuntimeOrigin as OriginTrait>::PalletsOrigin;
+    type RuntimeOrigin = OriginOf<T>;
 
     fn tracks(
     ) -> impl Iterator<Item = Cow<'static, Track<Self::Id, BalanceOf<T, I>, BlockNumberFor<T, I>>>>
@@ -19,14 +22,12 @@ impl<T: Config<I>, I: 'static> pallet_referenda::TracksInfo<BalanceOf<T, I>, Blo
     }
 }
 
-impl<T: Config<I>, I> fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumberFor<T, I>>
-    for Pallet<T, I>
-{
+impl<T: Config<I>, I: 'static> Pallet<T, I> {
     /// Inserts a new track into the tracks storage.
-    fn insert(
-        id: Self::Id,
+    pub(crate) fn do_insert(
+        id: T::TrackId,
         info: TrackInfoOf<T, I>,
-        origin: Self::RuntimeOrigin,
+        origin: OriginOf<T>,
     ) -> DispatchResult {
         ensure!(
             Tracks::<T, I>::get(id).is_none(),
@@ -42,7 +43,7 @@ impl<T: Config<I>, I> fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumbe
     }
 
     /// Updates an existing track with the given Id.
-    fn update(id: Self::Id, info: TrackInfoOf<T, I>) -> DispatchResult {
+    pub(crate) fn do_update(id: T::TrackId, info: TrackInfoOf<T, I>) -> DispatchResult {
         Tracks::<T, I>::try_mutate(id, |track| {
             if track.is_none() {
                 return Err(Error::<T, I>::TrackIdNotFound);
@@ -57,9 +58,9 @@ impl<T: Config<I>, I> fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumbe
         Ok(())
     }
 
-    fn remove(
-        id: Self::Id,
-        origin: Self::RuntimeOrigin,
+    pub(crate) fn do_remove(
+        id: T::TrackId,
+        origin: OriginOf<T>,
     ) -> frame_support::dispatch::DispatchResult {
         ensure!(
             Tracks::<T, I>::contains_key(id),

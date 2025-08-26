@@ -29,7 +29,6 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-use alloc::borrow::Cow;
 use frame_support::traits::OriginTrait;
 use pallet_referenda::{BalanceOf, BlockNumberFor, PalletsOriginOf, Track, TrackInfoOf};
 use sp_core::Get;
@@ -144,7 +143,7 @@ pub mod pallet {
             pallet_origin: PalletsOriginOf<T>,
         ) -> DispatchResult {
             T::AdminOrigin::ensure_origin(origin)?;
-            <Self as fc_traits_tracks::MutateTracks<_, _>>::insert(id, info, pallet_origin)
+            Self::do_insert(id, info, pallet_origin)
         }
 
         /// Update the configuration of an existing referenda Track.
@@ -163,7 +162,7 @@ pub mod pallet {
             info: TrackInfoOf<T, I>,
         ) -> DispatchResult {
             T::UpdateOrigin::ensure_origin(origin, &id)?;
-            <Self as fc_traits_tracks::MutateTracks<_, _>>::update(id, info)
+            Self::do_update(id, info)
         }
 
         /// Remove an existing track
@@ -181,7 +180,7 @@ pub mod pallet {
             pallet_origin: PalletsOriginOf<T>,
         ) -> DispatchResult {
             T::AdminOrigin::ensure_origin(origin)?;
-            <Self as fc_traits_tracks::MutateTracks<_, _>>::remove(id, pallet_origin)
+            Self::do_remove(id, pallet_origin)
         }
     }
 }
