@@ -29,10 +29,11 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+use codec::DecodeWithMemTracking;
 use frame_support::traits::OriginTrait;
-use pallet_referenda::{BalanceOf, BlockNumberFor, PalletsOriginOf, Track, TrackInfoOf};
-use sp_core::Get;
+use pallet_referenda::{BalanceOf, BlockNumberFor, Curve, PalletsOriginOf, Track, TrackInfoOf};
 
+pub use pallet::UpdateType;
 pub use pallet::*;
 pub use weights::WeightInfo;
 
@@ -100,13 +101,30 @@ pub mod pallet {
     pub type Tracks<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, TrackIdOf<T, I>, TrackInfoOf<T, I>>;
 
+    #[derive(
+        Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, DecodeWithMemTracking, TypeInfo,
+    )]
+    pub enum UpdateType {
+        /// Decision deposit was updated
+        DecisionDeposit,
+        /// One or more periods were updated
+        Periods,
+        /// One or more curves were updated
+        Curves,
+        /// Full track configuration was updated
+        Full,
+    }
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config<I>, I: 'static = ()> {
         /// A new track has been inserted
         Created { id: TrackIdOf<T, I> },
-        /// The information for a track has been updated
-        Updated { id: TrackIdOf<T, I> },
+        /// A track has been updated
+        Updated {
+            id: TrackIdOf<T, I>,
+            update_type: UpdateType,
+        },
         /// A track has been removed
         Removed { id: TrackIdOf<T, I> },
     }
@@ -148,6 +166,8 @@ pub mod pallet {
 
         /// Update the configuration of an existing referenda Track.
         ///
+        /// **DEPRECATED**: Use granular methods instead (`set_decision_deposit`, `set_periods`, `set_curves`).
+        ///
         /// Parameters:
         /// - `id`: The Id of the track to be updated.
         /// - `info`: The new configuration of the track.
@@ -156,13 +176,21 @@ pub mod pallet {
         ///
         /// Weight: `O(1)`
         #[pallet::call_index(1)]
+        #[deprecated(
+            note = "Use granular methods instead: set_decision_deposit, set_periods, set_curves"
+        )]
         pub fn update(
             origin: OriginFor<T>,
             id: TrackIdOf<T, I>,
             info: TrackInfoOf<T, I>,
         ) -> DispatchResult {
             T::UpdateOrigin::ensure_origin(origin, &id)?;
-            Self::do_update(id, info)
+            Self::do_update(id, info)?;
+            Self::deposit_event(Event::Updated {
+                id,
+                update_type: UpdateType::Full,
+            });
+            Ok(())
         }
 
         /// Remove an existing track
@@ -181,6 +209,86 @@ pub mod pallet {
         ) -> DispatchResult {
             T::AdminOrigin::ensure_origin(origin)?;
             Self::do_remove(id, pallet_origin)
+        }
+
+        /// Set the decision deposit for an existing track.
+        ///
+        /// Parameters:
+        /// - `id`: The Id of the track to be updated.
+        /// - `deposit`: The new decision deposit amount.
+        ///
+        /// Emits `Updated` event when successful.
+        ///
+        /// Weight: `O(1)`
+        #[pallet::call_index(3)]
+        pub fn set_decision_deposit(
+            origin: OriginFor<T>,
+            id: TrackIdOf<T, I>,
+            deposit: BalanceOf<T, I>,
+        ) -> DispatchResult {
+            T::UpdateOrigin::ensure_origin(origin, &id)?;
+            Self::do_set_decision_deposit(id, deposit)?;
+            Self::deposit_event(Event::Updated {
+                id,
+                update_type: UpdateType::DecisionDeposit,
+            });
+            Ok(())
+        }
+
+        /// Set periods for an existing track.
+        ///
+        /// Parameters:
+        /// - `id`: The Id of the track to be updated.
+        /// - `prepare`: Optional new prepare period.
+        /// - `decision`: Optional new decision period.
+        /// - `confirm`: Optional new confirm period.
+        /// - `min_enactment`: Optional new minimum enactment period.
+        ///
+        /// Emits `Updated` event when successful.
+        ///
+        /// Weight: `O(1)`
+        #[pallet::call_index(4)]
+        pub fn set_periods(
+            origin: OriginFor<T>,
+            id: TrackIdOf<T, I>,
+            prepare: Option<pallet_referenda::BlockNumberFor<T, I>>,
+            decision: Option<pallet_referenda::BlockNumberFor<T, I>>,
+            confirm: Option<pallet_referenda::BlockNumberFor<T, I>>,
+            min_enactment: Option<pallet_referenda::BlockNumberFor<T, I>>,
+        ) -> DispatchResult {
+            T::UpdateOrigin::ensure_origin(origin, &id)?;
+            Self::do_set_periods(id, prepare, decision, confirm, min_enactment)?;
+            Self::deposit_event(Event::Updated {
+                id,
+                update_type: UpdateType::Periods,
+            });
+            Ok(())
+        }
+
+        /// Set curves for an existing track.
+        ///
+        /// Parameters:
+        /// - `id`: The Id of the track to be updated.
+        /// - `min_approval`: Optional new minimum approval curve.
+        /// - `min_support`: Optional new minimum support curve.
+        ///
+        /// Emits `Updated` event when successful.
+        ///
+        /// Weight: `O(1)`
+        #[pallet::call_index(5)]
+        pub fn set_curves(
+            origin: OriginFor<T>,
+            id: TrackIdOf<T, I>,
+            min_approval: Option<Curve>,
+            min_support: Option<Curve>,
+        ) -> DispatchResult {
+            T::UpdateOrigin::ensure_origin(origin, &id)?;
+            Self::do_set_curves(id, min_approval, min_support)?;
+            Self::deposit_event(Event::Updated {
+                id,
+                update_type: UpdateType::Curves,
+            });
+            Ok(())
         }
     }
 }

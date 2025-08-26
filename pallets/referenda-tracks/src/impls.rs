@@ -54,7 +54,6 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Ok(())
         })?;
 
-        Self::deposit_event(Event::Updated { id });
         Ok(())
     }
 
@@ -85,6 +84,72 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         })?;
 
         Self::deposit_event(Event::Removed { id });
+        Ok(())
+    }
+
+    /// Updates the decision deposit for an existing track with the given Id.
+    pub(crate) fn do_set_decision_deposit(
+        id: T::TrackId,
+        deposit: BalanceOf<T, I>,
+    ) -> DispatchResult {
+        Tracks::<T, I>::try_mutate(id, |track| -> DispatchResult {
+            let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
+            track_info.decision_deposit = deposit;
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    /// Updates periods for an existing track with the given Id.
+    pub(crate) fn do_set_periods(
+        id: T::TrackId,
+        prepare: Option<BlockNumberFor<T, I>>,
+        decision: Option<BlockNumberFor<T, I>>,
+        confirm: Option<BlockNumberFor<T, I>>,
+        min_enactment: Option<BlockNumberFor<T, I>>,
+    ) -> DispatchResult {
+        Tracks::<T, I>::try_mutate(id, |track| -> DispatchResult {
+            let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
+
+            if let Some(period) = prepare {
+                track_info.prepare_period = period;
+            }
+            if let Some(period) = decision {
+                track_info.decision_period = period;
+            }
+            if let Some(period) = confirm {
+                track_info.confirm_period = period;
+            }
+            if let Some(period) = min_enactment {
+                track_info.min_enactment_period = period;
+            }
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    /// Updates curves for an existing track with the given Id.
+    pub(crate) fn do_set_curves(
+        id: T::TrackId,
+        min_approval: Option<pallet_referenda::Curve>,
+        min_support: Option<pallet_referenda::Curve>,
+    ) -> DispatchResult {
+        Tracks::<T, I>::try_mutate(id, |track| -> DispatchResult {
+            let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
+
+            if let Some(curve) = min_approval.clone() {
+                track_info.min_approval = curve;
+            }
+            if let Some(curve) = min_support.clone() {
+                track_info.min_support = curve;
+            }
+
+            Ok(())
+        })?;
+
         Ok(())
     }
 }
