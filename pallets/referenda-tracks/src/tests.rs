@@ -17,7 +17,7 @@
 
 //! Tests for referenda tracks pallet.
 
-use super::{Error, Event, Pallet as ReferendaTracks, Tracks, UpdateType};
+use super::{Error, Event, Pallet as ReferendaTracks, UpdateType};
 use crate::mock::*;
 use frame_support::{assert_noop, assert_ok};
 use frame_system::{EventRecord, Phase, RawOrigin};
@@ -86,7 +86,7 @@ mod insert {
                 }],
             );
 
-            assert_eq!(Tracks::<Test, ()>::get(1), Some(TRACK));
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(1), Some(TRACK));
         });
     }
 
@@ -176,7 +176,7 @@ mod update {
                 }],
             );
 
-            assert_eq!(Tracks::<Test, ()>::get(1), Some(track));
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(1), Some(track));
         });
     }
 }
@@ -222,7 +222,7 @@ mod remove {
                 }],
             );
 
-            assert_eq!(Tracks::<Test, ()>::get(1), None);
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(1), None);
         });
     }
 }
@@ -281,7 +281,7 @@ mod set_decision_deposit {
                 }],
             );
 
-            let updated_track = Tracks::<Test, ()>::get(1).unwrap();
+            let updated_track = ReferendaTracks::<Test>::get_track_info(1).unwrap();
             assert_eq!(updated_track.decision_deposit, new_deposit);
         });
     }
@@ -353,7 +353,7 @@ mod set_periods {
                 }],
             );
 
-            let updated_track = Tracks::<Test, ()>::get(1).unwrap();
+            let updated_track = ReferendaTracks::<Test>::get_track_info(1).unwrap();
             assert_eq!(updated_track.prepare_period, new_prepare);
             assert_eq!(updated_track.decision_period, new_decision);
             assert_eq!(updated_track.confirm_period, new_confirm);
@@ -376,7 +376,7 @@ mod set_periods {
                 None
             ));
 
-            let updated_track = Tracks::<Test, ()>::get(1).unwrap();
+            let updated_track = ReferendaTracks::<Test>::get_track_info(1).unwrap();
             assert_eq!(updated_track.prepare_period, original_prepare); // Should remain unchanged
             assert_eq!(updated_track.decision_period, new_decision);
         });
@@ -458,7 +458,7 @@ mod set_curves {
                 }],
             );
 
-            let updated_track = Tracks::<Test, ()>::get(1).unwrap();
+            let updated_track = ReferendaTracks::<Test>::get_track_info(1).unwrap();
             assert_eq!(updated_track.min_approval, new_approval_curve);
         });
     }
@@ -484,7 +484,7 @@ mod set_curves {
                 Some(new_support_curve.clone())
             ));
 
-            let updated_track = Tracks::<Test, ()>::get(1).unwrap();
+            let updated_track = ReferendaTracks::<Test>::get_track_info(1).unwrap();
             assert_eq!(updated_track.min_approval, new_approval_curve);
             assert_eq!(updated_track.min_support, new_support_curve);
         });
@@ -507,7 +507,7 @@ mod set_curves {
                 Some(new_support_curve.clone())
             ));
 
-            let updated_track = Tracks::<Test, ()>::get(1).unwrap();
+            let updated_track = ReferendaTracks::<Test>::get_track_info(1).unwrap();
             assert_eq!(updated_track.min_approval, original_approval); // Should remain unchanged
             assert_eq!(updated_track.min_support, new_support_curve);
         });

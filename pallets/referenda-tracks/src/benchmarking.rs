@@ -17,6 +17,8 @@
 
 //! Benchmarks for remarks pallet
 
+use std::collections::BTreeSet;
+
 use super::*;
 use crate::{Event, OriginToTrackId, Pallet as ReferendaTracks, Tracks, TracksIds, UpdateType};
 use frame_benchmarking::v2::*;
@@ -24,7 +26,7 @@ use frame_support::BoundedVec;
 use frame_system::RawOrigin;
 use pallet_referenda::{Curve, TrackInfo, TrackInfoOf};
 use sp_core::Get;
-use sp_runtime::{str_array as s, traits::AtLeast32Bit, Perbill};
+use sp_runtime::{str_array as s, traits::AtLeast32Bit, BoundedBTreeSet, Perbill};
 
 type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 type BalanceOf<T, I> =
@@ -73,14 +75,13 @@ fn max_track_id<T: Config<I>, I: 'static>() -> TrackIdOf<T, I> {
 }
 
 fn prepare_tracks<T: Config<I>, I: 'static>(full: bool) {
-    let ids = (0..max_tracks::<T, I>() - 1)
-        .map(|x| T::BenchmarkHelper::track_id(x))
-        .collect::<Vec<TrackIdOf<T, I>>>();
+    let ids =
+        BTreeSet::from_iter((0..max_tracks::<T, I>() - 1).map(|x| T::BenchmarkHelper::track_id(x)));
     let track = track_info_of::<T, I>();
     let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
 
     TracksIds::<T, I>::mutate(|tracks_ids| {
-        *tracks_ids = BoundedVec::truncate_from(ids.clone());
+        *tracks_ids = BoundedBTreeSet::try_from(ids.clone()).unwrap();
     });
     ids.iter().for_each(|id| {
         Tracks::<T, I>::insert(id, track.clone());

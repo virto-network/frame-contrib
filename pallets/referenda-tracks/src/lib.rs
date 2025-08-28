@@ -22,6 +22,7 @@ extern crate alloc;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
 mod impls;
+mod split_id;
 pub mod weights;
 
 #[cfg(test)]
@@ -35,9 +36,12 @@ use pallet_referenda::{BalanceOf, BlockNumberFor, Curve, PalletsOriginOf, Track,
 
 pub use pallet::UpdateType;
 pub use pallet::*;
+pub use split_id::SplitId;
 pub use weights::WeightInfo;
 
 pub type TrackIdOf<T, I = ()> = <T as Config<I>>::TrackId;
+pub type GroupIdOf<T, I = ()> = <TrackIdOf<T, I> as SplitId>::Half;
+pub type SubTrackIdOf<T, I = ()> = <TrackIdOf<T, I> as SplitId>::Half;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -73,7 +77,7 @@ pub mod pallet {
         // Types: A set of parameter types that the pallet uses to handle information.
 
         /// The ID of a single track.
-        type TrackId: Parameter + Member + Copy + MaxEncodedLen + Ord;
+        type TrackId: SplitId + Parameter + Member + Copy + MaxEncodedLen + Ord;
 
         // Parameters: A set of constant parameters to configure limits.
 
@@ -91,15 +95,21 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type TracksIds<T: Config<I>, I: 'static = ()> =
-        StorageValue<_, BoundedVec<TrackIdOf<T, I>, <T as Config<I>>::MaxTracks>, ValueQuery>;
+        StorageValue<_, BoundedBTreeSet<TrackIdOf<T, I>, T::MaxTracks>, ValueQuery>;
 
     #[pallet::storage]
     pub type OriginToTrackId<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, PalletsOriginOf<T>, TrackIdOf<T, I>>;
 
     #[pallet::storage]
-    pub type Tracks<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, TrackIdOf<T, I>, TrackInfoOf<T, I>>;
+    pub type Tracks<T: Config<I>, I: 'static = ()> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        GroupIdOf<T, I>,
+        Blake2_128Concat,
+        SubTrackIdOf<T, I>,
+        TrackInfoOf<T, I>,
+    >;
 
     #[derive(
         Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, DecodeWithMemTracking, TypeInfo,
