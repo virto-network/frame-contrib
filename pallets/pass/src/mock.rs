@@ -9,7 +9,7 @@ use frame_support::traits::{Consideration, Footprint, LinearStoragePrice};
 use frame_support::weights::FixedFee;
 use frame_support::{
     derive_impl, parameter_types,
-    traits::{ConstU64, EitherOf, EqualPrivilegeOnly, OnInitialize},
+    traits::{ConstU32, ConstU64, EitherOf, EqualPrivilegeOnly, OnInitialize},
     weights::Weight,
     DebugNoBound, EqNoBound, PalletId,
 };
@@ -185,8 +185,8 @@ impl Config for Test {
     type SessionKeyConsideration =
         FirstItemIsFree<HoldConsideration<AccountId, Balances, HoldSessionKeys, ItemStoragePrice>>;
     type PalletId = PassPalletId;
-    type MaxDevicesPerAccount = ConstU64<2>;
-    type MaxSessionsPerAccount = ConstU64<2>;
+    type MaxDevicesPerAccount = ConstU32<2>;
+    type MaxSessionsPerAccount = ConstU32<2>;
     type MaxSessionDuration = ConstU64<10>;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = benchmarks::BenchmarkHelper;

@@ -130,13 +130,13 @@ where
     Consideration: frame_support::traits::Consideration<Account, Footprint>,
     Storage: frame_support::StorageMap<
         Account,
-        (Consideration, u64),
-        Query = Option<(Consideration, u64)>,
+        (Consideration, u32),
+        Query = Option<(Consideration, u32)>,
     >,
     BlobType: MaxEncodedLen,
 {
     /// Makes a mutation on the consideration storage for an address
-    fn mutate_consideration(address: &Account, f: impl FnOnce(&mut u64)) -> DispatchResult {
+    fn mutate_consideration(address: &Account, f: impl FnOnce(&mut u32)) -> DispatchResult {
         Storage::try_mutate(address, |maybe_consideration| {
             let (consideration, mut count) = match maybe_consideration {
                 Some(c) => c.to_owned(),
@@ -159,12 +159,12 @@ where
 
     /// Increments the consideration count for an address
     pub fn increment(address: &Account) -> DispatchResult {
-        Self::mutate_consideration(address, u64::saturating_inc)
+        Self::mutate_consideration(address, u32::saturating_inc)
     }
 
     /// Decrements the consideration count for an address
     pub fn decrement(address: &Account) -> DispatchResult {
-        Self::mutate_consideration(address, u64::saturating_dec)
+        Self::mutate_consideration(address, u32::saturating_dec)
     }
 }
 

@@ -103,10 +103,10 @@ pub mod pallet {
         type PalletId: Get<PalletId>;
         /// The maximum amount of devices an account might have
         #[pallet::constant]
-        type MaxDevicesPerAccount: Get<u64>;
+        type MaxDevicesPerAccount: Get<u32>;
         /// The maximum amount of sessions an account might have
         #[pallet::constant]
-        type MaxSessionsPerAccount: Get<u64>;
+        type MaxSessionsPerAccount: Get<u32>;
         /// The maximum duration of a session
         #[pallet::constant]
         type MaxSessionDuration: Get<BlockNumberFor<Self, I>>;
@@ -142,7 +142,7 @@ pub mod pallet {
     /// registrar.
     #[pallet::storage]
     pub type RegistrarConsiderations<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, (T::RegistrarConsideration, u64)>;
+        StorageMap<_, Blake2_128Concat, T::AccountId, (T::RegistrarConsideration, u32)>;
 
     /// A map of the devices registered on behalf of an account.
     #[pallet::storage]
@@ -163,7 +163,7 @@ pub mod pallet {
     /// Counts how many devices a pass account has registered and holds an amount to the account.
     #[pallet::storage]
     pub type DeviceConsiderations<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, (T::DeviceConsideration, u64)>;
+        StorageMap<_, Blake2_128Concat, T::AccountId, (T::DeviceConsideration, u32)>;
 
     #[pallet::storage]
     pub type SessionKeys<T: Config<I>, I: 'static = ()> =
@@ -171,8 +171,8 @@ pub mod pallet {
 
     /// Counts how many sessions a pass account has registered and holds an amount to the account.
     #[pallet::storage]
-    pub type SessionKeyConsiderations<T: Config<I>, I: 'static = ()> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, (T::SessionKeyConsideration, u64)>;
+    pub type AccountSessionsCount<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, u32, ValueQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -266,14 +266,6 @@ pub mod pallet {
             let address = &Self::ensure_signer_is_pass_account(origin)?;
             let session_key = &T::Lookup::lookup(session)?;
 
-            let devices_count = SessionKeyConsiderations::<T, I>::get(address)
-                .map(|(_, c)| c)
-                .unwrap_or(0);
-            ensure!(
-                devices_count < T::MaxSessionsPerAccount::get(),
-                Error::<T, I>::MaxSessionsExceeded
-            );
-
             // We must ensure that there is no account registered for that session key.
             //
             // Session keys are meant to be ephemeral. Therefore, they should never be tied to an
@@ -282,13 +274,6 @@ pub mod pallet {
                 !frame_system::Pallet::<T>::account_exists(session_key),
                 Error::<T, I>::AccountForSessionKeyAlreadyExists
             );
-
-            ConsiderationHandler::<
-                T::AccountId,
-                SessionKeyConsiderations<T, I>,
-                T::SessionKeyConsideration,
-                T::AccountId,
-            >::increment(address)?;
 
             if let Some((account, _)) = SessionKeys::<T, I>::get(session_key) {
                 // Ensure another user is not using this session key.
@@ -299,9 +284,20 @@ pub mod pallet {
                 Self::try_remove_session_key(session_key)?;
             }
 
+            let devices_count = AccountSessionsCount::<T, I>::get(address);
+            ensure!(
+                devices_count < T::MaxSessionsPerAccount::get(),
+                Error::<T, I>::MaxSessionsExceeded
+            );
+            AccountSessionsCount::<T, I>::insert(
+                address,
+                AccountSessionsCount::<T, I>::get(address).saturating_add(1),
+            );
+
             let until = duration
                 .unwrap_or(T::MaxSessionDuration::get())
                 .min(T::MaxSessionDuration::get());
+
             SessionKeys::<T, I>::insert(session_key.clone(), (address.clone(), until));
             Self::schedule_next_removal(session_key, duration)?;
 
@@ -455,14 +451,11 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Self::cancel_scheduled_session_key_removal(session_key);
 
         if let Some(address) = &Self::pass_account_from_session_key(session_key) {
-            ConsiderationHandler::<
-                T::AccountId,
-                SessionKeyConsiderations<T, I>,
-                T::SessionKeyConsideration,
-                T::AccountId,
-            >::decrement(address)?;
-
             SessionKeys::<T, I>::remove(session_key);
+            AccountSessionsCount::<T, I>::insert(
+                address,
+                AccountSessionsCount::<T, I>::get(address).saturating_sub(1),
+            );
 
             Self::deposit_event(Event::<T, I>::SessionRemoved {
                 session_key: session_key.clone(),

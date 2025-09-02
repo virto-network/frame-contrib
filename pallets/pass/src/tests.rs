@@ -763,7 +763,7 @@ mod add_session_key {
     }
 
     #[test]
-    fn deposit_logic_works() {
+    fn max_sessions_per_account_works() {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
@@ -771,23 +771,35 @@ mod add_session_key {
                 None,
             ));
 
-            assert_noop!(
-                Pass::add_session_key(RuntimeOrigin::signed(Address::get()), OTHER, None),
-                TokenError::FundsUnavailable
-            );
-
-            assert_ok!(Balances::mint_into(
-                &Address::get(),
-                ExistentialDeposit::get()
-                    + ItemStoragePrice::convert(Footprint::from_parts(
-                        1,
-                        AccountId::max_encoded_len()
-                    ))
-            ));
-
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
+                None,
+            ));
+
+            run_to(5);
+
+            // Extending a session key works
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                OTHER,
+                None,
+            ));
+
+            run_to(10);
+
+            assert_noop!(
+                Pass::add_session_key(RuntimeOrigin::signed(Address::get()), CHARLIE, None),
+                Error::<Test>::MaxSessionsExceeded,
+            );
+
+            run_to(12);
+
+            // Sessions count of an account changes once the session of an already existing session
+            // expires.
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                CHARLIE,
                 None,
             ));
         })
