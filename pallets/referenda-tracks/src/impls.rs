@@ -1,7 +1,7 @@
 use super::*;
 
 use alloc::borrow::Cow;
-use frame_support::ensure;
+use frame_support::{ensure, traits::Incrementable};
 use sp_runtime::{DispatchError, DispatchResult};
 
 type OriginOf<T> = <<T as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin;
@@ -37,6 +37,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub fn get_track_info(id: T::TrackId) -> Option<TrackInfoOf<T, I>> {
         let (group, track) = id.split();
         Tracks::<T, I>::get(group, track)
+    }
+
+    #[inline]
+    pub(crate) fn next_group_track_id() -> Option<T::TrackId> {
+        let group = NextGroupId::<T, I>::mutate(|id| id.increment())?;
+        let track = SubTrackIdOf::<T, I>::default();
+        Some(T::TrackId::combine(group, track))
     }
 
     /// Inserts a new track into the tracks storage.

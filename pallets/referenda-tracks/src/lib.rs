@@ -47,6 +47,7 @@ pub type SubTrackIdOf<T, I = ()> = <TrackIdOf<T, I> as SplitId>::Half;
 pub mod pallet {
     use super::*;
     use frame_support::{
+        dispatch::DispatchResult,
         pallet_prelude::*,
         traits::{EnsureOrigin, EnsureOriginWithArg},
     };
@@ -70,9 +71,14 @@ pub mod pallet {
         // execute a method.
 
         /// An origin that is authorized to mutate the list of origins.
-        type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+        type CreateOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, PalletsOriginOf<Self>>;
         /// An origin that is authorized to mutate an existing origin.
-        type UpdateOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, TrackIdOf<Self, I>>;
+        type GroupManagerCreateOrigin: EnsureOriginWithArg<
+            Self::RuntimeOrigin,
+            PalletsOriginOf<Self>,
+            Success = GroupIdOf<Self, I>,
+        >;
+        type GroupManagerOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, Self::TrackId>;
 
         // Types: A set of parameter types that the pallet uses to handle information.
 
@@ -92,6 +98,10 @@ pub mod pallet {
 
     #[pallet::pallet]
     pub struct Pallet<T, I = ()>(_);
+
+    #[pallet::storage]
+    pub type NextGroupId<T: Config<I>, I: 'static = ()> =
+        StorageValue<_, GroupIdOf<T, I>, ValueQuery>;
 
     #[pallet::storage]
     pub type TracksIds<T: Config<I>, I: 'static = ()> =
@@ -153,26 +163,39 @@ pub mod pallet {
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
-        /// Insert a new referenda Track.
-        ///
-        /// Parameters:
-        /// - `id`: The Id of the track to be inserted.
-        /// - `info`: The configuration of the track.
-        /// - `pallet_origin`: A generic origin that will be matched to the track.
-        ///
-        /// Emits `Created` event when successful.
-        ///
-        /// Weight: `O(1)`
         #[pallet::call_index(0)]
-        pub fn insert(
+        pub fn new_group_with_track(
             origin: OriginFor<T>,
-            id: TrackIdOf<T, I>,
+            group_origin: PalletsOriginOf<T>,
             info: TrackInfoOf<T, I>,
-            pallet_origin: PalletsOriginOf<T>,
         ) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
-            Self::do_insert(id, info, pallet_origin)
+            T::CreateOrigin::ensure_origin(origin, &group_origin)?;
+            let id = Self::next_group_track_id().ok_or_else(|| Error::<T, I>::MaxTracksExceeded)?;
+            Self::do_insert(id, info, group_origin)
         }
+
+        #[pallet::call_index(1)]
+        pub fn add_sub_track(
+            origin: OriginFor<T>,
+            sub_track_id: SubTrackIdOf<T, I>,
+            sub_origin: PalletsOriginOf<T>,
+            info: TrackInfoOf<T, I>,
+        ) -> DispatchResult {
+            let group = T::GroupManagerCreateOrigin::ensure_origin(origin, &sub_origin)?;
+            let id = T::TrackId::combine(group, sub_track_id);
+            Self::do_insert(id, info, sub_origin)
+        }
+
+        // #[pallet::call_index(0)]
+        // pub fn insert(
+        //     origin: OriginFor<T>,
+        //     id: TrackIdOf<T, I>,
+        //     info: TrackInfoOf<T, I>,
+        //     pallet_origin: PalletsOriginOf<T>,
+        // ) -> DispatchResult {
+        //     T::AdminOrigin::ensure_origin(origin)?;
+        //     Self::do_insert(id, info, pallet_origin)
+        // }
 
         /// Update the configuration of an existing referenda Track.
         ///
@@ -185,23 +208,23 @@ pub mod pallet {
         /// Emits `Updated` event when successful.
         ///
         /// Weight: `O(1)`
-        #[pallet::call_index(1)]
-        #[deprecated(
-            note = "Use granular methods instead: set_decision_deposit, set_periods, set_curves"
-        )]
-        pub fn update(
-            origin: OriginFor<T>,
-            id: TrackIdOf<T, I>,
-            info: TrackInfoOf<T, I>,
-        ) -> DispatchResult {
-            T::UpdateOrigin::ensure_origin(origin, &id)?;
-            Self::do_update(id, info)?;
-            Self::deposit_event(Event::Updated {
-                id,
-                update_type: UpdateType::Full,
-            });
-            Ok(())
-        }
+        // #[pallet::call_index(1)]
+        // #[deprecated(
+        //     note = "Use granular methods instead: set_decision_deposit, set_periods, set_curves"
+        // )]
+        // pub fn update(
+        //     origin: OriginFor<T>,
+        //     id: TrackIdOf<T, I>,
+        //     info: TrackInfoOf<T, I>,
+        // ) -> DispatchResult {
+        //     T::GroupManagerOrigin::ensure_origin(origin, &id)?;
+        //     Self::do_update(id, info)?;
+        //     Self::deposit_event(Event::Updated {
+        //         id,
+        //         update_type: UpdateType::Full,
+        //     });
+        //     Ok(())
+        // }
 
         /// Remove an existing track
         ///
@@ -217,7 +240,7 @@ pub mod pallet {
             id: TrackIdOf<T, I>,
             pallet_origin: PalletsOriginOf<T>,
         ) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+            T::GroupManagerOrigin::ensure_origin(origin, &id)?;
             Self::do_remove(id, pallet_origin)
         }
 
@@ -233,10 +256,10 @@ pub mod pallet {
         #[pallet::call_index(3)]
         pub fn set_decision_deposit(
             origin: OriginFor<T>,
-            id: TrackIdOf<T, I>,
+            id: T::TrackId,
             deposit: BalanceOf<T, I>,
         ) -> DispatchResult {
-            T::UpdateOrigin::ensure_origin(origin, &id)?;
+            T::GroupManagerOrigin::ensure_origin(origin, &id)?;
             Self::do_set_decision_deposit(id, deposit)?;
             Self::deposit_event(Event::Updated {
                 id,
@@ -266,7 +289,7 @@ pub mod pallet {
             confirm: Option<pallet_referenda::BlockNumberFor<T, I>>,
             min_enactment: Option<pallet_referenda::BlockNumberFor<T, I>>,
         ) -> DispatchResult {
-            T::UpdateOrigin::ensure_origin(origin, &id)?;
+            T::GroupManagerOrigin::ensure_origin(origin, &id)?;
             Self::do_set_periods(id, prepare, decision, confirm, min_enactment)?;
             Self::deposit_event(Event::Updated {
                 id,
@@ -292,7 +315,7 @@ pub mod pallet {
             min_approval: Option<Curve>,
             min_support: Option<Curve>,
         ) -> DispatchResult {
-            T::UpdateOrigin::ensure_origin(origin, &id)?;
+            T::GroupManagerOrigin::ensure_origin(origin, &id)?;
             Self::do_set_curves(id, min_approval, min_support)?;
             Self::deposit_event(Event::Updated {
                 id,

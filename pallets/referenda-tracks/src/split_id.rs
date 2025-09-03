@@ -1,9 +1,9 @@
 use codec::MaxEncodedLen;
-use frame_support::Parameter;
+use frame_support::{traits::Incrementable, Parameter};
 use sp_runtime::traits::Member;
 
 pub trait SplitId: Sized {
-    type Half: Member + Parameter + MaxEncodedLen;
+    type Half: Default + Incrementable + Member + Parameter + MaxEncodedLen;
 
     fn split(self) -> (Self::Half, Self::Half);
     fn combine(group: Self::Half, track: Self::Half) -> Self;
