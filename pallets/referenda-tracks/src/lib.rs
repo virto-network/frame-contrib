@@ -29,7 +29,7 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-use alloc::{borrow::Cow, vec::Vec};
+use alloc::borrow::Cow;
 use frame_support::traits::OriginTrait;
 use pallet_referenda::{BalanceOf, BlockNumberFor, PalletsOriginOf, Track, TrackInfoOf};
 use sp_core::Get;
