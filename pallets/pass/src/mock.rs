@@ -93,7 +93,7 @@ impl pallet_transaction_payment::Config for Test {
 }
 
 parameter_types! {
-    pub MaxScheduledPerBlock: u32 = u32::MAX;
+    pub MaxScheduledPerBlock: u32 = 100;
     pub MaximumWeight: Weight = Weight::MAX;
 }
 

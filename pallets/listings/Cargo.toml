@@ -24,7 +24,7 @@ sp-runtime.workspace = true
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
-mock-helpers = { version = "0.1.0", workspace = true, features = ["pallet-assets", "pallet-balances"] }
+mock-helpers = { workspace = true, features = ["pallet-assets", "pallet-balances"] }
 pallet-assets.workspace = true
 pallet-balances.workspace = true
 

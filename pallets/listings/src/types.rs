@@ -36,6 +36,7 @@ pub(crate) type ItemKeyOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::Nonfungi
 /// A `BoundedVec` limited by the overarching `ValueLimit`.
 pub(crate) type ItemValueOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::NonfungiblesValueLimit>;
 
+#[cfg(feature = "runtime-benchmarks")]
 pub(crate) type NativeBalanceOf<T, I = ()> = <
 <T as Config<I>>::Balances as frame_support::traits::fungible::Inspect<AccountIdOf<T>>
 >::Balance;
@@ -115,45 +116,6 @@ impl<MerchantId: Copy + Incrementable, Id: Copy + Incrementable> Incrementable
 
     fn initial_value() -> Option<Self> {
         Some(Self(MerchantId::initial_value()?, Id::initial_value()?))
-    }
-}
-
-/// The type an item can be, part of its unique identification.
-#[derive(
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    RuntimeDebug,
-    MaxEncodedLen,
-    TypeInfo,
-)]
-enum ItemType<Id> {
-    Unit(Id),
-    Subscription(Id),
-}
-
-impl<T: Default> Default for ItemType<T> {
-    fn default() -> Self {
-        ItemType::Unit(Default::default())
-    }
-}
-
-impl<T: Incrementable> Incrementable for ItemType<T> {
-    fn increment(&self) -> Option<Self> {
-        match self {
-            ItemType::Unit(v) => v.increment().map(ItemType::Unit),
-            ItemType::Subscription(v) => v.increment().map(ItemType::Subscription),
-        }
-    }
-
-    fn initial_value() -> Option<Self> {
-        T::initial_value().map(ItemType::Unit)
     }
 }
 
