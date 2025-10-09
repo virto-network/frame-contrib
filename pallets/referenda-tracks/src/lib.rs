@@ -82,7 +82,6 @@ pub mod pallet {
 
         // Benchmarking: Types to handle benchmarks.
         #[cfg(feature = "runtime-benchmarks")]
-
         /// A helper trait to set up benchmark tests.
         type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }

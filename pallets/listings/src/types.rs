@@ -36,7 +36,7 @@ pub(crate) type ItemKeyOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::Nonfungi
 /// A `BoundedVec` limited by the overarching `ValueLimit`.
 pub(crate) type ItemValueOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::NonfungiblesValueLimit>;
 
-#[allow(dead_code)]
+#[cfg(feature = "runtime-benchmarks")]
 pub(crate) type NativeBalanceOf<T, I = ()> = <
 <T as Config<I>>::Balances as frame_support::traits::fungible::Inspect<AccountIdOf<T>>
 >::Balance;
