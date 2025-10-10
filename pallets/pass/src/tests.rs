@@ -793,7 +793,7 @@ mod add_session_key {
                 Error::<Test>::MaxSessionsExceeded,
             );
 
-            run_to(100);
+            run_to(12);
 
             // Sessions count of an account changes once the session of an already existing session
             // expires.

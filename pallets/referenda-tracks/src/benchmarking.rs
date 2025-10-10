@@ -19,6 +19,7 @@
 
 use super::*;
 use crate::{Event, OriginToTrackId, Pallet as ReferendaTracks, Tracks, TracksIds};
+use alloc::vec::Vec;
 use frame_benchmarking::v2::*;
 use frame_support::BoundedVec;
 use frame_system::RawOrigin;
