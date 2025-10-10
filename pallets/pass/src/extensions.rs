@@ -41,6 +41,7 @@ pub struct PassAuthenticate<T: Config<I>, I: 'static = ()>(Option<AuthenticatePa
     PartialEqNoBound,
     DebugNoBound,
     TypeInfo,
+    Default,
 )]
 #[scale_info(skip_type_params(T, I))]
 pub struct AuthenticateParams<T: Config<I>, I: 'static = ()> {

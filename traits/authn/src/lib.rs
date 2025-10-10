@@ -153,7 +153,7 @@ pub trait DeviceChallengeResponse<Cx>: Parameter {
 }
 
 /// A response to a challenge for identifying a user
-pub trait UserChallengeResponse<Cx>: Parameter {
+pub trait UserChallengeResponse<Cx>: Parameter + Default {
     fn is_valid(&self) -> bool;
     fn used_challenge(&self) -> (Cx, Challenge);
     fn authority(&self) -> AuthorityId;
