@@ -22,7 +22,6 @@ use std::collections::BTreeSet;
 use super::*;
 use crate::{Event, OriginToTrackId, Pallet as ReferendaTracks, Tracks, TracksIds, UpdateType};
 use frame_benchmarking::v2::*;
-use frame_support::BoundedVec;
 use frame_system::RawOrigin;
 use pallet_referenda::{Curve, TrackInfo, TrackInfoOf};
 use sp_core::Get;
@@ -37,7 +36,7 @@ type BalanceOf<T, I> =
 fn assert_last_event<T: Config<I>, I: 'static>(
     generic_event: <T as frame_system::Config>::RuntimeEvent,
 ) {
-    frame_system::Pallet::<T>::assert_last_event(generic_event.into());
+    frame_system::Pallet::<T>::assert_last_event(generic_event);
 }
 
 fn track_info_of<T, I: 'static>() -> TrackInfoOf<T, I>
@@ -84,18 +83,14 @@ fn prepare_tracks<T: Config<I>, I: 'static>(full: bool) {
         *tracks_ids = BoundedBTreeSet::try_from(ids.clone()).unwrap();
     });
     ids.iter().for_each(|id| {
-        Tracks::<T, I>::insert(id, track.clone());
+        let (group, sub) = id.split();
+        Tracks::<T, I>::insert(group, sub, track.clone());
         OriginToTrackId::<T, I>::insert(origin.clone(), id);
     });
 
     if full {
-        ReferendaTracks::<T, I>::insert(
-            RawOrigin::Root.into(),
-            max_track_id::<T, I>(),
-            track,
-            origin,
-        )
-        .expect("inserts last track");
+        ReferendaTracks::<T, I>::new_group_with_track(RawOrigin::Root.into(), origin, track)
+            .expect("inserts last track");
     }
 }
 
@@ -104,7 +99,7 @@ mod benchmarks {
     use super::*;
 
     #[benchmark]
-    pub fn insert() {
+    pub fn new_group_with_track() {
         // Setup code
         prepare_tracks::<T, I>(false);
 
@@ -113,32 +108,10 @@ mod benchmarks {
         let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
 
         #[extrinsic_call]
-        _(RawOrigin::Root, id, track, origin);
+        _(RawOrigin::Root, origin, track);
 
         // Verification code
         assert_last_event::<T, I>(Event::Created { id }.into());
-    }
-
-    #[benchmark]
-    pub fn update() {
-        // Setup code
-        prepare_tracks::<T, I>(true);
-
-        let id = max_track_id::<T, I>();
-        let caller = whitelisted_caller();
-        let track = track_info_of::<T, I>();
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(caller), id, track);
-
-        // Verification code
-        assert_last_event::<T, I>(
-            Event::Updated {
-                id,
-                update_type: UpdateType::Full,
-            }
-            .into(),
-        );
     }
 
     #[benchmark]

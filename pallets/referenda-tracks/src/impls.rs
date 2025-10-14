@@ -41,9 +41,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
     #[inline]
     pub(crate) fn next_group_track_id() -> Option<T::TrackId> {
-        let group = NextGroupId::<T, I>::mutate(|id| id.increment())?;
-        let track = SubTrackIdOf::<T, I>::default();
-        Some(T::TrackId::combine(group, track))
+        NextGroupId::<T, I>::try_mutate(|id| -> Result<T::TrackId, ()> {
+            let new_id = id.increment().ok_or(())?;
+            *id = new_id.clone();
+            let track = SubTrackIdOf::<T, I>::default();
+            Ok(T::TrackId::combine(new_id, track))
+        })
+        .ok()
     }
 
     /// Inserts a new track into the tracks storage.
@@ -57,6 +61,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Self::get_track_info(id).is_none(),
             Error::<T, I>::TrackIdAlreadyExisting
         );
+        ensure!(
+            OriginToTrackId::<T, I>::get(&origin).is_none(),
+            Error::<T, I>::TrackIdAlreadyExisting
+        );
 
         TracksIds::<T, I>::try_mutate(|ids| ids.try_insert(id))
             .map_err(|_| Error::<T, I>::MaxTracksExceeded)?;
@@ -67,21 +75,21 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Ok(())
     }
 
-    /// Updates an existing track with the given Id.
-    pub(crate) fn do_update(id: T::TrackId, info: TrackInfoOf<T, I>) -> DispatchResult {
-        let (group, track) = id.split();
-        Tracks::<T, I>::try_mutate(group, track, |track| {
-            if track.is_none() {
-                return Err(Error::<T, I>::TrackIdNotFound);
-            };
+    // /// Updates an existing track with the given Id.
+    // pub(crate) fn do_update(id: T::TrackId, info: TrackInfoOf<T, I>) -> DispatchResult {
+    //     let (group, track) = id.split();
+    //     Tracks::<T, I>::try_mutate(group, track, |track| {
+    //         if track.is_none() {
+    //             return Err(Error::<T, I>::TrackIdNotFound);
+    //         };
 
-            *track = Some(info);
+    //         *track = Some(info);
 
-            Ok(())
-        })?;
+    //         Ok(())
+    //     })?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     pub(crate) fn do_remove(
         id: T::TrackId,
@@ -164,10 +172,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Tracks::<T, I>::try_mutate(group, track, |track| -> DispatchResult {
             let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
 
-            if let Some(curve) = min_approval.clone() {
+            if let Some(curve) = min_approval {
                 track_info.min_approval = curve;
             }
-            if let Some(curve) = min_support.clone() {
+            if let Some(curve) = min_support {
                 track_info.min_support = curve;
             }
 

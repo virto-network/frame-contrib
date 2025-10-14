@@ -52,8 +52,8 @@ use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_referenda_tracks.
 pub trait WeightInfo {
-	fn insert() -> Weight;
-	fn update() -> Weight;
+	fn new_group_with_track() -> Weight;
+	fn add_sub_track() -> Weight;
 	fn remove() -> Weight;
 	fn set_decision_deposit() -> Weight;
 	fn set_periods() -> Weight;
@@ -63,7 +63,7 @@ pub trait WeightInfo {
 /// Weights for pallet_referenda_tracks using the Substrate node and recommended hardware.
 pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
-	fn insert() -> Weight {
+	fn new_group_with_track() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
@@ -75,7 +75,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(3))
 	}
 
-	fn update() -> Weight {
+	fn add_sub_track() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
@@ -132,7 +132,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 // For backwards compatibility and tests
 impl WeightInfo for () {
-	fn insert() -> Weight {
+	fn new_group_with_track() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
@@ -142,7 +142,7 @@ impl WeightInfo for () {
 			.saturating_add(Weight::from_parts(1_359, 0))
 	}
 
-	fn update() -> Weight {
+	fn add_sub_track() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`

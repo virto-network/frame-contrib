@@ -12,7 +12,7 @@ use frame_support::{
     },
     weights::Weight,
 };
-use frame_system::{EnsureRoot, EnsureSigned};
+use frame_system::EnsureRoot;
 use pallet_referenda::{PalletsOriginOf, TrackIdOf, TrackInfoOf, TracksInfo};
 use scale_info::TypeInfo;
 use sp_io::TestExternalities;
@@ -170,7 +170,7 @@ morph_types! {
 
 impl Config for Test {
     type WeightInfo = ();
-    type CreateOrigin = AsEnsureOriginWithArg<EnsureSigned<AccountId>>;
+    type CreateOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type GroupManagerCreateOrigin = TryWithMorphedArg<
         RuntimeOrigin,
         PalletsOriginOf<Test>,
@@ -228,11 +228,7 @@ impl<Class> VoteTally<u32, Class> for Tally {
     fn setup(_: Class, _: Perbill) {}
 }
 
-type TracksVec = Vec<(
-    TrackIdOf<Test, ()>,
-    TrackInfoOf<Test, ()>,
-    PalletsOriginOf<Test>,
-)>;
+type TracksVec = Vec<(TrackInfoOf<Test, ()>, PalletsOriginOf<Test>)>;
 
 pub fn new_test_ext(maybe_tracks: Option<TracksVec>) -> sp_io::TestExternalities {
     let balances = vec![(1, 100), (2, 100), (3, 100), (4, 100), (5, 100), (6, 100)];
@@ -252,9 +248,13 @@ pub fn new_test_ext(maybe_tracks: Option<TracksVec>) -> sp_io::TestExternalities
         System::set_block_number(1);
 
         if let Some(tracks) = maybe_tracks {
-            for (id, info, pallet_origin) in tracks {
-                crate::Pallet::<Test, ()>::insert(RuntimeOrigin::root(), id, info, pallet_origin)
-                    .expect("can insert track");
+            for (info, pallet_origin) in tracks {
+                crate::Pallet::<Test, ()>::new_group_with_track(
+                    RuntimeOrigin::root(),
+                    pallet_origin,
+                    info,
+                )
+                .expect("can insert track");
             }
 
             System::reset_events();

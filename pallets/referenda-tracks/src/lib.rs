@@ -34,7 +34,6 @@ use codec::DecodeWithMemTracking;
 use frame_support::traits::OriginTrait;
 use pallet_referenda::{BalanceOf, BlockNumberFor, Curve, PalletsOriginOf, Track, TrackInfoOf};
 
-pub use pallet::UpdateType;
 pub use pallet::*;
 pub use split_id::SplitId;
 pub use weights::WeightInfo;
@@ -46,11 +45,7 @@ pub type SubTrackIdOf<T, I = ()> = <TrackIdOf<T, I> as SplitId>::Half;
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::{
-        dispatch::DispatchResult,
-        pallet_prelude::*,
-        traits::{EnsureOrigin, EnsureOriginWithArg},
-    };
+    use frame_support::{dispatch::DispatchResult, pallet_prelude::*, traits::EnsureOriginWithArg};
     use frame_system::pallet_prelude::*;
 
     #[cfg(feature = "runtime-benchmarks")]
@@ -225,7 +220,6 @@ pub mod pallet {
         //     });
         //     Ok(())
         // }
-
         /// Remove an existing track
         ///
         /// Parameters:
