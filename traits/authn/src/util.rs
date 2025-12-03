@@ -139,6 +139,12 @@ pub mod dummy {
         }
     }
 
+    impl<A> Default for DummyCredential<A> {
+        fn default() -> Self {
+            Self::new(true, Default::default())
+        }
+    }
+
     type DummyChallenger = u8;
     type DummyCx = <DummyChallenger as Challenger>::Context;
 
