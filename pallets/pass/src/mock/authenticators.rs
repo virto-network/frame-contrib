@@ -42,7 +42,15 @@ pub mod authenticator_a {
     }
 
     #[derive(
-        TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
+        TypeInfo,
+        DebugNoBound,
+        EqNoBound,
+        PartialEq,
+        Clone,
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        Default,
     )]
     pub struct Credential {
         pub(crate) user_id: HashedUserId,
@@ -169,7 +177,9 @@ pub mod authenticator_b {
         _data: PhantomData<C>,
     }
 
-    #[derive(TypeInfo, Debug, Eq, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking)]
+    #[derive(
+        TypeInfo, Debug, Eq, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking, Default,
+    )]
     pub struct Credential<Cx> {
         pub(crate) user_id: HashedUserId,
         pub(crate) context: Cx,
@@ -212,7 +222,7 @@ pub mod authenticator_b {
 
     impl<C: Challenger + 'static> Authenticator for AuthenticatorB<C>
     where
-        CxOf<C>: Parameter + Send + Sync + Copy + 'static,
+        CxOf<C>: Parameter + Send + Sync + Copy + Default + 'static,
     {
         type Authority = PassAuthorityId;
         type Challenger = C;
@@ -231,7 +241,7 @@ pub mod authenticator_b {
     impl<C> UserAuthenticator for Device<C>
     where
         C: Challenger + 'static,
-        CxOf<C>: Parameter + Send + Sync + Copy + 'static,
+        CxOf<C>: Parameter + Send + Sync + Copy + Default + 'static,
     {
         type Authority = PassAuthorityId;
         type Challenger = C;
@@ -275,7 +285,7 @@ pub mod authenticator_b {
 
     impl<Cx> UserChallengeResponse<Cx> for Credential<Cx>
     where
-        Cx: Parameter + Copy + 'static,
+        Cx: Parameter + Copy + Default + 'static,
     {
         fn is_valid(&self) -> bool {
             self.signature.is_some()

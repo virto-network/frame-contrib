@@ -1601,9 +1601,9 @@ dependencies = [
 
 [[package]]
 name = "frame-system"
-version = "43.0.0"
+version = "43.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19ec7d4d9abe4ec9ad4a48c88ddcf654e92a47393001d55760244a906a282c9e"
+checksum = "1cf2b76ef4d1810eafb4716f8bc47a81ffca8d38c46f6ed5baf16df326eb7e36"
 dependencies = [
  "cfg-if",
  "docify",
@@ -2560,9 +2560,9 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 
 [[package]]
 name = "pallet-assets"
-version = "46.0.0"
+version = "46.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43e13ebc641e2ae85ebde09835b7dcdfe1fcb3184afc3965007fddc0fea3fca4"
+checksum = "cc7a2c9d0649080827c36a0326b752cecd8b78d81f73941860ca6b8a6597447a"
 dependencies = [
  "frame-benchmarking",
  "frame-support",

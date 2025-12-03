@@ -37,8 +37,8 @@ mock-helpers = { path = "./mock-helpers", default-features = false }
 frame = { version = "0.12.0", package = "polkadot-sdk-frame", default-features = false, features = ["runtime"] }
 frame-benchmarking = { version = "43.0.0", default-features = false }
 frame-support = { version = "43.0.0", default-features = false }
-frame-system = { version = "43.0.0", default-features = false }
-pallet-assets = { version = "46.0.0", default-features = false }
+frame-system = { version = "43.0.1", default-features = false }
+pallet-assets = { version = "46.1.0", default-features = false }
 pallet-assets-holder = { version = "0.6.0", default-features = false }
 pallet-assets-freezer = { version = "0.11.0", default-features = false }
 pallet-babe = { version = "43.0.0", default-features = false }

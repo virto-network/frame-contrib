@@ -141,6 +141,18 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
         })
         .collect::<Vec<_>>();
 
+    let default_credential_impl = if let Some((first_id, _)) = authenticators.first() {
+        quote! {
+            impl Default for #credential {
+                fn default() -> Self {
+                    Self::#first_id(Default::default())
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     let match_attestations = authenticators.clone().into_iter().map(|(id, p)| {
         quote! {
             #device_attestation::#id(attestation) => {
@@ -305,6 +317,8 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
         pub enum #credential {
             #(#credential_variants),*
         }
+
+        #default_credential_impl
 
         impl UserChallengeResponse<()> for #credential {
             fn is_valid(&self) -> bool {
