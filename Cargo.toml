@@ -34,26 +34,26 @@ fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", default-feat
 mock-helpers = { path = "./mock-helpers", default-features = false }
 
 # Polkadot SDK
-frame = { version = "0.12.0", package = "polkadot-sdk-frame", default-features = false, features = ["runtime"] }
-frame-benchmarking = { version = "43.0.0", default-features = false }
-frame-support = { version = "43.0.0", default-features = false }
-frame-system = { version = "43.0.0", default-features = false }
-pallet-assets = { version = "46.0.0", default-features = false }
-pallet-assets-holder = { version = "0.6.0", default-features = false }
-pallet-assets-freezer = { version = "0.11.0", default-features = false }
-pallet-babe = { version = "43.0.0", default-features = false }
-pallet-balances = { version = "44.0.0", default-features = false }
-pallet-nfts = { version = "37.0.0", default-features = false }
-pallet-preimage = { version = "43.0.0", default-features = false }
-pallet-referenda = { version = "43.0.0", default-features = false }
-pallet-scheduler = { version = "44.0.0", default-features = false }
-pallet-timestamp = { version = "42.0.0", default-features = false }
-pallet-transaction-payment = { version = "43.0.0", default-features = false }
-sp-core = { version = "38.1.0", default-features = false }
-sp-io = { version = "43.0.0", default-features = false }
-sp-keystore = { version = "0.44.1", default-features = false }
-sp-runtime = { version = "44.0.0", default-features = false }
-xcm = { version = "19.0.0", package = "staging-xcm", default-features = false }
+frame = { version = "0.14.0", package = "polkadot-sdk-frame", default-features = false, features = ["runtime"] }
+frame-benchmarking = { version = "45.0.0", default-features = false }
+frame-support = { version = "45.0.0", default-features = false }
+frame-system = { version = "45.0.0", default-features = false }
+pallet-assets = { version = "48.0.0", default-features = false }
+pallet-assets-holder = { version = "0.8.0", default-features = false }
+pallet-assets-freezer = { version = "0.13.0", default-features = false }
+pallet-babe = { version = "45.0.0", default-features = false }
+pallet-balances = { version = "46.0.0", default-features = false }
+pallet-nfts = { version = "39.0.0", default-features = false }
+pallet-preimage = { version = "45.0.0", default-features = false }
+pallet-referenda = { version = "45.0.0", default-features = false }
+pallet-scheduler = { version = "46.0.0", default-features = false }
+pallet-timestamp = { version = "44.0.0", default-features = false }
+pallet-transaction-payment = { version = "45.0.0", default-features = false }
+sp-core = { version = "39.0.0", default-features = false }
+sp-io = { version = "44.0.0", default-features = false }
+sp-keystore = { version = "0.45.0", default-features = false }
+sp-runtime = { version = "45.0.0", default-features = false }
+xcm = { version = "21.0.0", package = "staging-xcm", default-features = false }
 
 [workspace]
 resolver = "2"

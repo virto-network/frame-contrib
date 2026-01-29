@@ -95,6 +95,7 @@ impl<T: Config<I>, I: 'static> ExtHelper for AssetsExtBuilder<T, I> {
                 })
                 .collect(),
             next_asset_id: None,
+            reserves: vec![],
         }
     }
 }

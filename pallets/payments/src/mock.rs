@@ -315,6 +315,7 @@ pub(crate) fn new_test_ext() -> sp_io::TestExternalities {
             (ASSET_ID, SENDER_ACCOUNT, 100),
         ],
         next_asset_id: None,
+        reserves: vec![],
     }
     .assimilate_storage(&mut t)
     .unwrap();
