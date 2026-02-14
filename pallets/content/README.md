@@ -18,9 +18,9 @@ Substrate chains with the Content pallet can be the basis for decentralized vers
 - **Linked** - each content revision has a set of links to other items. These can be referenced within the content.
 - **Revisionable** - content items can be updated by the item owner.
 - **Retractable** - content items can be retracted by the item owner. While nothing can be guaranteed to be deleted, this flag indicates that the item should be removed.
-- Transactions are very **cheap** only a bare-minimum of information is stored in state. IPFS hashes are emitted in events. An indexer such as Acuity Index can be used to construct the content graph.
+- **Efficient** - Transactions are very cheap; only a bare minimum of information is stored in state. IPFS hashes are emitted in events. An indexer such as [Acuity Index](https://index.acuity.network/) can be used to construct the content graph.
 - **Timestamped** - each content revision is timestamped by the blockchain.
-- **Permanent** - there is a provable record of everything tha has been published.
+- **Permanent** - there is a provable record of everything that has been published.
 - **Semantic First** - content is encoded with Protocol Buffers and does not have to be scraped.
 - **Separation of Concerns** - anyone can publish, anyone can make a backend / frontend
 
@@ -37,9 +37,9 @@ This pallet requires the following types and parameters to be configured in the 
 
 | Item            | Description                                                   |
 |-----------------|---------------------------------------------------------------|
-| `ItemState`     | `Item` data structure containing owner, revisionid and flags. |
+| `ItemState`     | `Item` data structure containing owner, revision_id and flags. |
 
-Each content item has an unique item_id that is produced by hashing together the AccountId with a provided nonce. The nonce is decided by the publishing software. For example it could be random, incremental or BIP32 derived.
+Each content item has a unique item_id that is produced by hashing together the AccountId with a provided nonce. The nonce is decided by the publishing software. For example it could be random, incremental or BIP32 derived.
 
 ## 📦 Dispatchable Functions
 
@@ -92,7 +92,7 @@ fn set_not_revisionable(origin: OriginFor<T>, item_id: ItemId)
 Mark a content item as not retractable.
 
 ```rust
-fn dispatch_as_event_horizon(origin, call)
+fn set_not_retractable(origin: OriginFor<T>, item_id: ItemId)
 ```
 
 ## 🧪 Testing and Benchmarking
