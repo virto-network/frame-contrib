@@ -92,7 +92,10 @@ where
                 &inherited_implication.using_encoded(blake2_256),
             )
             .map(|address| RawOrigin::Signed(address).into())
-            .map_err(|_| InvalidTransaction::BadSigner.into())
+            .map_err(|e| {
+                log::error!(target: "pallet_pass", "Authentication failed: {:?}", e);
+                InvalidTransaction::BadSigner.into()
+            })
         } else {
             // If we're not attempting to authenticate, let's check if the origin is signed, and is
             // maybe an existing session key. Given that, we'll pass the actual `pass_account_id`.
