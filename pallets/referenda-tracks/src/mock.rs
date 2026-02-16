@@ -1,17 +1,26 @@
 //! Test environment for remarks referenda-tracks.
 
-use crate::{self as pallet_referenda_tracks, Config};
+use core::marker::PhantomData;
+
+use crate::{self as pallet_referenda_tracks, Config, SplitId};
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{
     derive_impl, parameter_types,
-    traits::{ConstU32, ConstU64, EnsureOriginWithArg, EqualPrivilegeOnly, VoteTally},
+    traits::{
+        AsEnsureOriginWithArg, CallerTrait, ConstU32, ConstU64, EnsureOriginWithArg,
+        EqualPrivilegeOnly, TryWithMorphedArg, VoteTally,
+    },
     weights::Weight,
 };
 use frame_system::EnsureRoot;
 use pallet_referenda::{PalletsOriginOf, TrackIdOf, TrackInfoOf, TracksInfo};
 use scale_info::TypeInfo;
 use sp_io::TestExternalities;
-use sp_runtime::{BuildStorage, Perbill};
+use sp_runtime::{
+    morph_types,
+    traits::{Morph, ReplaceWithDefault},
+    BuildStorage, Perbill,
+};
 
 pub type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -123,14 +132,55 @@ impl pallet_referenda::Config for Test {
     type BlockNumberProvider = System;
 }
 
+type AccountId = u64;
+type TrackId = u32;
+type GroupId = u16;
+
+pub struct EnsureSignedByArg<M = ReplaceWithDefault<()>>(PhantomData<M>);
+impl<M: Morph<AccountId>> EnsureOriginWithArg<RuntimeOrigin, AccountId> for EnsureSignedByArg<M> {
+    type Success = <M as Morph<AccountId>>::Outcome;
+
+    fn try_origin(o: RuntimeOrigin, account: &AccountId) -> Result<Self::Success, RuntimeOrigin> {
+        o.caller
+            .as_signed()
+            .and_then(|caller| caller.eq(account).then_some(M::morph(*account)))
+            .ok_or(o)
+    }
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin(account: &AccountId) -> Result<RuntimeOrigin, ()> {
+        Ok(RuntimeOrigin::signed(*account))
+    }
+}
+
 parameter_types! {
     pub const MaxTracks: u32 = u8::MAX as u32;
+    pub static Admins: Vec<AccountId> = vec![1, 2, 3];
 }
+morph_types! {
+    pub type AdminToGroupId: Morph = |account: AccountId| -> GroupId {
+        Admins::get().iter().position(|a| *a == account).unwrap() as GroupId
+    };
+    pub type TrackToGroup: TryMorph = |track: &TrackId| -> Result<AccountId, ()> {
+        Admins::get().into_iter().find(|a| *a == track.split().0 as AccountId).ok_or(())
+    };
+    pub type OriginToGroupAddress: TryMorph = |o: &OriginCaller| -> Result<AccountId, ()> {
+        o.as_signed().copied().ok_or(())
+    };
+}
+
 impl Config for Test {
     type WeightInfo = ();
-    type AdminOrigin = EnsureRoot<u64>;
-    type UpdateOrigin = EnsureOriginToTrack;
-    type TrackId = u32;
+    type CreateOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
+    type GroupManagerCreateOrigin = TryWithMorphedArg<
+        RuntimeOrigin,
+        PalletsOriginOf<Test>,
+        OriginToGroupAddress,
+        EnsureSignedByArg<AdminToGroupId>,
+        GroupId,
+    >;
+    type GroupManagerOrigin =
+        TryWithMorphedArg<RuntimeOrigin, TrackId, TrackToGroup, EnsureSignedByArg, ()>;
+    type TrackId = TrackId;
     type MaxTracks = MaxTracks;
 
     #[cfg(feature = "runtime-benchmarks")]
@@ -178,11 +228,7 @@ impl<Class> VoteTally<u32, Class> for Tally {
     fn setup(_: Class, _: Perbill) {}
 }
 
-type TracksVec = Vec<(
-    TrackIdOf<Test, ()>,
-    TrackInfoOf<Test, ()>,
-    PalletsOriginOf<Test>,
-)>;
+type TracksVec = Vec<(TrackInfoOf<Test, ()>, PalletsOriginOf<Test>)>;
 
 pub fn new_test_ext(maybe_tracks: Option<TracksVec>) -> sp_io::TestExternalities {
     let balances = vec![(1, 100), (2, 100), (3, 100), (4, 100), (5, 100), (6, 100)];
@@ -202,9 +248,13 @@ pub fn new_test_ext(maybe_tracks: Option<TracksVec>) -> sp_io::TestExternalities
         System::set_block_number(1);
 
         if let Some(tracks) = maybe_tracks {
-            for (id, info, pallet_origin) in tracks {
-                crate::Pallet::<Test, ()>::insert(RuntimeOrigin::root(), id, info, pallet_origin)
-                    .expect("can insert track");
+            for (info, pallet_origin) in tracks {
+                crate::Pallet::<Test, ()>::new_group_with_track(
+                    RuntimeOrigin::root(),
+                    pallet_origin,
+                    info,
+                )
+                .expect("can insert track");
             }
 
             System::reset_events();

@@ -17,14 +17,15 @@
 
 //! Benchmarks for remarks pallet
 
+use std::collections::BTreeSet;
+
 use super::*;
-use crate::{Event, OriginToTrackId, Pallet as ReferendaTracks, Tracks, TracksIds};
-use alloc::vec::Vec;
+use crate::{Event, OriginToTrackId, Pallet as ReferendaTracks, Tracks, TracksIds, UpdateType};
 use frame_benchmarking::v2::*;
-use frame_support::BoundedVec;
 use frame_system::RawOrigin;
 use pallet_referenda::{Curve, TrackInfo, TrackInfoOf};
-use sp_runtime::{str_array as s, traits::AtLeast32Bit, Perbill};
+use sp_core::Get;
+use sp_runtime::{str_array as s, traits::AtLeast32Bit, BoundedBTreeSet, Perbill};
 
 type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 type BalanceOf<T, I> =
@@ -35,7 +36,7 @@ type BalanceOf<T, I> =
 fn assert_last_event<T: Config<I>, I: 'static>(
     generic_event: <T as frame_system::Config>::RuntimeEvent,
 ) {
-    frame_system::Pallet::<T>::assert_last_event(generic_event.into());
+    frame_system::Pallet::<T>::assert_last_event(generic_event);
 }
 
 fn track_info_of<T, I: 'static>() -> TrackInfoOf<T, I>
@@ -73,28 +74,23 @@ fn max_track_id<T: Config<I>, I: 'static>() -> TrackIdOf<T, I> {
 }
 
 fn prepare_tracks<T: Config<I>, I: 'static>(full: bool) {
-    let ids = (0..max_tracks::<T, I>() - 1)
-        .map(|x| T::BenchmarkHelper::track_id(x))
-        .collect::<Vec<TrackIdOf<T, I>>>();
+    let ids =
+        BTreeSet::from_iter((0..max_tracks::<T, I>() - 1).map(|x| T::BenchmarkHelper::track_id(x)));
     let track = track_info_of::<T, I>();
     let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
 
     TracksIds::<T, I>::mutate(|tracks_ids| {
-        *tracks_ids = BoundedVec::truncate_from(ids.clone());
+        *tracks_ids = BoundedBTreeSet::try_from(ids.clone()).unwrap();
     });
     ids.iter().for_each(|id| {
-        Tracks::<T, I>::insert(id, track.clone());
+        let (group, sub) = id.split();
+        Tracks::<T, I>::insert(group, sub, track.clone());
         OriginToTrackId::<T, I>::insert(origin.clone(), id);
     });
 
     if full {
-        ReferendaTracks::<T, I>::insert(
-            RawOrigin::Root.into(),
-            max_track_id::<T, I>(),
-            track,
-            origin,
-        )
-        .expect("inserts last track");
+        ReferendaTracks::<T, I>::new_group_with_track(RawOrigin::Root.into(), origin, track)
+            .expect("inserts last track");
     }
 }
 
@@ -103,7 +99,7 @@ mod benchmarks {
     use super::*;
 
     #[benchmark]
-    pub fn insert() {
+    pub fn new_group_with_track() {
         // Setup code
         prepare_tracks::<T, I>(false);
 
@@ -112,26 +108,10 @@ mod benchmarks {
         let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
 
         #[extrinsic_call]
-        _(RawOrigin::Root, id, track, origin);
+        _(RawOrigin::Root, origin, track);
 
         // Verification code
         assert_last_event::<T, I>(Event::Created { id }.into());
-    }
-
-    #[benchmark]
-    pub fn update() {
-        // Setup code
-        prepare_tracks::<T, I>(true);
-
-        let id = max_track_id::<T, I>();
-        let caller = whitelisted_caller();
-        let track = track_info_of::<T, I>();
-
-        #[extrinsic_call]
-        _(RawOrigin::Signed(caller), id, track);
-
-        // Verification code
-        assert_last_event::<T, I>(Event::Updated { id }.into());
     }
 
     #[benchmark]
@@ -147,6 +127,84 @@ mod benchmarks {
 
         // Verification code
         assert_last_event::<T, I>(Event::Removed { id }.into());
+    }
+
+    #[benchmark]
+    pub fn set_decision_deposit() {
+        // Setup code
+        prepare_tracks::<T, I>(true);
+
+        let id = max_track_id::<T, I>();
+        let caller = whitelisted_caller();
+        let deposit: BalanceOf<T, I> = 1000u32.into();
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(caller), id, deposit);
+
+        // Verification code
+        assert_last_event::<T, I>(
+            Event::Updated {
+                id,
+                update_type: UpdateType::DecisionDeposit,
+            }
+            .into(),
+        );
+    }
+
+    #[benchmark]
+    pub fn set_periods() {
+        // Setup code
+        prepare_tracks::<T, I>(true);
+
+        let id = max_track_id::<T, I>();
+        let caller = whitelisted_caller();
+        let prepare_period: BlockNumberFor<T, I> = 20u32.into();
+        let decision_period: BlockNumberFor<T, I> = 200u32.into();
+
+        #[extrinsic_call]
+        _(
+            RawOrigin::Signed(caller),
+            id,
+            Some(prepare_period),
+            Some(decision_period),
+            None,
+            None,
+        );
+
+        // Verification code
+        assert_last_event::<T, I>(
+            Event::Updated {
+                id,
+                update_type: UpdateType::Periods,
+            }
+            .into(),
+        );
+    }
+
+    #[benchmark]
+    pub fn set_curves() {
+        // Setup code
+        prepare_tracks::<T, I>(true);
+
+        let id = max_track_id::<T, I>();
+        let caller = whitelisted_caller();
+        let curve = Curve::LinearDecreasing {
+            length: Perbill::from_percent(80),
+            floor: Perbill::from_percent(40),
+            ceil: Perbill::from_percent(90),
+        };
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(caller), id, Some(curve), None);
+
+        // Verification code
+        assert_last_event::<T, I>(
+            Event::Updated {
+                id,
+                update_type: UpdateType::Curves,
+            }
+            .into(),
+        );
     }
 
     impl_benchmark_test_suite!(

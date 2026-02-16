@@ -1270,7 +1270,6 @@ dependencies = [
 name = "fc-pallet-referenda-tracks"
 version = "1.0.0"
 dependencies = [
- "fc-traits-tracks",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
@@ -1371,16 +1370,6 @@ version = "0.1.0"
 dependencies = [
  "frame-support",
  "impl-trait-for-tuples",
- "parity-scale-codec",
- "scale-info",
-]
-
-[[package]]
-name = "fc-traits-tracks"
-version = "0.1.0"
-dependencies = [
- "frame-support",
- "pallet-referenda",
  "parity-scale-codec",
  "scale-info",
 ]
@@ -1491,7 +1480,6 @@ dependencies = [
  "fc-traits-listings",
  "fc-traits-memberships",
  "fc-traits-payments",
- "fc-traits-tracks",
 ]
 
 [[package]]

@@ -14,7 +14,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 codec.workspace = true
 scale-info.workspace = true
 serde = { workspace = true, optional = true }
-fc-traits-tracks.workspace = true
 frame-benchmarking = { workspace = true, optional = true }
 frame-support.workspace = true
 frame-system.workspace = true
@@ -31,7 +30,6 @@ pallet-balances.workspace = true
 [features]
 default = ["std"]
 runtime-benchmarks = [
-	"fc-traits-tracks/runtime-benchmarks",
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
@@ -43,7 +41,6 @@ runtime-benchmarks = [
 ]
 std = [
 	"codec/std",
-	"fc-traits-tracks/std",
 	"frame-benchmarking?/std",
 	"frame-support/std",
 	"frame-system/std",

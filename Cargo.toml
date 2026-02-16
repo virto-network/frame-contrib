@@ -27,7 +27,6 @@ fc-traits-listings = { path = "./traits/listings", default-features = false }
 fc-traits-memberships = { path = "./traits/memberships", default-features = false }
 fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", default-features = false }
 fc-traits-payments = { path = "./traits/payments", default-features = false }
-fc-traits-tracks = { path = "./traits/tracks", default-features = false }
 fc-pallet-listings = { path = "./pallets/listings", default-features = false }
 fc-pallet-payments = { path = "./pallets/payments", default-features = false }
 fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", default-features = false }
@@ -68,5 +67,4 @@ members = [
   "traits/memberships",
   "traits/nonfungibles-helpers",
   "traits/payments",
-  "traits/tracks",
 ]
