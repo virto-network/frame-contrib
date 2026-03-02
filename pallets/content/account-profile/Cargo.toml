@@ -1,0 +1,54 @@
+[package]
+authors.workspace = true
+description = "Pallet for associating accounts with a profile content item."
+edition.workspace = true
+license.workspace = true
+name = "fc-pallet-account-profile"
+repository.workspace = true
+readme = "README.md"
+version = "1.0.0"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+codec.workspace = true
+scale-info.workspace = true
+frame-benchmarking = { workspace = true, optional = true }
+frame-support.workspace = true
+frame-system.workspace = true
+sp-io.workspace = true
+sp-runtime.workspace = true
+fc-pallet-content.workspace = true
+
+[dev-dependencies]
+pallet-balances.workspace = true
+
+[features]
+default = ["std"]
+runtime-benchmarks = [
+    "fc-pallet-content/runtime-benchmarks",
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
+    "pallet-balances/runtime-benchmarks",
+    "sp-runtime/runtime-benchmarks",
+]
+std = [
+    "codec/std",
+    "fc-pallet-content/std",
+    "frame-benchmarking?/std",
+    "frame-support/std",
+    "frame-system/std",
+    "pallet-balances/std",
+    "scale-info/std",
+    "sp-io/std",
+    "sp-runtime/std",
+]
+try-runtime = [
+    "fc-pallet-content/try-runtime",
+    "frame-support/try-runtime",
+    "frame-system/try-runtime",
+    "pallet-balances/try-runtime",
+    "sp-runtime/try-runtime",
+]
