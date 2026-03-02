@@ -22,18 +22,18 @@ pub use weights::*;
 
 pub use pallet::*;
 
-const REVISIONABLE: u8 = 1 << 0;
-const RETRACTABLE: u8 = 1 << 1;
-const RETRACTED: u8 = 1 << 2;
+pub const REVISIONABLE: u8 = 1 << 0;
+pub const RETRACTABLE: u8 = 1 << 1;
+pub const RETRACTED: u8 = 1 << 2;
 
 #[derive(PartialEq, Clone, Debug, TypeInfo, Encode, Decode, DecodeWithMemTracking, Default)]
-pub struct Nonce([u8; 32]);
+pub struct Nonce(pub [u8; 32]);
 
-#[frame_support::pallet(dev_mode)]
+#[frame_support::pallet]
 pub mod pallet {
     use super::*;
 
-    #[derive(PartialEq, Clone, Debug, TypeInfo, Encode, Decode)]
+    #[derive(PartialEq, Clone, Debug, TypeInfo, Encode, Decode, MaxEncodedLen)]
     pub struct Item<AccountId> {
         pub owner: AccountId, // Owner of the item
         pub revision_id: u32, // Latest revision_id
@@ -72,8 +72,8 @@ pub mod pallet {
     // #[pallet::call(weight(<T as Config>::WeightInfo))]
     #[pallet::call]
     impl<T: Config> Pallet<T> {
-        // No need to define a `call_index` attribute here because of `dev_mode`.
-        // No need to define a `weight` attribute here because of `dev_mode`.
+        #[pallet::call_index(0)]
+        #[pallet::weight(T::WeightInfo::publish_item())]
         pub fn publish_item(
             origin: OriginFor<T>,
             nonce: Nonce,
@@ -114,6 +114,8 @@ pub mod pallet {
             Ok(())
         }
 
+        #[pallet::call_index(1)]
+        #[pallet::weight(T::WeightInfo::publish_revision())]
         pub fn publish_revision(
             origin: OriginFor<T>,
             item_id: ItemId,
@@ -152,6 +154,8 @@ pub mod pallet {
             Ok(())
         }
 
+        #[pallet::call_index(2)]
+        #[pallet::weight(T::WeightInfo::retract_item())]
         pub fn retract_item(origin: OriginFor<T>, item_id: ItemId) -> DispatchResult {
             let account = ensure_signed(origin)?;
             let mut item = <ItemState<T>>::get(&item_id).ok_or(Error::<T>::ItemNotFound)?;
@@ -178,6 +182,8 @@ pub mod pallet {
             Ok(())
         }
 
+        #[pallet::call_index(3)]
+        #[pallet::weight(T::WeightInfo::set_not_revisionable())]
         pub fn set_not_revisionable(origin: OriginFor<T>, item_id: ItemId) -> DispatchResult {
             let account = ensure_signed(origin)?;
             let mut item = <ItemState<T>>::get(&item_id).ok_or(Error::<T>::ItemNotFound)?;
@@ -200,6 +206,8 @@ pub mod pallet {
             Ok(())
         }
 
+        #[pallet::call_index(4)]
+        #[pallet::weight(T::WeightInfo::set_not_retractable())]
         pub fn set_not_retractable(origin: OriginFor<T>, item_id: ItemId) -> DispatchResult {
             let account = ensure_signed(origin)?;
             let mut item = <ItemState<T>>::get(&item_id).ok_or(Error::<T>::ItemNotFound)?;
@@ -286,4 +294,28 @@ pub mod pallet {
     #[pallet::getter(fn item)]
     pub type ItemState<T: Config> =
         StorageMap<_, Blake2_128Concat, ItemId, Item<T::AccountId>, OptionQuery>;
+}
+
+pub trait ItemInspect<AccountId> {
+    fn get_owner(item_id: &pallet::ItemId) -> Option<AccountId>;
+    fn is_revisionable(item_id: &pallet::ItemId) -> bool;
+    fn is_retracted(item_id: &pallet::ItemId) -> bool;
+}
+
+impl<T: pallet::Config> ItemInspect<T::AccountId> for pallet::Pallet<T> {
+    fn get_owner(item_id: &pallet::ItemId) -> Option<T::AccountId> {
+        pallet::ItemState::<T>::get(item_id).map(|item| item.owner)
+    }
+
+    fn is_revisionable(item_id: &pallet::ItemId) -> bool {
+        pallet::ItemState::<T>::get(item_id)
+            .map(|item| item.flags & REVISIONABLE != 0)
+            .unwrap_or(false)
+    }
+
+    fn is_retracted(item_id: &pallet::ItemId) -> bool {
+        pallet::ItemState::<T>::get(item_id)
+            .map(|item| item.flags & RETRACTED != 0)
+            .unwrap_or(false)
+    }
 }

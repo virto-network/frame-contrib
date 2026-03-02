@@ -17,6 +17,7 @@ serde = { version = "1.0.219", default-features = false }
 syn = { version = "2.0.100" }
 quote = { version = "1.0.40" }
 proc-macro-crate = { version = "3.3.0" }
+fc-pallet-content = { path = "pallets/content", default-features = false }
 
 # FRAME Contrib
 frame-contrib-traits = { path = "./traits", default-features = false }
@@ -60,6 +61,7 @@ resolver = "2"
 members = [
   "mock-helpers",
   "pallets/*",
+  "pallets/content/account-profile",
   "traits",
   "traits/authn",
   "traits/authn/proc",
