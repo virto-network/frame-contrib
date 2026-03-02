@@ -192,7 +192,7 @@ pub mod pallet {
 
             item.flags &= !REVISIONABLE;
             <ItemState<T>>::insert(&item_id, item);
-            Self::deposit_event(Event::SetNotRevsionable {
+            Self::deposit_event(Event::SetNotRevisionable {
                 item_id,
                 owner: account,
             });
@@ -254,7 +254,7 @@ pub mod pallet {
             item_id: ItemId,
             owner: T::AccountId,
         },
-        SetNotRevsionable {
+        SetNotRevisionable {
             item_id: ItemId,
             owner: T::AccountId,
         },

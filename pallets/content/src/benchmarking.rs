@@ -128,7 +128,7 @@ mod benchmarks {
 
         // Verification code
         assert_last_event::<T>(
-            Event::SetNotRevsionable {
+            Event::SetNotRevisionable {
                 item_id,
                 owner: caller,
             }

@@ -302,7 +302,7 @@ fn set_not_revisionable() {
             })
         );
         System::assert_has_event(
-            Event::<Test>::SetNotRevsionable {
+            Event::<Test>::SetNotRevisionable {
                 item_id: item_id.clone(),
                 owner: 1,
             }
