@@ -13,9 +13,12 @@
 //!
 //! ### Dispatchable Functions
 //!
-//! - [`insert`][`crate::Pallet::insert`] - Insert a new referenda Track.
-//! - [`update`][`crate::Pallet::update`] - Update the configuration of an existing referenda Track.
-//! - [`remove`][`crate::Pallet::remove`] - Remove an existing track
+//! - [`new_group_with_track`][`crate::Pallet::new_group_with_track`] - Create a new track group with its first track.
+//! - [`add_sub_track`][`crate::Pallet::add_sub_track`] - Add a sub-track to an existing group.
+//! - [`remove`][`crate::Pallet::remove`] - Remove an existing track.
+//! - [`set_decision_deposit`][`crate::Pallet::set_decision_deposit`] - Update the decision deposit.
+//! - [`set_periods`][`crate::Pallet::set_periods`] - Update one or more periods.
+//! - [`set_curves`][`crate::Pallet::set_curves`] - Update one or more curves.
 
 extern crate alloc;
 
@@ -154,6 +157,8 @@ pub mod pallet {
         TrackIdAlreadyExisting,
         /// The track cannot be removed
         CannotRemove,
+        /// All update parameters are None, nothing to update
+        NothingToUpdate,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -259,6 +264,10 @@ pub mod pallet {
             confirm: Option<pallet_referenda::BlockNumberFor<T, I>>,
             min_enactment: Option<pallet_referenda::BlockNumberFor<T, I>>,
         ) -> DispatchResult {
+            ensure!(
+                prepare.is_some() || decision.is_some() || confirm.is_some() || min_enactment.is_some(),
+                Error::<T, I>::NothingToUpdate
+            );
             T::GroupManagerOrigin::ensure_origin(origin, &id)?;
             Self::do_set_periods(id, prepare, decision, confirm, min_enactment)?;
             Self::deposit_event(Event::Updated {
@@ -285,6 +294,10 @@ pub mod pallet {
             min_approval: Option<Curve>,
             min_support: Option<Curve>,
         ) -> DispatchResult {
+            ensure!(
+                min_approval.is_some() || min_support.is_some(),
+                Error::<T, I>::NothingToUpdate
+            );
             T::GroupManagerOrigin::ensure_origin(origin, &id)?;
             Self::do_set_curves(id, min_approval, min_support)?;
             Self::deposit_event(Event::Updated {

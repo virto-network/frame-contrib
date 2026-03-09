@@ -411,7 +411,7 @@ mod update {
                 ReferendaTracks::<Test, ()>::set_periods(
                     RuntimeOrigin::signed(1),
                     1,
-                    None,
+                    Some(10u64),
                     None,
                     None,
                     None
@@ -419,7 +419,16 @@ mod update {
                 BadOrigin
             );
             assert_noop!(
-                ReferendaTracks::<Test, ()>::set_curves(RuntimeOrigin::signed(1), 1, None, None),
+                ReferendaTracks::<Test, ()>::set_curves(
+                    RuntimeOrigin::signed(1),
+                    1,
+                    Some(pallet_referenda::Curve::LinearDecreasing {
+                        length: Perbill::from_percent(100),
+                        floor: Perbill::from_percent(50),
+                        ceil: Perbill::from_percent(100),
+                    }),
+                    None
+                ),
                 BadOrigin
             );
         });
@@ -635,34 +644,18 @@ mod set_periods {
     }
 
     #[test]
-    fn noop_with_all_none() {
+    fn fails_with_all_none() {
         new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
-            assert_ok!(ReferendaTracks::<Test, ()>::set_periods(
-                RuntimeOrigin::signed(1),
-                65536,
-                None,
-                None,
-                None,
-                None
-            ));
-
-            // Track should be unchanged
-            assert_eq!(
-                ReferendaTracks::<Test>::get_track_info(65536),
-                Some(TRACK)
-            );
-
-            // Event is still emitted (current behavior)
-            assert_eq!(
-                System::events(),
-                vec![EventRecord {
-                    phase: Phase::Initialization,
-                    event: RuntimeEvent::Tracks(Event::Updated {
-                        id: 65536,
-                        update_type: UpdateType::Periods,
-                    }),
-                    topics: vec![],
-                }],
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::set_periods(
+                    RuntimeOrigin::signed(1),
+                    65536,
+                    None,
+                    None,
+                    None,
+                    None
+                ),
+                Error::<Test, ()>::NothingToUpdate
             );
         });
     }
@@ -797,18 +790,16 @@ mod set_curves {
     }
 
     #[test]
-    fn noop_with_all_none() {
+    fn fails_with_all_none() {
         new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
-            assert_ok!(ReferendaTracks::<Test, ()>::set_curves(
-                RuntimeOrigin::signed(1),
-                65536,
-                None,
-                None
-            ));
-
-            assert_eq!(
-                ReferendaTracks::<Test>::get_track_info(65536),
-                Some(TRACK)
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::set_curves(
+                    RuntimeOrigin::signed(1),
+                    65536,
+                    None,
+                    None
+                ),
+                Error::<Test, ()>::NothingToUpdate
             );
         });
     }

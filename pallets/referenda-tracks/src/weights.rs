@@ -64,66 +64,51 @@ pub trait WeightInfo {
 pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	fn new_group_with_track() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 8_471_000 picoseconds.
+		// Reads: NextGroupId, Tracks (get_track_info), OriginToTrackId, TracksIds
+		// Writes: NextGroupId, Tracks, OriginToTrackId, TracksIds
 		Weight::from_parts(8_586_000, 0)
-			// Standard Error: 0
 			.saturating_add(Weight::from_parts(1_359, 0))
-			.saturating_add(T::DbWeight::get().reads(1))
-			.saturating_add(T::DbWeight::get().writes(3))
+			.saturating_add(T::DbWeight::get().reads(4))
+			.saturating_add(T::DbWeight::get().writes(4))
 	}
 
 	fn add_sub_track() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 8_471_000 picoseconds.
+		// Reads: Tracks (get_track_info), OriginToTrackId, TracksIds
+		// Writes: Tracks, OriginToTrackId, TracksIds
 		Weight::from_parts(8_586_000, 0)
-			// Standard Error: 0
 			.saturating_add(Weight::from_parts(1_359, 0))
-			.saturating_add(T::DbWeight::get().reads(1))
-			.saturating_add(T::DbWeight::get().writes(1))
+			.saturating_add(T::DbWeight::get().reads(3))
+			.saturating_add(T::DbWeight::get().writes(3))
 	}
 
 	fn remove() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 8_471_000 picoseconds.
+		// Reads: Tracks (contains_key), OriginToTrackId, TracksIds
+		// Writes: Tracks, OriginToTrackId, TracksIds
 		Weight::from_parts(8_586_000, 0)
-			// Standard Error: 0
 			.saturating_add(Weight::from_parts(1_359, 0))
-			.saturating_add(T::DbWeight::get().reads(2))
+			.saturating_add(T::DbWeight::get().reads(3))
 			.saturating_add(T::DbWeight::get().writes(3))
 	}
 
 	fn set_decision_deposit() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 7_000_000 picoseconds.
+		// Reads: Tracks (try_mutate)
+		// Writes: Tracks
 		Weight::from_parts(7_500_000, 0)
 			.saturating_add(T::DbWeight::get().reads(1))
 			.saturating_add(T::DbWeight::get().writes(1))
 	}
 
 	fn set_periods() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 7_500_000 picoseconds.
+		// Reads: Tracks (try_mutate)
+		// Writes: Tracks
 		Weight::from_parts(8_000_000, 0)
 			.saturating_add(T::DbWeight::get().reads(1))
 			.saturating_add(T::DbWeight::get().writes(1))
 	}
 
 	fn set_curves() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 8_000_000 picoseconds.
+		// Reads: Tracks (try_mutate)
+		// Writes: Tracks
 		Weight::from_parts(8_500_000, 0)
 			.saturating_add(T::DbWeight::get().reads(1))
 			.saturating_add(T::DbWeight::get().writes(1))
