@@ -65,29 +65,29 @@ pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	fn new_group_with_track() -> Weight {
 		// Reads: NextGroupId, Tracks (get_track_info), OriginToTrackId, TracksIds
-		// Writes: NextGroupId, Tracks, OriginToTrackId, TracksIds
+		// Writes: NextGroupId, Tracks, OriginToTrackId, TrackIdToOrigin, TracksIds
 		Weight::from_parts(8_586_000, 0)
 			.saturating_add(Weight::from_parts(1_359, 0))
 			.saturating_add(T::DbWeight::get().reads(4))
-			.saturating_add(T::DbWeight::get().writes(4))
+			.saturating_add(T::DbWeight::get().writes(5))
 	}
 
 	fn add_sub_track() -> Weight {
 		// Reads: Tracks (get_track_info), OriginToTrackId, TracksIds
-		// Writes: Tracks, OriginToTrackId, TracksIds
+		// Writes: Tracks, OriginToTrackId, TrackIdToOrigin, TracksIds
 		Weight::from_parts(8_586_000, 0)
 			.saturating_add(Weight::from_parts(1_359, 0))
 			.saturating_add(T::DbWeight::get().reads(3))
-			.saturating_add(T::DbWeight::get().writes(3))
+			.saturating_add(T::DbWeight::get().writes(4))
 	}
 
 	fn remove() -> Weight {
-		// Reads: Tracks (contains_key), OriginToTrackId, DecidingCount, TrackQueue, TracksIds
-		// Writes: Tracks, OriginToTrackId, TracksIds
+		// Reads: Tracks (contains_key), DecidingCount, TrackQueue, TrackIdToOrigin, TracksIds
+		// Writes: Tracks, TrackIdToOrigin, OriginToTrackId, TracksIds
 		Weight::from_parts(8_586_000, 0)
 			.saturating_add(Weight::from_parts(1_359, 0))
 			.saturating_add(T::DbWeight::get().reads(5))
-			.saturating_add(T::DbWeight::get().writes(3))
+			.saturating_add(T::DbWeight::get().writes(4))
 	}
 
 	fn set_decision_deposit() -> Weight {

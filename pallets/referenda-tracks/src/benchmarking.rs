@@ -135,10 +135,9 @@ mod benchmarks {
         prepare_tracks::<T, I>(true);
 
         let id = max_track_id::<T, I>();
-        let origin = RawOrigin::Signed(whitelisted_caller()).into();
 
         #[extrinsic_call]
-        _(RawOrigin::Root, id, origin);
+        _(RawOrigin::Root, id);
 
         // Verification code
         assert_last_event::<T, I>(Event::Removed { id }.into());

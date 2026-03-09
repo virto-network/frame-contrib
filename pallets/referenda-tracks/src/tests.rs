@@ -140,6 +140,61 @@ mod insert {
     }
 }
 
+mod validation {
+    use super::*;
+
+    #[test]
+    fn insert_fails_with_zero_max_deciding() {
+        new_test_ext(None).execute_with(|| {
+            let mut bad_track = TRACK;
+            bad_track.max_deciding = 0;
+
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::new_group_with_track(
+                    RuntimeOrigin::root(),
+                    ORIGIN_SIGNED_1,
+                    bad_track,
+                ),
+                Error::<Test, ()>::InvalidTrackInfo
+            );
+        });
+    }
+
+    #[test]
+    fn insert_fails_with_zero_decision_period() {
+        new_test_ext(None).execute_with(|| {
+            let mut bad_track = TRACK;
+            bad_track.decision_period = 0;
+
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::new_group_with_track(
+                    RuntimeOrigin::root(),
+                    ORIGIN_SIGNED_1,
+                    bad_track,
+                ),
+                Error::<Test, ()>::InvalidTrackInfo
+            );
+        });
+    }
+
+    #[test]
+    fn set_periods_fails_with_zero_decision_period() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::set_periods(
+                    RuntimeOrigin::signed(1),
+                    65536,
+                    None,
+                    Some(0),
+                    None,
+                    None
+                ),
+                Error::<Test, ()>::InvalidTrackInfo
+            );
+        });
+    }
+}
+
 mod add_sub_track {
     use super::*;
 
@@ -360,40 +415,15 @@ mod remove_edge_cases {
     use super::*;
 
     #[test]
-    fn fails_with_wrong_pallet_origin() {
-        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
-            // Track exists at 65536, mapped to ORIGIN_SIGNED_1
-            // Try to remove with the wrong origin argument
-            assert_noop!(
-                ReferendaTracks::<Test, ()>::remove(
-                    RuntimeOrigin::signed(1),
-                    65536,
-                    ORIGIN_SIGNED_2, // wrong origin
-                ),
-                sp_runtime::DispatchError::BadOrigin
-            );
-
-            // Track should still exist
-            assert_eq!(ReferendaTracks::<Test>::get_track_info(65536), Some(TRACK));
-        });
-    }
-
-    #[test]
     fn fails_with_active_referenda_deciding() {
         new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
-            // Simulate an active deciding referendum on the track
             pallet_referenda::DecidingCount::<Test, ()>::insert(65536u32, 1u32);
 
             assert_noop!(
-                ReferendaTracks::<Test, ()>::remove(
-                    RuntimeOrigin::signed(1),
-                    65536,
-                    ORIGIN_SIGNED_1,
-                ),
+                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(1), 65536),
                 Error::<Test, ()>::CannotRemove
             );
 
-            // Track should still exist
             assert_eq!(ReferendaTracks::<Test>::get_track_info(65536), Some(TRACK));
         });
     }
@@ -401,26 +431,18 @@ mod remove_edge_cases {
     #[test]
     fn succeeds_after_referenda_cleared() {
         new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
-            // Simulate active referendum, then clear it
             pallet_referenda::DecidingCount::<Test, ()>::insert(65536u32, 1u32);
 
             assert_noop!(
-                ReferendaTracks::<Test, ()>::remove(
-                    RuntimeOrigin::signed(1),
-                    65536,
-                    ORIGIN_SIGNED_1,
-                ),
+                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(1), 65536),
                 Error::<Test, ()>::CannotRemove
             );
 
-            // Clear the deciding count
             pallet_referenda::DecidingCount::<Test, ()>::insert(65536u32, 0u32);
 
-            // Now removal should succeed
             assert_ok!(ReferendaTracks::<Test, ()>::remove(
                 RuntimeOrigin::signed(1),
                 65536,
-                ORIGIN_SIGNED_1,
             ));
         });
     }
@@ -431,10 +453,8 @@ mod remove_edge_cases {
             assert_ok!(ReferendaTracks::<Test, ()>::remove(
                 RuntimeOrigin::signed(1),
                 65536,
-                ORIGIN_SIGNED_1,
             ));
 
-            // The origin should now be free to use for a new track
             assert_ok!(ReferendaTracks::<Test, ()>::new_group_with_track(
                 RuntimeOrigin::root(),
                 ORIGIN_SIGNED_1,
@@ -517,7 +537,7 @@ mod remove {
     fn fails_if_incorrect_origin() {
         new_test_ext(None).execute_with(|| {
             assert_noop!(
-                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(1), 1, ORIGIN_SIGNED_1),
+                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(1), 1),
                 BadOrigin
             );
         });
@@ -527,7 +547,7 @@ mod remove {
     fn fails_if_non_existing() {
         new_test_ext(None).execute_with(|| {
             assert_noop!(
-                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(1), 1, ORIGIN_SIGNED_1),
+                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(1), 1),
                 BadOrigin,
             );
         });
@@ -539,7 +559,6 @@ mod remove {
             assert_ok!(ReferendaTracks::<Test, ()>::remove(
                 RuntimeOrigin::signed(1),
                 65536,
-                ORIGIN_SIGNED_1
             ));
 
             assert_eq!(

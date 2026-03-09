@@ -116,6 +116,10 @@ pub mod pallet {
         StorageMap<_, Blake2_128Concat, PalletsOriginOf<T>, TrackIdOf<T, I>>;
 
     #[pallet::storage]
+    pub type TrackIdToOrigin<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, TrackIdOf<T, I>, PalletsOriginOf<T>>;
+
+    #[pallet::storage]
     pub type Tracks<T: Config<I>, I: 'static = ()> = StorageDoubleMap<
         _,
         Blake2_128Concat,
@@ -135,8 +139,6 @@ pub mod pallet {
         Periods,
         /// One or more curves were updated
         Curves,
-        /// Full track configuration was updated
-        Full,
     }
 
     #[pallet::event]
@@ -165,6 +167,8 @@ pub mod pallet {
         CannotRemove,
         /// All update parameters are None, nothing to update
         NothingToUpdate,
+        /// The track configuration contains invalid parameters
+        InvalidTrackInfo,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -207,7 +211,7 @@ pub mod pallet {
             Self::do_insert(id, info, sub_origin)
         }
 
-        /// Remove an existing track
+        /// Remove an existing track.
         ///
         /// Parameters:
         /// - `id`: The Id of the track to be deleted.
@@ -216,13 +220,9 @@ pub mod pallet {
         ///
         /// Weight: `O(MaxTracks)`
         #[pallet::call_index(2)]
-        pub fn remove(
-            origin: OriginFor<T>,
-            id: TrackIdOf<T, I>,
-            pallet_origin: PalletsOriginOf<T>,
-        ) -> DispatchResult {
+        pub fn remove(origin: OriginFor<T>, id: TrackIdOf<T, I>) -> DispatchResult {
             T::GroupManagerOrigin::ensure_origin(origin, &id)?;
-            Self::do_remove(id, pallet_origin)
+            Self::do_remove(id)
         }
 
         /// Set the decision deposit for an existing track.

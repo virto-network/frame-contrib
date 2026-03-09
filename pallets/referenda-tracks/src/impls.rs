@@ -2,7 +2,7 @@ use super::*;
 
 use alloc::borrow::Cow;
 use frame_support::{ensure, traits::Incrementable};
-use sp_runtime::{DispatchError, DispatchResult};
+use sp_runtime::{traits::Zero, DispatchError, DispatchResult};
 
 type OriginOf<T> = <<T as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin;
 
@@ -50,12 +50,23 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         .ok()
     }
 
+    /// Validates the essential fields of a track configuration.
+    fn validate_track_info(info: &TrackInfoOf<T, I>) -> DispatchResult {
+        ensure!(info.max_deciding > 0, Error::<T, I>::InvalidTrackInfo);
+        ensure!(
+            !info.decision_period.is_zero(),
+            Error::<T, I>::InvalidTrackInfo
+        );
+        Ok(())
+    }
+
     /// Inserts a new track into the tracks storage.
     pub(crate) fn do_insert(
         id: T::TrackId,
         info: TrackInfoOf<T, I>,
         origin: OriginOf<T>,
     ) -> DispatchResult {
+        Self::validate_track_info(&info)?;
         let (group, track) = id.split();
         ensure!(
             Self::get_track_info(id).is_none(),
@@ -70,23 +81,17 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             .map_err(|_| Error::<T, I>::MaxTracksExceeded)?;
         Tracks::<T, I>::set(group, track, Some(info));
         OriginToTrackId::<T, I>::set(origin.clone(), Some(id));
+        TrackIdToOrigin::<T, I>::set(id, Some(origin));
 
         Self::deposit_event(Event::Created { id });
         Ok(())
     }
 
-    pub(crate) fn do_remove(
-        id: T::TrackId,
-        origin: OriginOf<T>,
-    ) -> frame_support::dispatch::DispatchResult {
+    pub(crate) fn do_remove(id: T::TrackId) -> frame_support::dispatch::DispatchResult {
         let (group, track) = id.split();
         ensure!(
             Tracks::<T, I>::contains_key(&group, &track),
             Error::<T, I>::TrackIdNotFound
-        );
-        ensure!(
-            OriginToTrackId::<T, I>::get(&origin) == Some(id),
-            DispatchError::BadOrigin
         );
         ensure!(
             pallet_referenda::DecidingCount::<T, I>::get(id) == 0
@@ -94,8 +99,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Error::<T, I>::CannotRemove
         );
 
+        let origin = TrackIdToOrigin::<T, I>::get(id);
+
         Tracks::<T, I>::remove(group, track);
-        OriginToTrackId::<T, I>::remove(&origin);
+        TrackIdToOrigin::<T, I>::remove(id);
+        if let Some(ref origin) = origin {
+            OriginToTrackId::<T, I>::remove(origin);
+        }
         TracksIds::<T, I>::try_mutate(|tracks_ids| {
             tracks_ids.remove(&id);
             Ok::<(), DispatchError>(())
@@ -128,6 +138,9 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         confirm: Option<BlockNumberFor<T, I>>,
         min_enactment: Option<BlockNumberFor<T, I>>,
     ) -> DispatchResult {
+        if let Some(ref period) = decision {
+            ensure!(!period.is_zero(), Error::<T, I>::InvalidTrackInfo);
+        }
         let (group, track) = id.split();
         Tracks::<T, I>::try_mutate(group, track, |track| -> DispatchResult {
             let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
