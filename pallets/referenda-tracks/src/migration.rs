@@ -21,8 +21,11 @@ pub mod v0 {
     use super::*;
 
     #[storage_alias]
-    pub type TracksIds<T: Config<I>, I: 'static> =
-        StorageValue<Pallet<T, I>, BoundedVec<TrackIdOf<T, I>, <T as Config<I>>::MaxTracks>, ValueQuery>;
+    pub type TracksIds<T: Config<I>, I: 'static> = StorageValue<
+        Pallet<T, I>,
+        BoundedVec<TrackIdOf<T, I>, <T as Config<I>>::MaxTracks>,
+        ValueQuery,
+    >;
 
     #[storage_alias]
     pub type Tracks<T: Config<I>, I: 'static> =
@@ -147,8 +150,9 @@ impl<T: Config<I>, I: 'static> UncheckedOnRuntimeUpgrade for MigrateV0ToV1<T, I>
 
     #[cfg(feature = "try-runtime")]
     fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
-        let expected_count = u32::decode(&mut &state[..])
-            .map_err(|_| sp_runtime::TryRuntimeError::Other("Failed to decode pre-upgrade state"))?;
+        let expected_count = u32::decode(&mut &state[..]).map_err(|_| {
+            sp_runtime::TryRuntimeError::Other("Failed to decode pre-upgrade state")
+        })?;
 
         let new_ids = super::TracksIds::<T, I>::get();
         let actual_count = new_ids.len() as u32;

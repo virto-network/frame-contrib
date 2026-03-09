@@ -396,9 +396,9 @@ mod multi_group {
             ));
 
             let track_ids: Vec<_> =
-                <ReferendaTracks::<Test> as TracksInfo<u64, u64>>::track_ids().collect();
+                <ReferendaTracks<Test> as TracksInfo<u64, u64>>::track_ids().collect();
             let tracks: Vec<_> =
-                <ReferendaTracks::<Test> as TracksInfo<u64, u64>>::tracks().collect();
+                <ReferendaTracks<Test> as TracksInfo<u64, u64>>::tracks().collect();
 
             assert_eq!(track_ids.len(), 2);
             assert_eq!(tracks.len(), 2);
@@ -925,8 +925,14 @@ mod migration {
             assert_eq!(new_id_2, 131072);
 
             // Tracks accessible via new DoubleMap
-            assert_eq!(ReferendaTracks::<Test>::get_track_info(new_id_1), Some(TRACK));
-            assert_eq!(ReferendaTracks::<Test>::get_track_info(new_id_2), Some(TRACK));
+            assert_eq!(
+                ReferendaTracks::<Test>::get_track_info(new_id_1),
+                Some(TRACK)
+            );
+            assert_eq!(
+                ReferendaTracks::<Test>::get_track_info(new_id_2),
+                Some(TRACK)
+            );
 
             // TracksIds updated to BoundedBTreeSet with new IDs
             let ids = crate::TracksIds::<Test, ()>::get();

@@ -79,7 +79,8 @@ fn prepare_tracks<T: Config<I>, I: 'static>(full: bool) {
     for i in 0..max_tracks::<T, I>() - 1 {
         let id = T::BenchmarkHelper::track_id(i);
         let (group, sub) = id.split();
-        let origin: PalletsOriginOf<T> = RawOrigin::Signed(frame_benchmarking::account("origin", i, 0)).into();
+        let origin: PalletsOriginOf<T> =
+            RawOrigin::Signed(frame_benchmarking::account("origin", i, 0)).into();
 
         TracksIds::<T, I>::mutate(|ids| {
             ids.try_insert(id).expect("within MaxTracks");
