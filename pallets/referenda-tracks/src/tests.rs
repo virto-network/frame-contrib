@@ -379,6 +379,53 @@ mod remove_edge_cases {
     }
 
     #[test]
+    fn fails_with_active_referenda_deciding() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            // Simulate an active deciding referendum on the track
+            pallet_referenda::DecidingCount::<Test, ()>::insert(65536u32, 1u32);
+
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::remove(
+                    RuntimeOrigin::signed(1),
+                    65536,
+                    ORIGIN_SIGNED_1,
+                ),
+                Error::<Test, ()>::CannotRemove
+            );
+
+            // Track should still exist
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(65536), Some(TRACK));
+        });
+    }
+
+    #[test]
+    fn succeeds_after_referenda_cleared() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            // Simulate active referendum, then clear it
+            pallet_referenda::DecidingCount::<Test, ()>::insert(65536u32, 1u32);
+
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::remove(
+                    RuntimeOrigin::signed(1),
+                    65536,
+                    ORIGIN_SIGNED_1,
+                ),
+                Error::<Test, ()>::CannotRemove
+            );
+
+            // Clear the deciding count
+            pallet_referenda::DecidingCount::<Test, ()>::insert(65536u32, 0u32);
+
+            // Now removal should succeed
+            assert_ok!(ReferendaTracks::<Test, ()>::remove(
+                RuntimeOrigin::signed(1),
+                65536,
+                ORIGIN_SIGNED_1,
+            ));
+        });
+    }
+
+    #[test]
     fn origin_can_be_reused_after_removal() {
         new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
             assert_ok!(ReferendaTracks::<Test, ()>::remove(

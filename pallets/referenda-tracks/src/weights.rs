@@ -82,11 +82,11 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	}
 
 	fn remove() -> Weight {
-		// Reads: Tracks (contains_key), OriginToTrackId, TracksIds
+		// Reads: Tracks (contains_key), OriginToTrackId, DecidingCount, TrackQueue, TracksIds
 		// Writes: Tracks, OriginToTrackId, TracksIds
 		Weight::from_parts(8_586_000, 0)
 			.saturating_add(Weight::from_parts(1_359, 0))
-			.saturating_add(T::DbWeight::get().reads(3))
+			.saturating_add(T::DbWeight::get().reads(5))
 			.saturating_add(T::DbWeight::get().writes(3))
 	}
 

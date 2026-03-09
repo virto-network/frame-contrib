@@ -88,6 +88,11 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             OriginToTrackId::<T, I>::get(&origin) == Some(id),
             DispatchError::BadOrigin
         );
+        ensure!(
+            pallet_referenda::DecidingCount::<T, I>::get(id) == 0
+                && pallet_referenda::TrackQueue::<T, I>::get(id).is_empty(),
+            Error::<T, I>::CannotRemove
+        );
 
         Tracks::<T, I>::remove(group, track);
         OriginToTrackId::<T, I>::remove(&origin);

@@ -80,8 +80,14 @@ pub mod pallet {
 
         // Types: A set of parameter types that the pallet uses to handle information.
 
-        /// The ID of a single track.
-        type TrackId: SplitId + Parameter + Member + Copy + MaxEncodedLen + Ord;
+        /// The ID of a single track. Same bounds as pallet-referenda.
+        type TrackId: SplitId
+            + Parameter
+            + Member
+            + Copy
+            + MaxEncodedLen
+            + Ord
+            + codec::EncodeLike<pallet_referenda::TrackIdOf<Self, I>>;
 
         // Parameters: A set of constant parameters to configure limits.
 
@@ -265,7 +271,10 @@ pub mod pallet {
             min_enactment: Option<pallet_referenda::BlockNumberFor<T, I>>,
         ) -> DispatchResult {
             ensure!(
-                prepare.is_some() || decision.is_some() || confirm.is_some() || min_enactment.is_some(),
+                prepare.is_some()
+                    || decision.is_some()
+                    || confirm.is_some()
+                    || min_enactment.is_some(),
                 Error::<T, I>::NothingToUpdate
             );
             T::GroupManagerOrigin::ensure_origin(origin, &id)?;
