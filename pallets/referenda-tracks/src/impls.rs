@@ -1,89 +1,189 @@
 use super::*;
 
-use frame_support::ensure;
-use sp_runtime::{BoundedVec, DispatchError, DispatchResult};
+use alloc::borrow::Cow;
+use frame_support::{ensure, traits::Incrementable};
+use sp_runtime::{traits::Zero, DispatchError, DispatchResult};
+
+type OriginOf<T> = <<T as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin;
 
 impl<T: Config<I>, I: 'static> pallet_referenda::TracksInfo<BalanceOf<T, I>, BlockNumberFor<T, I>>
     for Pallet<T, I>
 {
     type Id = T::TrackId;
-    type RuntimeOrigin = <T::RuntimeOrigin as OriginTrait>::PalletsOrigin;
+    type RuntimeOrigin = OriginOf<T>;
 
     fn tracks(
     ) -> impl Iterator<Item = Cow<'static, Track<Self::Id, BalanceOf<T, I>, BlockNumberFor<T, I>>>>
     {
-        Tracks::<T, I>::iter().map(|(id, info)| Cow::Owned(Track { id, info }))
+        Tracks::<T, I>::iter().map(|(group, track, info)| {
+            Cow::Owned(Track {
+                id: T::TrackId::combine(group, track),
+                info,
+            })
+        })
     }
+
     fn track_for(origin: &Self::RuntimeOrigin) -> Result<Self::Id, ()> {
         OriginToTrackId::<T, I>::get(origin).ok_or(())
     }
+
+    fn track_ids() -> impl Iterator<Item = Self::Id> {
+        TracksIds::<T, I>::get().into_iter()
+    }
 }
 
-impl<T: Config<I>, I> fc_traits_tracks::MutateTracks<BalanceOf<T, I>, BlockNumberFor<T, I>>
-    for Pallet<T, I>
-{
-    /// Inserts a new track into the tracks storage.
-    fn insert(
-        id: Self::Id,
-        info: TrackInfoOf<T, I>,
-        origin: Self::RuntimeOrigin,
-    ) -> DispatchResult {
+impl<T: Config<I>, I: 'static> Pallet<T, I> {
+    #[inline]
+    pub fn get_track_info(id: T::TrackId) -> Option<TrackInfoOf<T, I>> {
+        let (group, track) = id.split();
+        Tracks::<T, I>::get(group, track)
+    }
+
+    #[inline]
+    pub(crate) fn next_group_track_id() -> Option<T::TrackId> {
+        NextGroupId::<T, I>::try_mutate(|id| -> Result<T::TrackId, ()> {
+            let new_id = id.increment().ok_or(())?;
+            *id = new_id.clone();
+            let track = SubTrackIdOf::<T, I>::default();
+            Ok(T::TrackId::combine(new_id, track))
+        })
+        .ok()
+    }
+
+    /// Validates the essential fields of a track configuration.
+    fn validate_track_info(info: &TrackInfoOf<T, I>) -> DispatchResult {
+        ensure!(info.max_deciding > 0, Error::<T, I>::InvalidTrackInfo);
         ensure!(
-            Tracks::<T, I>::get(id).is_none(),
+            !info.decision_period.is_zero(),
+            Error::<T, I>::InvalidTrackInfo
+        );
+        Ok(())
+    }
+
+    /// Inserts a new track into the tracks storage.
+    pub(crate) fn do_insert(
+        id: T::TrackId,
+        info: TrackInfoOf<T, I>,
+        origin: OriginOf<T>,
+    ) -> DispatchResult {
+        Self::validate_track_info(&info)?;
+        let (group, track) = id.split();
+        ensure!(
+            Self::get_track_info(id).is_none(),
+            Error::<T, I>::TrackIdAlreadyExisting
+        );
+        ensure!(
+            OriginToTrackId::<T, I>::get(&origin).is_none(),
             Error::<T, I>::TrackIdAlreadyExisting
         );
 
-        TracksIds::<T, I>::try_append(id).map_err(|_| Error::<T, I>::MaxTracksExceeded)?;
-        Tracks::<T, I>::set(id, Some(info));
+        TracksIds::<T, I>::try_mutate(|ids| ids.try_insert(id))
+            .map_err(|_| Error::<T, I>::MaxTracksExceeded)?;
+        Tracks::<T, I>::set(group, track, Some(info));
         OriginToTrackId::<T, I>::set(origin.clone(), Some(id));
+        TrackIdToOrigin::<T, I>::set(id, Some(origin));
 
         Self::deposit_event(Event::Created { id });
         Ok(())
     }
 
-    /// Updates an existing track with the given Id.
-    fn update(id: Self::Id, info: TrackInfoOf<T, I>) -> DispatchResult {
-        Tracks::<T, I>::try_mutate(id, |track| {
-            if track.is_none() {
-                return Err(Error::<T, I>::TrackIdNotFound);
-            };
-
-            *track = Some(info);
-
-            Ok(())
-        })?;
-
-        Self::deposit_event(Event::Updated { id });
-        Ok(())
-    }
-
-    fn remove(
-        id: Self::Id,
-        origin: Self::RuntimeOrigin,
-    ) -> frame_support::dispatch::DispatchResult {
+    pub(crate) fn do_remove(id: T::TrackId) -> frame_support::dispatch::DispatchResult {
+        let (group, track) = id.split();
         ensure!(
-            Tracks::<T, I>::contains_key(id),
+            Tracks::<T, I>::contains_key(&group, &track),
             Error::<T, I>::TrackIdNotFound
         );
         ensure!(
-            OriginToTrackId::<T, I>::get(&origin) == Some(id),
-            DispatchError::BadOrigin
+            pallet_referenda::DecidingCount::<T, I>::get(id) == 0
+                && pallet_referenda::TrackQueue::<T, I>::get(id).is_empty(),
+            Error::<T, I>::CannotRemove
         );
 
-        Tracks::<T, I>::remove(id);
-        OriginToTrackId::<T, I>::remove(&origin);
-        TracksIds::<T, I>::try_mutate(|tracks_ids| {
-            let new_tracks_ids = tracks_ids
-                .clone()
-                .into_iter()
-                .filter(|i| i != &id)
-                .collect();
-            *tracks_ids = BoundedVec::<_, _>::truncate_from(new_tracks_ids);
+        let origin = TrackIdToOrigin::<T, I>::get(id);
 
+        Tracks::<T, I>::remove(group, track);
+        TrackIdToOrigin::<T, I>::remove(id);
+        if let Some(ref origin) = origin {
+            OriginToTrackId::<T, I>::remove(origin);
+        }
+        TracksIds::<T, I>::try_mutate(|tracks_ids| {
+            tracks_ids.remove(&id);
             Ok::<(), DispatchError>(())
         })?;
 
         Self::deposit_event(Event::Removed { id });
+        Ok(())
+    }
+
+    /// Updates the decision deposit for an existing track with the given Id.
+    pub(crate) fn do_set_decision_deposit(
+        id: T::TrackId,
+        deposit: BalanceOf<T, I>,
+    ) -> DispatchResult {
+        let (group, track) = id.split();
+        Tracks::<T, I>::try_mutate(group, track, |track| -> DispatchResult {
+            let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
+            track_info.decision_deposit = deposit;
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    /// Updates periods for an existing track with the given Id.
+    pub(crate) fn do_set_periods(
+        id: T::TrackId,
+        prepare: Option<BlockNumberFor<T, I>>,
+        decision: Option<BlockNumberFor<T, I>>,
+        confirm: Option<BlockNumberFor<T, I>>,
+        min_enactment: Option<BlockNumberFor<T, I>>,
+    ) -> DispatchResult {
+        if let Some(ref period) = decision {
+            ensure!(!period.is_zero(), Error::<T, I>::InvalidTrackInfo);
+        }
+        let (group, track) = id.split();
+        Tracks::<T, I>::try_mutate(group, track, |track| -> DispatchResult {
+            let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
+
+            if let Some(period) = prepare {
+                track_info.prepare_period = period;
+            }
+            if let Some(period) = decision {
+                track_info.decision_period = period;
+            }
+            if let Some(period) = confirm {
+                track_info.confirm_period = period;
+            }
+            if let Some(period) = min_enactment {
+                track_info.min_enactment_period = period;
+            }
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    /// Updates curves for an existing track with the given Id.
+    pub(crate) fn do_set_curves(
+        id: T::TrackId,
+        min_approval: Option<pallet_referenda::Curve>,
+        min_support: Option<pallet_referenda::Curve>,
+    ) -> DispatchResult {
+        let (group, track) = id.split();
+        Tracks::<T, I>::try_mutate(group, track, |track| -> DispatchResult {
+            let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
+
+            if let Some(curve) = min_approval {
+                track_info.min_approval = curve;
+            }
+            if let Some(curve) = min_support {
+                track_info.min_support = curve;
+            }
+
+            Ok(())
+        })?;
+
         Ok(())
     }
 }
