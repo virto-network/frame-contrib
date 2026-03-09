@@ -19,12 +19,12 @@
 
 use super::*;
 use crate::{Event, OriginToTrackId, Pallet as ReferendaTracks, Tracks, TracksIds, UpdateType};
+use alloc::collections::BTreeSet;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use pallet_referenda::{Curve, TrackInfo, TrackInfoOf};
 use sp_core::Get;
 use sp_runtime::{str_array as s, traits::AtLeast32Bit, BoundedBTreeSet, Perbill};
-use std::collections::BTreeSet;
 
 type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 type BalanceOf<T, I> =
@@ -73,21 +73,23 @@ fn max_track_id<T: Config<I>, I: 'static>() -> TrackIdOf<T, I> {
 }
 
 fn prepare_tracks<T: Config<I>, I: 'static>(full: bool) {
-    let ids =
-        BTreeSet::from_iter((0..max_tracks::<T, I>() - 1).map(|x| T::BenchmarkHelper::track_id(x)));
     let track = track_info_of::<T, I>();
-    let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
 
-    TracksIds::<T, I>::mutate(|tracks_ids| {
-        *tracks_ids = BoundedBTreeSet::try_from(ids.clone()).unwrap();
-    });
-    ids.iter().for_each(|id| {
+    // Insert tracks directly into storage with unique origins per track
+    for i in 0..max_tracks::<T, I>() - 1 {
+        let id = T::BenchmarkHelper::track_id(i);
         let (group, sub) = id.split();
+        let origin: PalletsOriginOf<T> = RawOrigin::Signed(frame_benchmarking::account("origin", i, 0)).into();
+
+        TracksIds::<T, I>::mutate(|ids| {
+            ids.try_insert(id).expect("within MaxTracks");
+        });
         Tracks::<T, I>::insert(group, sub, track.clone());
-        OriginToTrackId::<T, I>::insert(origin.clone(), id);
-    });
+        OriginToTrackId::<T, I>::insert(origin, id);
+    }
 
     if full {
+        let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
         ReferendaTracks::<T, I>::new_group_with_track(RawOrigin::Root.into(), origin, track)
             .expect("inserts last track");
     }
@@ -111,6 +113,20 @@ mod benchmarks {
 
         // Verification code
         assert_last_event::<T, I>(Event::Created { id }.into());
+    }
+
+    #[benchmark]
+    pub fn add_sub_track() {
+        // Setup code
+        prepare_tracks::<T, I>(false);
+
+        let track = track_info_of::<T, I>();
+        let caller: AccountIdOf<T> = whitelisted_caller();
+        let origin: PalletsOriginOf<T> = RawOrigin::Signed(caller.clone()).into();
+        let sub_track_id = SubTrackIdOf::<T, I>::default();
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(caller), sub_track_id, origin, track);
     }
 
     #[benchmark]

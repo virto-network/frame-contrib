@@ -75,22 +75,6 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Ok(())
     }
 
-    // /// Updates an existing track with the given Id.
-    // pub(crate) fn do_update(id: T::TrackId, info: TrackInfoOf<T, I>) -> DispatchResult {
-    //     let (group, track) = id.split();
-    //     Tracks::<T, I>::try_mutate(group, track, |track| {
-    //         if track.is_none() {
-    //             return Err(Error::<T, I>::TrackIdNotFound);
-    //         };
-
-    //         *track = Some(info);
-
-    //         Ok(())
-    //     })?;
-
-    //     Ok(())
-    // }
-
     pub(crate) fn do_remove(
         id: T::TrackId,
         origin: OriginOf<T>,

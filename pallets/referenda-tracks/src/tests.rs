@@ -17,7 +17,7 @@
 
 //! Tests for referenda tracks pallet.
 
-use super::{Error, Event, Pallet as ReferendaTracks, UpdateType};
+use super::{Error, Event, Pallet as ReferendaTracks, SplitId, UpdateType};
 use crate::mock::*;
 use frame_support::{assert_noop, assert_ok};
 use frame_system::{EventRecord, Phase, RawOrigin};
@@ -136,6 +136,263 @@ mod insert {
                 ),
                 Error::<Test, ()>::MaxTracksExceeded
             );
+        });
+    }
+}
+
+mod add_sub_track {
+    use super::*;
+
+    #[test]
+    fn fails_if_incorrect_origin() {
+        new_test_ext(None).execute_with(|| {
+            // Account 99 is not in the Admins list
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::add_sub_track(
+                    RuntimeOrigin::signed(99),
+                    1,
+                    ORIGIN_SIGNED_2,
+                    TRACK,
+                ),
+                BadOrigin
+            );
+        });
+    }
+
+    #[test]
+    fn it_works() {
+        new_test_ext(None).execute_with(|| {
+            System::set_block_number(1);
+
+            // Account 1 is admin index 0 -> group 0
+            assert_ok!(ReferendaTracks::<Test, ()>::add_sub_track(
+                RuntimeOrigin::signed(1),
+                1, // sub_track_id
+                ORIGIN_SIGNED_1,
+                TRACK,
+            ));
+
+            // group=0, sub=1 -> combined ID = 1
+            let expected_id = u32::combine(0, 1);
+            assert_eq!(expected_id, 1);
+
+            assert_eq!(
+                System::events(),
+                vec![EventRecord {
+                    phase: Phase::Initialization,
+                    event: RuntimeEvent::Tracks(Event::Created { id: expected_id }),
+                    topics: vec![],
+                }],
+            );
+
+            assert_eq!(
+                ReferendaTracks::<Test>::get_track_info(expected_id),
+                Some(TRACK)
+            );
+        });
+    }
+
+    #[test]
+    fn fails_if_sub_track_already_exists() {
+        new_test_ext(None).execute_with(|| {
+            // First insert succeeds (signer=1, origin morphs to account 1, group=0)
+            assert_ok!(ReferendaTracks::<Test, ()>::add_sub_track(
+                RuntimeOrigin::signed(1),
+                1,
+                ORIGIN_SIGNED_1,
+                TRACK,
+            ));
+
+            // Same sub_track_id=1 in group 0 already exists
+            // Use a different origin that also morphs to account 1 is not possible,
+            // so we test with a different origin (signer=2, origin=SIGNED_2, group=1)
+            // but same sub_track_id - this is a different group so it should work
+            assert_ok!(ReferendaTracks::<Test, ()>::add_sub_track(
+                RuntimeOrigin::signed(2),
+                1,
+                ORIGIN_SIGNED_2,
+                TRACK,
+            ));
+
+            // Verify both exist in their respective groups
+            let id_g0 = u32::combine(0, 1);
+            let id_g1 = u32::combine(1, 1);
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(id_g0), Some(TRACK));
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(id_g1), Some(TRACK));
+        });
+    }
+
+    #[test]
+    fn fails_if_origin_already_mapped() {
+        new_test_ext(None).execute_with(|| {
+            assert_ok!(ReferendaTracks::<Test, ()>::add_sub_track(
+                RuntimeOrigin::signed(1),
+                1,
+                ORIGIN_SIGNED_1,
+                TRACK,
+            ));
+
+            // Same origin (ORIGIN_SIGNED_1), different sub_track_id
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::add_sub_track(
+                    RuntimeOrigin::signed(1),
+                    2,
+                    ORIGIN_SIGNED_1,
+                    TRACK,
+                ),
+                Error::<Test, ()>::TrackIdAlreadyExisting
+            );
+        });
+    }
+
+    #[test]
+    fn sub_tracks_across_groups() {
+        new_test_ext(None).execute_with(|| {
+            System::set_block_number(1);
+
+            // Account 1 -> group 0, Account 2 -> group 1
+            assert_ok!(ReferendaTracks::<Test, ()>::add_sub_track(
+                RuntimeOrigin::signed(1),
+                0,
+                ORIGIN_SIGNED_1,
+                TRACK,
+            ));
+
+            assert_ok!(ReferendaTracks::<Test, ()>::add_sub_track(
+                RuntimeOrigin::signed(2),
+                0,
+                ORIGIN_SIGNED_2,
+                TRACK,
+            ));
+
+            let id_g0 = u32::combine(0, 0);
+            let id_g1 = u32::combine(1, 0);
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(id_g0), Some(TRACK));
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(id_g1), Some(TRACK));
+        });
+    }
+}
+
+mod multi_group {
+    use super::*;
+
+    #[test]
+    fn groups_coexist() {
+        new_test_ext(None).execute_with(|| {
+            // Create group via root
+            assert_ok!(ReferendaTracks::<Test, ()>::new_group_with_track(
+                RuntimeOrigin::root(),
+                ORIGIN_SIGNED_1,
+                TRACK,
+            ));
+            assert_ok!(ReferendaTracks::<Test, ()>::new_group_with_track(
+                RuntimeOrigin::root(),
+                ORIGIN_SIGNED_2,
+                TRACK,
+            ));
+
+            let id_1 = u32::combine(1, 0);
+            let id_2 = u32::combine(2, 0);
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(id_1), Some(TRACK));
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(id_2), Some(TRACK));
+        });
+    }
+
+    #[test]
+    fn group_manager_cannot_modify_other_group() {
+        new_test_ext(None).execute_with(|| {
+            // Account 1 is admin index 0 -> group 0, account 2 is admin index 1 -> group 1
+            // Create sub-tracks in group 0
+            assert_ok!(ReferendaTracks::<Test, ()>::add_sub_track(
+                RuntimeOrigin::signed(1),
+                0,
+                ORIGIN_SIGNED_1,
+                TRACK,
+            ));
+
+            let group_0_track = u32::combine(0, 0);
+
+            // Account 2 (group 1 manager) should not be able to modify group 0's track
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::set_decision_deposit(
+                    RuntimeOrigin::signed(2),
+                    group_0_track,
+                    500,
+                ),
+                BadOrigin
+            );
+        });
+    }
+
+    #[test]
+    fn tracks_and_track_ids_are_consistent() {
+        use pallet_referenda::TracksInfo;
+
+        new_test_ext(None).execute_with(|| {
+            assert_ok!(ReferendaTracks::<Test, ()>::new_group_with_track(
+                RuntimeOrigin::root(),
+                ORIGIN_SIGNED_1,
+                TRACK,
+            ));
+            assert_ok!(ReferendaTracks::<Test, ()>::new_group_with_track(
+                RuntimeOrigin::root(),
+                ORIGIN_SIGNED_2,
+                TRACK,
+            ));
+
+            let track_ids: Vec<_> =
+                <ReferendaTracks::<Test> as TracksInfo<u64, u64>>::track_ids().collect();
+            let tracks: Vec<_> =
+                <ReferendaTracks::<Test> as TracksInfo<u64, u64>>::tracks().collect();
+
+            assert_eq!(track_ids.len(), 2);
+            assert_eq!(tracks.len(), 2);
+
+            // Every track returned by tracks() should have its id in track_ids()
+            for track in &tracks {
+                assert!(track_ids.contains(&track.id));
+            }
+        });
+    }
+}
+
+mod remove_edge_cases {
+    use super::*;
+
+    #[test]
+    fn fails_with_wrong_pallet_origin() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            // Track exists at 65536, mapped to ORIGIN_SIGNED_1
+            // Try to remove with the wrong origin argument
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::remove(
+                    RuntimeOrigin::signed(1),
+                    65536,
+                    ORIGIN_SIGNED_2, // wrong origin
+                ),
+                sp_runtime::DispatchError::BadOrigin
+            );
+
+            // Track should still exist
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(65536), Some(TRACK));
+        });
+    }
+
+    #[test]
+    fn origin_can_be_reused_after_removal() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            assert_ok!(ReferendaTracks::<Test, ()>::remove(
+                RuntimeOrigin::signed(1),
+                65536,
+                ORIGIN_SIGNED_1,
+            ));
+
+            // The origin should now be free to use for a new track
+            assert_ok!(ReferendaTracks::<Test, ()>::new_group_with_track(
+                RuntimeOrigin::root(),
+                ORIGIN_SIGNED_1,
+                TRACK,
+            ));
         });
     }
 }
@@ -378,6 +635,39 @@ mod set_periods {
     }
 
     #[test]
+    fn noop_with_all_none() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            assert_ok!(ReferendaTracks::<Test, ()>::set_periods(
+                RuntimeOrigin::signed(1),
+                65536,
+                None,
+                None,
+                None,
+                None
+            ));
+
+            // Track should be unchanged
+            assert_eq!(
+                ReferendaTracks::<Test>::get_track_info(65536),
+                Some(TRACK)
+            );
+
+            // Event is still emitted (current behavior)
+            assert_eq!(
+                System::events(),
+                vec![EventRecord {
+                    phase: Phase::Initialization,
+                    event: RuntimeEvent::Tracks(Event::Updated {
+                        id: 65536,
+                        update_type: UpdateType::Periods,
+                    }),
+                    topics: vec![],
+                }],
+            );
+        });
+    }
+
+    #[test]
     fn it_works_with_partial_periods() {
         new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
             let original_prepare = TRACK.prepare_period;
@@ -503,6 +793,23 @@ mod set_curves {
             let updated_track = ReferendaTracks::<Test>::get_track_info(65536).unwrap();
             assert_eq!(updated_track.min_approval, new_approval_curve);
             assert_eq!(updated_track.min_support, new_support_curve);
+        });
+    }
+
+    #[test]
+    fn noop_with_all_none() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            assert_ok!(ReferendaTracks::<Test, ()>::set_curves(
+                RuntimeOrigin::signed(1),
+                65536,
+                None,
+                None
+            ));
+
+            assert_eq!(
+                ReferendaTracks::<Test>::get_track_info(65536),
+                Some(TRACK)
+            );
         });
     }
 

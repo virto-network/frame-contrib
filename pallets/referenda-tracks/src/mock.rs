@@ -13,7 +13,7 @@ use frame_support::{
     weights::Weight,
 };
 use frame_system::EnsureRoot;
-use pallet_referenda::{PalletsOriginOf, TrackIdOf, TrackInfoOf, TracksInfo};
+use pallet_referenda::{PalletsOriginOf, TrackInfoOf};
 use scale_info::TypeInfo;
 use sp_io::TestExternalities;
 use sp_runtime::{
@@ -74,36 +74,12 @@ impl pallet_scheduler::Config for Test {
     type BlockNumberProvider = System;
 }
 
-pub struct EnsureOriginToTrack;
-impl EnsureOriginWithArg<RuntimeOrigin, TrackIdOf<Test, ()>> for EnsureOriginToTrack {
-    type Success = ();
-
-    fn try_origin(
-        o: RuntimeOrigin,
-        id: &TrackIdOf<Test, ()>,
-    ) -> Result<Self::Success, RuntimeOrigin> {
-        let track_id_for_origin: TrackIdOf<Test, ()> =
-            Tracks::track_for(&o.clone().caller).map_err(|_| o.clone())?;
-        frame_support::ensure!(&track_id_for_origin == id, o);
-
-        Ok(())
-    }
-
-    #[cfg(feature = "runtime-benchmarks")]
-    fn try_successful_origin(id: &TrackIdOf<Test, ()>) -> Result<RuntimeOrigin, ()> {
-        let (origin, _) = <crate::OriginToTrackId<Test, ()>>::iter()
-            .find(|(_, track_id)| id == track_id)
-            .expect("track should exist");
-        Ok(origin.into())
-    }
-}
-
 #[cfg(feature = "runtime-benchmarks")]
 pub struct BenchmarkHelper;
 
 #[cfg(feature = "runtime-benchmarks")]
 impl crate::BenchmarkHelper<Test, ()> for BenchmarkHelper {
-    fn track_id(id: u32) -> TrackIdOf<Test, ()> {
+    fn track_id(id: u32) -> pallet_referenda::TrackIdOf<Test, ()> {
         id
     }
 }

@@ -158,7 +158,13 @@ pub mod pallet {
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
+        /// Create a new track group with its first track.
         ///
+        /// Parameters:
+        /// - `group_origin`: The origin to associate with this track.
+        /// - `info`: The track configuration.
+        ///
+        /// Emits `Created` event when successful.
         #[pallet::call_index(0)]
         pub fn new_group_with_track(
             origin: OriginFor<T>,
@@ -170,7 +176,14 @@ pub mod pallet {
             Self::do_insert(id, info, group_origin)
         }
 
+        /// Add a sub-track to an existing group.
         ///
+        /// Parameters:
+        /// - `sub_track_id`: The sub-track ID within the group.
+        /// - `sub_origin`: The origin to associate with this sub-track.
+        /// - `info`: The track configuration.
+        ///
+        /// Emits `Created` event when successful.
         #[pallet::call_index(1)]
         pub fn add_sub_track(
             origin: OriginFor<T>,
