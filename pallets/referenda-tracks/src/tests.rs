@@ -893,3 +893,85 @@ mod set_curves {
         });
     }
 }
+
+mod migration {
+    use super::*;
+    use crate::migration::v0;
+    use frame_support::{traits::UncheckedOnRuntimeUpgrade, BoundedVec};
+
+    #[test]
+    fn v0_to_v1_works() {
+        new_test_ext(None).execute_with(|| {
+            // Simulate v0 state: flat track IDs stored in old format
+            // Old track 1 and 2 (these were group IDs in old model)
+            let old_ids: BoundedVec<u32, MaxTracks> =
+                BoundedVec::try_from(vec![1u32, 2u32]).unwrap();
+            v0::TracksIds::<Test, ()>::put(&old_ids);
+            v0::Tracks::<Test, ()>::insert(1u32, TRACK);
+            v0::Tracks::<Test, ()>::insert(2u32, TRACK);
+
+            // Set up OriginToTrackId with old IDs
+            crate::OriginToTrackId::<Test, ()>::insert(&ORIGIN_SIGNED_1, 1u32);
+            crate::OriginToTrackId::<Test, ()>::insert(&ORIGIN_SIGNED_2, 2u32);
+
+            // Run migration
+            crate::migration::MigrateV0ToV1::<Test, ()>::on_runtime_upgrade();
+
+            // Verify: old track 1 -> combine(1, 0) = 65536
+            // old track 2 -> combine(2, 0) = 131072
+            let new_id_1 = u32::combine(1, 0);
+            let new_id_2 = u32::combine(2, 0);
+            assert_eq!(new_id_1, 65536);
+            assert_eq!(new_id_2, 131072);
+
+            // Tracks accessible via new DoubleMap
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(new_id_1), Some(TRACK));
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(new_id_2), Some(TRACK));
+
+            // TracksIds updated to BoundedBTreeSet with new IDs
+            let ids = crate::TracksIds::<Test, ()>::get();
+            assert_eq!(ids.len(), 2);
+            assert!(ids.contains(&new_id_1));
+            assert!(ids.contains(&new_id_2));
+
+            // OriginToTrackId updated to new IDs
+            assert_eq!(
+                crate::OriginToTrackId::<Test, ()>::get(&ORIGIN_SIGNED_1),
+                Some(new_id_1)
+            );
+            assert_eq!(
+                crate::OriginToTrackId::<Test, ()>::get(&ORIGIN_SIGNED_2),
+                Some(new_id_2)
+            );
+
+            // TrackIdToOrigin populated
+            assert_eq!(
+                crate::TrackIdToOrigin::<Test, ()>::get(new_id_1),
+                Some(ORIGIN_SIGNED_1)
+            );
+            assert_eq!(
+                crate::TrackIdToOrigin::<Test, ()>::get(new_id_2),
+                Some(ORIGIN_SIGNED_2)
+            );
+
+            // NextGroupId set to max(1,2) + 1 = 3
+            assert_eq!(crate::NextGroupId::<Test, ()>::get(), 3u16);
+
+            // Old Tracks storage cleared
+            assert!(v0::Tracks::<Test, ()>::get(1u32).is_none());
+            assert!(v0::Tracks::<Test, ()>::get(2u32).is_none());
+        });
+    }
+
+    #[test]
+    fn v0_to_v1_empty_state() {
+        new_test_ext(None).execute_with(|| {
+            // No tracks in v0
+            crate::migration::MigrateV0ToV1::<Test, ()>::on_runtime_upgrade();
+
+            assert_eq!(crate::TracksIds::<Test, ()>::get().len(), 0);
+            // NextGroupId: default(0).increment() = 1
+            assert_eq!(crate::NextGroupId::<Test, ()>::get(), 1u16);
+        });
+    }
+}

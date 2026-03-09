@@ -25,6 +25,7 @@ extern crate alloc;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
 mod impls;
+pub mod migration;
 mod split_id;
 pub mod weights;
 
@@ -100,7 +101,10 @@ pub mod pallet {
         type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }
 
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+
     #[pallet::pallet]
+    #[pallet::storage_version(STORAGE_VERSION)]
     pub struct Pallet<T, I = ()>(_);
 
     #[pallet::storage]
