@@ -158,6 +158,7 @@ pub mod pallet {
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
+        ///
         #[pallet::call_index(0)]
         pub fn new_group_with_track(
             origin: OriginFor<T>,
@@ -165,10 +166,11 @@ pub mod pallet {
             info: TrackInfoOf<T, I>,
         ) -> DispatchResult {
             T::CreateOrigin::ensure_origin(origin, &group_origin)?;
-            let id = Self::next_group_track_id().ok_or_else(|| Error::<T, I>::MaxTracksExceeded)?;
+            let id = Self::next_group_track_id().ok_or(Error::<T, I>::MaxTracksExceeded)?;
             Self::do_insert(id, info, group_origin)
         }
 
+        ///
         #[pallet::call_index(1)]
         pub fn add_sub_track(
             origin: OriginFor<T>,
@@ -181,45 +183,6 @@ pub mod pallet {
             Self::do_insert(id, info, sub_origin)
         }
 
-        // #[pallet::call_index(0)]
-        // pub fn insert(
-        //     origin: OriginFor<T>,
-        //     id: TrackIdOf<T, I>,
-        //     info: TrackInfoOf<T, I>,
-        //     pallet_origin: PalletsOriginOf<T>,
-        // ) -> DispatchResult {
-        //     T::AdminOrigin::ensure_origin(origin)?;
-        //     Self::do_insert(id, info, pallet_origin)
-        // }
-
-        /// Update the configuration of an existing referenda Track.
-        ///
-        /// **DEPRECATED**: Use granular methods instead (`set_decision_deposit`, `set_periods`, `set_curves`).
-        ///
-        /// Parameters:
-        /// - `id`: The Id of the track to be updated.
-        /// - `info`: The new configuration of the track.
-        ///
-        /// Emits `Updated` event when successful.
-        ///
-        /// Weight: `O(1)`
-        // #[pallet::call_index(1)]
-        // #[deprecated(
-        //     note = "Use granular methods instead: set_decision_deposit, set_periods, set_curves"
-        // )]
-        // pub fn update(
-        //     origin: OriginFor<T>,
-        //     id: TrackIdOf<T, I>,
-        //     info: TrackInfoOf<T, I>,
-        // ) -> DispatchResult {
-        //     T::GroupManagerOrigin::ensure_origin(origin, &id)?;
-        //     Self::do_update(id, info)?;
-        //     Self::deposit_event(Event::Updated {
-        //         id,
-        //         update_type: UpdateType::Full,
-        //     });
-        //     Ok(())
-        // }
         /// Remove an existing track
         ///
         /// Parameters:

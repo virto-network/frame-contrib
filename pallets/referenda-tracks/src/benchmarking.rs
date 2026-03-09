@@ -17,8 +17,6 @@
 
 //! Benchmarks for remarks pallet
 
-use std::collections::BTreeSet;
-
 use super::*;
 use crate::{Event, OriginToTrackId, Pallet as ReferendaTracks, Tracks, TracksIds, UpdateType};
 use frame_benchmarking::v2::*;
@@ -26,6 +24,7 @@ use frame_system::RawOrigin;
 use pallet_referenda::{Curve, TrackInfo, TrackInfoOf};
 use sp_core::Get;
 use sp_runtime::{str_array as s, traits::AtLeast32Bit, BoundedBTreeSet, Perbill};
+use std::collections::BTreeSet;
 
 type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 type BalanceOf<T, I> =
