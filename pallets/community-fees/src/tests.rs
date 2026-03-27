@@ -1,11 +1,14 @@
 use frame::deps::frame_support::{assert_noop, assert_ok, traits::fungibles::Mutate};
-use frame::deps::frame_support::traits::tokens::Preservation;
-use sp_runtime::{BoundedVec, Permill};
+use frame::deps::frame_support::{dispatch::DispatchInfo, traits::tokens::Preservation};
+use sp_runtime::{
+    traits::DispatchTransaction, transaction_validity::InvalidTransaction, BoundedVec, Permill,
+};
 
 use crate::{
     mock::*,
     types::FeeConfig,
-    CommunityFees as CommunityFeesStorage, Error, Event, ProtocolFees, WithFees,
+    ChargeCommunityFees, CommunityFees as CommunityFeesStorage, Error, Event, ProtocolFees,
+    WithFees,
 };
 
 fn fee_name(s: &[u8]) -> BoundedVec<u8, MaxFeeNameLen> {
@@ -15,6 +18,23 @@ fn fee_name(s: &[u8]) -> BoundedVec<u8, MaxFeeNameLen> {
 fn balance_of(asset: AssetId, who: AccountId) -> Balance {
     use frame::deps::frame_support::traits::fungibles::Inspect;
     <Assets as Inspect<_>>::balance(asset, &who)
+}
+
+/// Helper to run the ChargeCommunityFees extension lifecycle on a call.
+fn run_extension(
+    who: AccountId,
+    call: &RuntimeCall,
+) -> <ChargeCommunityFees<Test> as DispatchTransaction<RuntimeCall>>::Result {
+    let ext = ChargeCommunityFees::<Test>::default();
+    let info = DispatchInfo::default();
+    ext.test_run(
+        RuntimeOrigin::signed(who),
+        call,
+        &info,
+        0,
+        0,
+        |_| Ok(().into()),
+    )
 }
 
 // ============================================================================
@@ -387,6 +407,119 @@ mod adapter {
             assert_eq!(balance_of(ASSET_ID, MEMBER_1A), INITIAL_BALANCE - 142);
             assert_eq!(balance_of(ASSET_ID, MEMBER_1B), INITIAL_BALANCE + 100);
             assert_eq!(balance_of(ASSET_ID, FEE_RECEIVER_PROTOCOL), 42);
+        });
+    }
+}
+
+// ============================================================================
+// Transaction extension tests
+// ============================================================================
+
+mod extension {
+    use super::*;
+
+    fn transfer_call(dest: AccountId, amount: Balance) -> RuntimeCall {
+        RuntimeCall::Assets(pallet_assets::Call::transfer {
+            id: ASSET_ID,
+            target: dest.into(),
+            amount,
+        })
+    }
+
+    #[test]
+    fn charges_protocol_fee_on_assets_transfer() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(CommunityFees::set_protocol_fee(
+                RuntimeOrigin::root(),
+                fee_name(b"protocol"),
+                FeeConfig::Percentage(Permill::from_percent(5)),
+                FEE_RECEIVER_PROTOCOL,
+            ));
+
+            let call = transfer_call(MEMBER_1B, 1000);
+            assert_ok!(run_extension(NO_COMMUNITY, &call));
+
+            // Fee was charged in prepare (before the actual call ran)
+            // 5% of 1000 = 50
+            assert_eq!(
+                balance_of(ASSET_ID, NO_COMMUNITY),
+                INITIAL_BALANCE - 50 // only fees deducted (test_run uses a noop call body)
+            );
+            assert_eq!(balance_of(ASSET_ID, FEE_RECEIVER_PROTOCOL), 50);
+        });
+    }
+
+    #[test]
+    fn charges_community_and_protocol_fees() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(CommunityFees::set_protocol_fee(
+                RuntimeOrigin::root(),
+                fee_name(b"protocol"),
+                FeeConfig::Fixed(10),
+                FEE_RECEIVER_PROTOCOL,
+            ));
+            assert_ok!(CommunityFees::set_community_fee(
+                RuntimeOrigin::signed(1), // community 1
+                fee_name(b"community"),
+                FeeConfig::Fixed(20),
+                FEE_RECEIVER_COMMUNITY,
+            ));
+
+            let call = transfer_call(MEMBER_1B, 500);
+            assert_ok!(run_extension(MEMBER_1A, &call));
+
+            // Protocol + community fees charged
+            assert_eq!(
+                balance_of(ASSET_ID, MEMBER_1A),
+                INITIAL_BALANCE - 30 // 10 + 20
+            );
+            assert_eq!(balance_of(ASSET_ID, FEE_RECEIVER_PROTOCOL), 10);
+            assert_eq!(balance_of(ASSET_ID, FEE_RECEIVER_COMMUNITY), 20);
+        });
+    }
+
+    #[test]
+    fn no_fees_on_non_asset_calls() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(CommunityFees::set_protocol_fee(
+                RuntimeOrigin::root(),
+                fee_name(b"protocol"),
+                FeeConfig::Fixed(100),
+                FEE_RECEIVER_PROTOCOL,
+            ));
+
+            // A non-asset call (system remark)
+            let call = RuntimeCall::System(
+                frame::deps::frame_system::Call::remark {
+                    remark: b"hello".to_vec(),
+                },
+            );
+            assert_ok!(run_extension(MEMBER_1A, &call));
+
+            // No fees charged
+            assert_eq!(balance_of(ASSET_ID, MEMBER_1A), INITIAL_BALANCE);
+            assert_eq!(balance_of(ASSET_ID, FEE_RECEIVER_PROTOCOL), 0);
+        });
+    }
+
+    #[test]
+    fn rejects_if_insufficient_balance_for_fees() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(CommunityFees::set_protocol_fee(
+                RuntimeOrigin::root(),
+                fee_name(b"big_fee"),
+                FeeConfig::Fixed(INITIAL_BALANCE + 1), // more than balance
+                FEE_RECEIVER_PROTOCOL,
+            ));
+
+            let call = transfer_call(MEMBER_1B, 100);
+            assert_noop!(
+                run_extension(MEMBER_1A, &call),
+                InvalidTransaction::Payment,
+            );
+
+            // Nothing changed
+            assert_eq!(balance_of(ASSET_ID, MEMBER_1A), INITIAL_BALANCE);
         });
     }
 }

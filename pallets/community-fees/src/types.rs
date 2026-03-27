@@ -68,3 +68,16 @@ pub struct NamedFeeEntry<T: Config> {
     pub config: FeeConfigOf<T>,
     pub beneficiary: T::AccountId,
 }
+
+/// Inspects runtime calls to detect asset transfer operations.
+/// Used by the transaction extension to charge fees on direct pallet-assets calls.
+pub trait CallInspector<Call, AssetId, Balance> {
+    /// If the call involves an asset transfer, returns `(asset_id, amount)`.
+    fn extract_asset_transfer(call: &Call) -> Option<(AssetId, Balance)>;
+}
+
+impl<C, A, B> CallInspector<C, A, B> for () {
+    fn extract_asset_transfer(_: &C) -> Option<(A, B)> {
+        None
+    }
+}

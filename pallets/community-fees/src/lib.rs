@@ -19,9 +19,11 @@ mod mock;
 mod tests;
 
 mod adapter;
+mod extensions;
 pub mod types;
 
 pub use adapter::*;
+pub use extensions::*;
 pub use pallet::*;
 pub use types::*;
 
@@ -62,6 +64,10 @@ pub mod pallet {
         type Assets: fungibles::Inspect<Self::AccountId, Balance = Self::Balance>
             + fungibles::Unbalanced<Self::AccountId>
             + fungibles::Mutate<Self::AccountId>;
+
+        /// Inspects runtime calls to detect asset transfer operations
+        /// for the transaction extension.
+        type CallInspector: CallInspector<Self::RuntimeCall, AssetIdOf<Self>, Self::Balance>;
     }
 
     #[pallet::pallet]

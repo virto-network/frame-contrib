@@ -82,6 +82,22 @@ impl AccountCommunity<AccountId, CommunityId> for DummyAccountCommunity {
     }
 }
 
+/// Dummy call inspector that detects pallet-assets transfer calls.
+pub struct MockCallInspector;
+impl CallInspector<RuntimeCall, AssetId, Balance> for MockCallInspector {
+    fn extract_asset_transfer(call: &RuntimeCall) -> Option<(AssetId, Balance)> {
+        match call {
+            RuntimeCall::Assets(pallet_assets::Call::transfer { id, amount, .. }) => {
+                Some((*id, *amount))
+            }
+            RuntimeCall::Assets(pallet_assets::Call::transfer_keep_alive {
+                id, amount, ..
+            }) => Some((*id, *amount)),
+            _ => None,
+        }
+    }
+}
+
 parameter_types! {
     pub const MaxFeeNameLen: u32 = 64;
     pub const MaxProtocolFees: u32 = 10;
@@ -98,6 +114,7 @@ impl Config for Test {
     type CommunityOrigin = EnsureSigned<AccountId>; // signer = community id for tests
     type CommunityDetector = DummyAccountCommunity;
     type Assets = Assets;
+    type CallInspector = MockCallInspector;
 }
 
 pub(crate) fn new_test_ext() -> TestExternalities {
