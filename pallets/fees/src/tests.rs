@@ -7,7 +7,7 @@ use sp_runtime::{
 use crate::{
     mock::*,
     types::FeeConfig,
-    ChargeCommunityFees, CommunityFees as CommunityFeesStorage, Error, Event, ProtocolFees,
+    ChargeFees, CommunityFees as CommunityFeesStorage, Error, Event, ProtocolFees,
     WithFees,
 };
 
@@ -20,12 +20,12 @@ fn balance_of(asset: AssetId, who: AccountId) -> Balance {
     <Assets as Inspect<_>>::balance(asset, &who)
 }
 
-/// Helper to run the ChargeCommunityFees extension lifecycle on a call.
+/// Helper to run the ChargeFees extension lifecycle on a call.
 fn run_extension(
     who: AccountId,
     call: &RuntimeCall,
-) -> <ChargeCommunityFees<Test> as DispatchTransaction<RuntimeCall>>::Result {
-    let ext = ChargeCommunityFees::<Test>::default();
+) -> <ChargeFees<Test> as DispatchTransaction<RuntimeCall>>::Result {
+    let ext = ChargeFees::<Test>::default();
     let info = DispatchInfo::default();
     ext.test_run(
         RuntimeOrigin::signed(who),
@@ -47,7 +47,7 @@ mod protocol_fees {
     #[test]
     fn set_protocol_fee_works() {
         new_test_ext().execute_with(|| {
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"protocol_cut"),
                 FeeConfig::Percentage(Permill::from_percent(5)),
@@ -75,14 +75,14 @@ mod protocol_fees {
     #[test]
     fn set_protocol_fee_upserts() {
         new_test_ext().execute_with(|| {
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"fee"),
                 FeeConfig::Fixed(10),
                 FEE_RECEIVER_PROTOCOL,
             ));
             // Update the same fee
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"fee"),
                 FeeConfig::Fixed(20),
@@ -100,7 +100,7 @@ mod protocol_fees {
     fn set_protocol_fee_requires_admin() {
         new_test_ext().execute_with(|| {
             assert_noop!(
-                CommunityFees::set_protocol_fee(
+                Fees::set_protocol_fee(
                     RuntimeOrigin::signed(MEMBER_1A),
                     fee_name(b"fee"),
                     FeeConfig::Fixed(10),
@@ -114,13 +114,13 @@ mod protocol_fees {
     #[test]
     fn remove_protocol_fee_works() {
         new_test_ext().execute_with(|| {
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"fee"),
                 FeeConfig::Fixed(10),
                 FEE_RECEIVER_PROTOCOL,
             ));
-            assert_ok!(CommunityFees::remove_protocol_fee(
+            assert_ok!(Fees::remove_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"fee"),
             ));
@@ -132,7 +132,7 @@ mod protocol_fees {
     fn remove_nonexistent_protocol_fee_fails() {
         new_test_ext().execute_with(|| {
             assert_noop!(
-                CommunityFees::remove_protocol_fee(RuntimeOrigin::root(), fee_name(b"nope")),
+                Fees::remove_protocol_fee(RuntimeOrigin::root(), fee_name(b"nope")),
                 Error::<Test>::FeeNotFound,
             );
         });
@@ -146,7 +146,7 @@ mod community_fees {
     fn set_community_fee_works() {
         new_test_ext().execute_with(|| {
             // Signed by community admin (account 10 => community id 10)
-            assert_ok!(CommunityFees::set_community_fee(
+            assert_ok!(Fees::set_community_fee(
                 RuntimeOrigin::signed(COMMUNITY_1_ADMIN),
                 fee_name(b"community_cut"),
                 FeeConfig::Percentage(Permill::from_percent(3)),
@@ -162,13 +162,13 @@ mod community_fees {
     #[test]
     fn remove_community_fee_works() {
         new_test_ext().execute_with(|| {
-            assert_ok!(CommunityFees::set_community_fee(
+            assert_ok!(Fees::set_community_fee(
                 RuntimeOrigin::signed(COMMUNITY_1_ADMIN),
                 fee_name(b"fee"),
                 FeeConfig::Fixed(5),
                 FEE_RECEIVER_COMMUNITY,
             ));
-            assert_ok!(CommunityFees::remove_community_fee(
+            assert_ok!(Fees::remove_community_fee(
                 RuntimeOrigin::signed(COMMUNITY_1_ADMIN),
                 fee_name(b"fee"),
             ));
@@ -243,7 +243,7 @@ mod adapter {
     fn transfer_with_protocol_fee_charges_on_top() {
         new_test_ext().execute_with(|| {
             // Set a 5% protocol fee
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"protocol"),
                 FeeConfig::Percentage(Permill::from_percent(5)),
@@ -272,7 +272,7 @@ mod adapter {
     fn transfer_with_community_and_protocol_fees() {
         new_test_ext().execute_with(|| {
             // Set protocol fee: 5% -> account 50
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"protocol"),
                 FeeConfig::Percentage(Permill::from_percent(5)),
@@ -282,7 +282,7 @@ mod adapter {
             // Set community 1 fee: 3% -> account 51
             // CommunityOrigin = EnsureSigned, so signed(1) => community_id = 1
             // DummyAccountCommunity maps accounts 100..=199 to community 1
-            assert_ok!(CommunityFees::set_community_fee(
+            assert_ok!(Fees::set_community_fee(
                 RuntimeOrigin::signed(1), // community id 1
                 fee_name(b"community"),
                 FeeConfig::Percentage(Permill::from_percent(3)),
@@ -329,7 +329,7 @@ mod adapter {
     fn transfer_fails_if_insufficient_for_fees() {
         new_test_ext().execute_with(|| {
             // Set a huge fixed protocol fee
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"big_fee"),
                 FeeConfig::Fixed(INITIAL_BALANCE), // fee equals entire balance
@@ -358,13 +358,13 @@ mod adapter {
     fn no_community_fees_for_non_member() {
         new_test_ext().execute_with(|| {
             // Set both protocol and community fees
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"protocol"),
                 FeeConfig::Fixed(10),
                 FEE_RECEIVER_PROTOCOL,
             ));
-            assert_ok!(CommunityFees::set_community_fee(
+            assert_ok!(Fees::set_community_fee(
                 RuntimeOrigin::signed(1),
                 fee_name(b"community"),
                 FeeConfig::Fixed(20),
@@ -389,7 +389,7 @@ mod adapter {
     #[test]
     fn fixed_fee_on_transfer() {
         new_test_ext().execute_with(|| {
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"flat"),
                 FeeConfig::Fixed(42),
@@ -429,7 +429,7 @@ mod extension {
     #[test]
     fn charges_protocol_fee_on_assets_transfer() {
         new_test_ext().execute_with(|| {
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"protocol"),
                 FeeConfig::Percentage(Permill::from_percent(5)),
@@ -452,13 +452,13 @@ mod extension {
     #[test]
     fn charges_community_and_protocol_fees() {
         new_test_ext().execute_with(|| {
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"protocol"),
                 FeeConfig::Fixed(10),
                 FEE_RECEIVER_PROTOCOL,
             ));
-            assert_ok!(CommunityFees::set_community_fee(
+            assert_ok!(Fees::set_community_fee(
                 RuntimeOrigin::signed(1), // community 1
                 fee_name(b"community"),
                 FeeConfig::Fixed(20),
@@ -481,7 +481,7 @@ mod extension {
     #[test]
     fn no_fees_on_non_asset_calls() {
         new_test_ext().execute_with(|| {
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"protocol"),
                 FeeConfig::Fixed(100),
@@ -505,7 +505,7 @@ mod extension {
     #[test]
     fn rejects_if_insufficient_balance_for_fees() {
         new_test_ext().execute_with(|| {
-            assert_ok!(CommunityFees::set_protocol_fee(
+            assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"big_fee"),
                 FeeConfig::Fixed(INITIAL_BALANCE + 1), // more than balance

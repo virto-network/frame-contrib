@@ -1165,7 +1165,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fc-pallet-community-fees"
+name = "fc-pallet-fees"
 version = "0.1.0"
 dependencies = [
  "pallet-assets",

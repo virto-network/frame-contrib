@@ -29,7 +29,7 @@ fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", defau
 fc-traits-payments = { path = "./traits/payments", default-features = false }
 fc-pallet-listings = { path = "./pallets/listings", default-features = false }
 fc-pallet-payments = { path = "./pallets/payments", default-features = false }
-fc-pallet-community-fees = { path = "./pallets/community-fees", default-features = false }
+fc-pallet-fees = { path = "./pallets/fees", default-features = false }
 fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", default-features = false }
 mock-helpers = { path = "./mock-helpers", default-features = false }
 

@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-//! # Community Fees Pallet
+//! # Fees Pallet
 //!
 //! Allows protocol governance and communities to configure custom fees
 //! that are applied on asset transfers. Protocol fees always apply;

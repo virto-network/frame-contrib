@@ -27,26 +27,26 @@ use crate::types::{AssetIdOf, BalanceOf};
 /// the sender's balance is reduced before the transfer runs.
 #[derive(Encode, Decode, DecodeWithMemTracking, Clone, Eq, PartialEq, TypeInfo)]
 #[scale_info(skip_type_params(T))]
-pub struct ChargeCommunityFees<T: Config>(#[codec(skip)] PhantomData<T>);
+pub struct ChargeFees<T: Config>(#[codec(skip)] PhantomData<T>);
 
-impl<T: Config> Default for ChargeCommunityFees<T> {
+impl<T: Config> Default for ChargeFees<T> {
     fn default() -> Self {
         Self(PhantomData)
     }
 }
 
-impl<T: Config> core::fmt::Debug for ChargeCommunityFees<T> {
+impl<T: Config> core::fmt::Debug for ChargeFees<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "ChargeCommunityFees")
+        write!(f, "ChargeFees")
     }
 }
 
-impl<T> TransactionExtension<T::RuntimeCall> for ChargeCommunityFees<T>
+impl<T> TransactionExtension<T::RuntimeCall> for ChargeFees<T>
 where
     T: Config + Send + Sync,
     T::RuntimeCall: Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>,
 {
-    const IDENTIFIER: &'static str = "ChargeCommunityFees";
+    const IDENTIFIER: &'static str = "ChargeFees";
     type Implicit = ();
     type Val = Option<(AssetIdOf<T>, BalanceOf<T>, T::AccountId)>;
     type Pre = ();

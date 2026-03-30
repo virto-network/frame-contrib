@@ -2,7 +2,7 @@
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
-name = "fc-pallet-community-fees"
+name = "fc-pallet-fees"
 repository.workspace = true
 version = "0.1.0"
 

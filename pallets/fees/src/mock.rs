@@ -47,7 +47,7 @@ pub mod runtime {
     #[runtime::pallet_index(11)]
     pub type Assets = pallet_assets;
     #[runtime::pallet_index(20)]
-    pub type CommunityFees = crate;
+    pub type Fees = crate;
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
