@@ -106,7 +106,6 @@ parameter_types! {
 
 impl Config for Test {
     type CommunityId = CommunityId;
-    type Balance = Balance;
     type MaxFeeNameLen = MaxFeeNameLen;
     type MaxProtocolFees = MaxProtocolFees;
     type MaxCommunityFees = MaxCommunityFees;

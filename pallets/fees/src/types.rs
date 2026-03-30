@@ -6,7 +6,9 @@ use sp_runtime::Permill;
 use super::pallet::Config;
 
 // Type aliases
-pub type BalanceOf<T> = <T as Config>::Balance;
+pub type BalanceOf<T> = <<T as Config>::Assets as fungibles::Inspect<
+    <T as frame::deps::frame_system::Config>::AccountId,
+>>::Balance;
 pub type FeeNameOf<T> = sp_runtime::BoundedVec<u8, <T as Config>::MaxFeeNameLen>;
 pub type FeeConfigOf<T> = FeeConfig<BalanceOf<T>>;
 pub type NamedFeeEntryOf<T> = NamedFeeEntry<T>;

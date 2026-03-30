@@ -10,7 +10,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use frame::prelude::*;
-use frame::deps::frame_support::traits::{fungibles, tokens};
+use frame::deps::frame_support::traits::fungibles;
 use sp_runtime::traits::Zero;
 
 #[cfg(test)]
@@ -36,9 +36,6 @@ pub mod pallet {
         /// Community identifier type.
         type CommunityId: Parameter + MaxEncodedLen + Copy;
 
-        /// Balance type for fee amounts.
-        type Balance: tokens::Balance + Ord;
-
         /// Maximum length of a fee name.
         #[pallet::constant]
         type MaxFeeNameLen: Get<u32>;
@@ -60,14 +57,14 @@ pub mod pallet {
         /// Maps accounts to their community.
         type CommunityDetector: AccountCommunity<Self::AccountId, Self::CommunityId>;
 
-        /// The inner fungibles implementation to wrap with fee logic.
-        type Assets: fungibles::Inspect<Self::AccountId, Balance = Self::Balance>
+        /// The fungibles implementation providing asset transfers.
+        type Assets: fungibles::Inspect<Self::AccountId, Balance: Ord>
             + fungibles::Unbalanced<Self::AccountId>
             + fungibles::Mutate<Self::AccountId>;
 
         /// Inspects runtime calls to detect asset transfer operations
         /// for the transaction extension.
-        type CallInspector: CallInspector<Self::RuntimeCall, AssetIdOf<Self>, Self::Balance>;
+        type CallInspector: CallInspector<Self::RuntimeCall, AssetIdOf<Self>, BalanceOf<Self>>;
     }
 
     #[pallet::pallet]
@@ -108,7 +105,7 @@ pub mod pallet {
         /// Fees were charged on a transfer.
         FeesCharged {
             who: T::AccountId,
-            total_fees: T::Balance,
+            total_fees: BalanceOf<T>,
         },
     }
 
@@ -224,8 +221,8 @@ pub mod pallet {
         /// Returns a list of (beneficiary, fee_amount) pairs.
         pub fn calculate_fees(
             who: &T::AccountId,
-            amount: T::Balance,
-        ) -> Vec<(T::AccountId, T::Balance)> {
+            amount: BalanceOf<T>,
+        ) -> Vec<(T::AccountId, BalanceOf<T>)> {
             let mut fees = Vec::new();
 
             // Protocol fees always apply
