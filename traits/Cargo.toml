@@ -12,7 +12,6 @@ fc-traits-gas-tank.workspace = true
 fc-traits-listings.workspace = true
 fc-traits-memberships.workspace = true
 fc-traits-payments.workspace = true
-fc-traits-tracks.workspace = true
 
 [features]
 default = ["std"]
@@ -22,11 +21,9 @@ std = [
 	"fc-traits-listings/std",
 	"fc-traits-memberships/std",
 	"fc-traits-payments/std",
-	"fc-traits-tracks/std",
 ]
 runtime-benchmarks = [
 	"fc-traits-gas-tank/runtime-benchmarks",
 	"fc-traits-memberships/runtime-benchmarks",
-	"fc-traits-tracks/runtime-benchmarks",
 	"fc-traits-payments/runtime-benchmarks"
 ]

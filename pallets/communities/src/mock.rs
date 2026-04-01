@@ -270,10 +270,33 @@ impl fc_pallet_referenda_tracks::BenchmarkHelper<Test> for TracksBenchmarkHelper
 parameter_types! {
     pub const MaxTracks: u32 = u32::MAX;
 }
+/// Returns a default group ID (0) when root creates a sub-track.
+pub struct EnsureRootReturnGroupId;
+impl EnsureOriginWithArg<RuntimeOrigin, pallet_referenda::PalletsOriginOf<Test>>
+    for EnsureRootReturnGroupId
+{
+    type Success = <CommunityId as fc_pallet_referenda_tracks::SplitId>::Half;
+
+    fn try_origin(
+        o: RuntimeOrigin,
+        _arg: &pallet_referenda::PalletsOriginOf<Test>,
+    ) -> Result<Self::Success, RuntimeOrigin> {
+        <EnsureRoot<AccountId> as frame_support::traits::EnsureOrigin<RuntimeOrigin>>::try_origin(o)
+            .map(|_| Default::default())
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin(_arg: &PalletsOriginOf<Test>) -> Result<RuntimeOrigin, ()> {
+        Ok(RuntimeOrigin::root())
+    }
+}
+
 impl fc_pallet_referenda_tracks::Config for Test {
     type WeightInfo = ();
-    type AdminOrigin = EnsureRoot<AccountId>;
-    type UpdateOrigin = EnsureOriginToTrack;
+    type CreateOrigin = frame_support::traits::AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
+    type GroupManagerCreateOrigin = EnsureRootReturnGroupId;
+    type GroupManagerOrigin = EnsureOriginToTrack;
+    type RemoveGroupOrigin = frame_support::traits::AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type TrackId = CommunityId;
     type MaxTracks = MaxTracks;
 
@@ -393,7 +416,7 @@ impl BenchmarkHelper<Test> for CommunityBenchmarkHelper {
             },
         };
 
-        Tracks::insert(RuntimeOrigin::root(), id, info, track_origin.clone())?;
+        Tracks::do_insert(id, info, track_origin.clone())?;
 
         Ok(())
     }
@@ -642,8 +665,7 @@ impl TestEnvBuilder {
                 }
 
                 for (_, track_info) in self.tracks.iter().filter(|(cid, _)| cid == community_id) {
-                    Tracks::insert(
-                        RuntimeOrigin::root(),
+                    Tracks::do_insert(
                         *community_id,
                         track_info.clone(),
                         community_origin.caller.clone(),
