@@ -74,11 +74,22 @@ impl<T: Config<I>, I: 'static> UncheckedOnRuntimeUpgrade for MigrateV0ToV1<T, I>
         let mut max_group = GroupIdOf::<T, I>::default();
 
         for (old_id, info) in &tracks_data {
-            // Old track ID maps to the group ID, sub-track is 0
-            // We cannot use old_id.split() because old IDs were flat (small values
-            // that would all land in group 0). Instead, truncate old_id to Half
-            // and use it as the group directly.
-            let (_, old_as_half) = old_id.split(); // lower bits = old flat ID
+            // Old track IDs should be small values that fit in the Half type.
+            // split() puts upper bits in first, lower bits in second.
+            // For small IDs (< Half::MAX), upper bits are 0 and lower bits = the ID.
+            let (upper, old_as_half) = old_id.split();
+
+            // Defensive: verify upper half is zero (old ID fits in Half range).
+            // If not, the ID would lose bits during migration.
+            if upper != GroupIdOf::<T, I>::default() {
+                log::error!(
+                    target: LOG_TARGET,
+                    "Track {:?} has non-zero upper half {:?}, cannot safely migrate — skipping",
+                    old_id, upper
+                );
+                continue;
+            }
+
             let group = old_as_half;
             let sub = SubTrackIdOf::<T, I>::default();
             let new_id = T::TrackId::combine(group.clone(), sub.clone());
@@ -106,10 +117,24 @@ impl<T: Config<I>, I: 'static> UncheckedOnRuntimeUpgrade for MigrateV0ToV1<T, I>
         super::TracksIds::<T, I>::put(new_ids);
         writes += 1;
 
-        // 5. Update OriginToTrackId values and populate TrackIdToOrigin
-        for (key, old_id) in OriginToTrackId::<T, I>::iter() {
-            reads += 1;
-            let (_, old_as_half) = old_id.split();
+        // 5. Collect OriginToTrackId entries first, then mutate
+        // (avoids iterating storage while mutating it)
+        let origin_entries: Vec<_> = OriginToTrackId::<T, I>::iter().collect();
+        reads += origin_entries.len() as u64;
+
+        for (key, old_id) in origin_entries {
+            let (upper, old_as_half) = old_id.split();
+
+            // Skip entries with IDs that don't fit in Half (same defensive check)
+            if upper != GroupIdOf::<T, I>::default() {
+                log::error!(
+                    target: LOG_TARGET,
+                    "OriginToTrackId entry {:?} has non-zero upper half, skipping",
+                    old_id
+                );
+                continue;
+            }
+
             let new_id = T::TrackId::combine(old_as_half, SubTrackIdOf::<T, I>::default());
 
             if new_id != old_id {
@@ -122,7 +147,9 @@ impl<T: Config<I>, I: 'static> UncheckedOnRuntimeUpgrade for MigrateV0ToV1<T, I>
         }
 
         // 6. Set NextGroupId (max_group tracks the highest group = highest old ID as half)
-        let next_group = max_group.increment().unwrap_or(max_group.clone());
+        let next_group = max_group
+            .increment()
+            .expect("NextGroupId overflow: too many groups to migrate");
         NextGroupId::<T, I>::put(next_group.clone());
         writes += 1;
 
@@ -140,6 +167,18 @@ impl<T: Config<I>, I: 'static> UncheckedOnRuntimeUpgrade for MigrateV0ToV1<T, I>
     fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
         let old_ids = v0::TracksIds::<T, I>::get();
         let count = old_ids.len() as u32;
+
+        // Verify all old IDs fit in the Half range
+        for old_id in old_ids.iter() {
+            let (upper, _) = old_id.split();
+            frame_support::ensure!(
+                upper == GroupIdOf::<T, I>::default(),
+                sp_runtime::TryRuntimeError::Other(
+                    "Old track ID exceeds Half range, migration would lose data"
+                )
+            );
+        }
+
         log::info!(
             target: LOG_TARGET,
             "Pre-upgrade: {} tracks to migrate",
@@ -179,10 +218,18 @@ impl<T: Config<I>, I: 'static> UncheckedOnRuntimeUpgrade for MigrateV0ToV1<T, I>
             );
         }
 
+        // Verify NextGroupId is set correctly
+        let next_group = NextGroupId::<T, I>::get();
+        frame_support::ensure!(
+            next_group != GroupIdOf::<T, I>::default() || actual_count == 0,
+            sp_runtime::TryRuntimeError::Other("NextGroupId not initialized after migration")
+        );
+
         log::info!(
             target: LOG_TARGET,
-            "Post-upgrade: {} tracks verified",
-            actual_count
+            "Post-upgrade: {} tracks verified, NextGroupId = {:?}",
+            actual_count,
+            next_group
         );
         Ok(())
     }

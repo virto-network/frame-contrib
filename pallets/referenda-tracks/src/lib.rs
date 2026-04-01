@@ -78,6 +78,9 @@ pub mod pallet {
             Success = GroupIdOf<Self, I>,
         >;
         type GroupManagerOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, Self::TrackId>;
+        /// An origin that is authorized to remove an entire group and reclaim its storage.
+        /// Typically root or the protocol governance, used when a community is deleted.
+        type RemoveGroupOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, GroupIdOf<Self, I>>;
 
         // Types: A set of parameter types that the pallet uses to handle information.
 
@@ -112,6 +115,10 @@ pub mod pallet {
         StorageValue<_, GroupIdOf<T, I>, ValueQuery>;
 
     #[pallet::storage]
+    pub type NextSubTrackId<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, GroupIdOf<T, I>, SubTrackIdOf<T, I>, ValueQuery>;
+
+    #[pallet::storage]
     pub type TracksIds<T: Config<I>, I: 'static = ()> =
         StorageValue<_, BoundedBTreeSet<TrackIdOf<T, I>, T::MaxTracks>, ValueQuery>;
 
@@ -143,6 +150,8 @@ pub mod pallet {
         Periods,
         /// One or more curves were updated
         Curves,
+        /// Max deciding was updated
+        MaxDeciding,
     }
 
     #[pallet::event]
@@ -157,6 +166,11 @@ pub mod pallet {
         },
         /// A track has been removed
         Removed { id: TrackIdOf<T, I> },
+        /// An entire group and all its tracks have been removed
+        GroupRemoved {
+            group: GroupIdOf<T, I>,
+            tracks_removed: u32,
+        },
     }
 
     #[pallet::error]
@@ -173,6 +187,12 @@ pub mod pallet {
         NothingToUpdate,
         /// The track configuration contains invalid parameters
         InvalidTrackInfo,
+        /// The group has no tracks (nothing to remove)
+        GroupNotFound,
+        /// The group has active referenda and cannot be removed
+        CannotRemoveGroup,
+        /// The actual number of sub-tracks exceeds the declared `max_tracks` hint
+        TooManyTracks,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -195,10 +215,9 @@ pub mod pallet {
             Self::do_insert(id, info, group_origin)
         }
 
-        /// Add a sub-track to an existing group.
+        /// Add a sub-track to an existing group. The sub-track ID is auto-assigned.
         ///
         /// Parameters:
-        /// - `sub_track_id`: The sub-track ID within the group.
         /// - `sub_origin`: The origin to associate with this sub-track.
         /// - `info`: The track configuration.
         ///
@@ -206,12 +225,11 @@ pub mod pallet {
         #[pallet::call_index(1)]
         pub fn add_sub_track(
             origin: OriginFor<T>,
-            sub_track_id: SubTrackIdOf<T, I>,
             sub_origin: PalletsOriginOf<T>,
             info: TrackInfoOf<T, I>,
         ) -> DispatchResult {
             let group = T::GroupManagerCreateOrigin::ensure_origin(origin, &sub_origin)?;
-            let id = T::TrackId::combine(group, sub_track_id);
+            let id = Self::next_sub_track_id(group).ok_or(Error::<T, I>::MaxTracksExceeded)?;
             Self::do_insert(id, info, sub_origin)
         }
 
@@ -316,6 +334,52 @@ pub mod pallet {
             Self::deposit_event(Event::Updated {
                 id,
                 update_type: UpdateType::Curves,
+            });
+            Ok(())
+        }
+
+        /// Remove an entire group and all its tracks, reclaiming storage.
+        ///
+        /// This is meant for protocol-level cleanup when a community is deleted.
+        /// Fails if any track in the group has active referenda.
+        ///
+        /// Parameters:
+        /// - `group`: The group ID to remove.
+        /// - `max_tracks`: Upper bound on the number of sub-tracks in the group.
+        ///   Used for weight calculation. Fails if actual count exceeds this.
+        ///
+        /// Emits `GroupRemoved` event when successful.
+        #[pallet::call_index(6)]
+        #[pallet::weight(<T as Config<I>>::WeightInfo::remove_group(*max_tracks))]
+        pub fn remove_group(
+            origin: OriginFor<T>,
+            group: GroupIdOf<T, I>,
+            max_tracks: u32,
+        ) -> DispatchResult {
+            T::RemoveGroupOrigin::ensure_origin(origin, &group)?;
+            Self::do_remove_group(group, max_tracks)
+        }
+
+        /// Set the maximum number of simultaneous deciding referenda for a track.
+        ///
+        /// Parameters:
+        /// - `id`: The Id of the track to be updated.
+        /// - `max_deciding`: The new maximum deciding count (must be > 0).
+        ///
+        /// Emits `Updated` event when successful.
+        #[pallet::call_index(7)]
+        #[pallet::weight(<T as Config<I>>::WeightInfo::set_max_deciding())]
+        pub fn set_max_deciding(
+            origin: OriginFor<T>,
+            id: TrackIdOf<T, I>,
+            max_deciding: u32,
+        ) -> DispatchResult {
+            ensure!(max_deciding > 0, Error::<T, I>::InvalidTrackInfo);
+            T::GroupManagerOrigin::ensure_origin(origin, &id)?;
+            Self::do_set_max_deciding(id, max_deciding)?;
+            Self::deposit_event(Event::Updated {
+                id,
+                update_type: UpdateType::MaxDeciding,
             });
             Ok(())
         }

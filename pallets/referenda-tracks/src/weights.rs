@@ -58,6 +58,8 @@ pub trait WeightInfo {
 	fn set_decision_deposit() -> Weight;
 	fn set_periods() -> Weight;
 	fn set_curves() -> Weight;
+	fn remove_group(n: u32) -> Weight;
+	fn set_max_deciding() -> Weight;
 }
 
 /// Weights for pallet_referenda_tracks using the Substrate node and recommended hardware.
@@ -113,37 +115,39 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(1))
 			.saturating_add(T::DbWeight::get().writes(1))
 	}
+
+	fn remove_group(n: u32) -> Weight {
+		// Per sub-track: 3 reads (Tracks iter, DecidingCount, TrackQueue) + 4 writes (Tracks, TrackIdToOrigin, OriginToTrackId, TracksIds)
+		// Base: 1 read (NextSubTrackId) + 1 write (NextSubTrackId)
+		Weight::from_parts(10_000_000, 0)
+			.saturating_add(Weight::from_parts(5_000_000u64.saturating_mul(n as u64), 0))
+			.saturating_add(T::DbWeight::get().reads(1 + 3u64.saturating_mul(n as u64)))
+			.saturating_add(T::DbWeight::get().writes(1 + 4u64.saturating_mul(n as u64)))
+	}
+
+	fn set_max_deciding() -> Weight {
+		// Reads: Tracks (try_mutate)
+		// Writes: Tracks
+		Weight::from_parts(7_500_000, 0)
+			.saturating_add(T::DbWeight::get().reads(1))
+			.saturating_add(T::DbWeight::get().writes(1))
+	}
 }
 
 // For backwards compatibility and tests
 impl WeightInfo for () {
 	fn new_group_with_track() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 8_471_000 picoseconds.
 		Weight::from_parts(8_586_000, 0)
-			// Standard Error: 0
 			.saturating_add(Weight::from_parts(1_359, 0))
 	}
 
 	fn add_sub_track() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 8_471_000 picoseconds.
 		Weight::from_parts(8_586_000, 0)
-			// Standard Error: 0
 			.saturating_add(Weight::from_parts(1_359, 0))
 	}
 
 	fn remove() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 8_471_000 picoseconds.
 		Weight::from_parts(8_586_000, 0)
-			// Standard Error: 0
 			.saturating_add(Weight::from_parts(1_359, 0))
 	}
 
@@ -157,5 +161,16 @@ impl WeightInfo for () {
 
 	fn set_curves() -> Weight {
 		Weight::from_parts(8_500_000, 0)
+	}
+
+	fn remove_group(n: u32) -> Weight {
+		Weight::from_parts(
+			10_000_000u64.saturating_add(5_000_000u64.saturating_mul(n as u64)),
+			0,
+		)
+	}
+
+	fn set_max_deciding() -> Weight {
+		Weight::from_parts(7_500_000, 0)
 	}
 }

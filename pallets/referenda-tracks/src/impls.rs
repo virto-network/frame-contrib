@@ -2,6 +2,7 @@ use super::*;
 
 use alloc::borrow::Cow;
 use frame_support::{ensure, traits::Incrementable};
+use sp_core::Get;
 use sp_runtime::{traits::Zero, DispatchError, DispatchResult};
 
 type OriginOf<T> = <<T as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin;
@@ -57,11 +58,15 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             !info.decision_period.is_zero(),
             Error::<T, I>::InvalidTrackInfo
         );
+        ensure!(
+            !info.confirm_period.is_zero(),
+            Error::<T, I>::InvalidTrackInfo
+        );
         Ok(())
     }
 
     /// Inserts a new track into the tracks storage.
-    pub(crate) fn do_insert(
+    pub fn do_insert(
         id: T::TrackId,
         info: TrackInfoOf<T, I>,
         origin: OriginOf<T>,
@@ -85,6 +90,16 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
         Self::deposit_event(Event::Created { id });
         Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn next_sub_track_id(group: GroupIdOf<T, I>) -> Option<T::TrackId> {
+        NextSubTrackId::<T, I>::try_mutate(group.clone(), |id| -> Result<T::TrackId, ()> {
+            let new_id = id.increment().ok_or(())?;
+            *id = new_id.clone();
+            Ok(T::TrackId::combine(group, new_id))
+        })
+        .ok()
     }
 
     pub(crate) fn do_remove(id: T::TrackId) -> frame_support::dispatch::DispatchResult {
@@ -141,6 +156,9 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         if let Some(ref period) = decision {
             ensure!(!period.is_zero(), Error::<T, I>::InvalidTrackInfo);
         }
+        if let Some(ref period) = confirm {
+            ensure!(!period.is_zero(), Error::<T, I>::InvalidTrackInfo);
+        }
         let (group, track) = id.split();
         Tracks::<T, I>::try_mutate(group, track, |track| -> DispatchResult {
             let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
@@ -184,6 +202,65 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Ok(())
         })?;
 
+        Ok(())
+    }
+
+    /// Updates max_deciding for an existing track with the given Id.
+    pub(crate) fn do_set_max_deciding(id: T::TrackId, max_deciding: u32) -> DispatchResult {
+        let (group, track) = id.split();
+        Tracks::<T, I>::try_mutate(group, track, |track| -> DispatchResult {
+            let track_info = track.as_mut().ok_or(Error::<T, I>::TrackIdNotFound)?;
+            track_info.max_deciding = max_deciding;
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    /// Removes an entire group and all its sub-tracks. Fails if any track has active referenda.
+    /// `max_tracks` is the caller-declared upper bound on sub-tracks for weight purposes.
+    pub(crate) fn do_remove_group(group: GroupIdOf<T, I>, max_tracks: u32) -> DispatchResult {
+        // Collect sub-tracks with a bounded limit to prevent unbounded allocation.
+        let mut sub_tracks =
+            alloc::vec::Vec::with_capacity(max_tracks.min(T::MaxTracks::get()) as usize);
+        for sub in Tracks::<T, I>::iter_key_prefix(&group) {
+            sub_tracks.push(sub);
+            ensure!(
+                sub_tracks.len() as u32 <= max_tracks,
+                Error::<T, I>::TooManyTracks
+            );
+        }
+        ensure!(!sub_tracks.is_empty(), Error::<T, I>::GroupNotFound);
+
+        // Check none have active referenda
+        for sub in &sub_tracks {
+            let id = T::TrackId::combine(group.clone(), sub.clone());
+            ensure!(
+                pallet_referenda::DecidingCount::<T, I>::get(id) == 0
+                    && pallet_referenda::TrackQueue::<T, I>::get(id).is_empty(),
+                Error::<T, I>::CannotRemoveGroup
+            );
+        }
+
+        // Remove all tracks in the group
+        let count = sub_tracks.len() as u32;
+        for sub in sub_tracks {
+            let id = T::TrackId::combine(group.clone(), sub.clone());
+            Tracks::<T, I>::remove(&group, &sub);
+            if let Some(origin) = TrackIdToOrigin::<T, I>::take(id) {
+                OriginToTrackId::<T, I>::remove(&origin);
+            }
+            TracksIds::<T, I>::mutate(|ids| {
+                ids.remove(&id);
+            });
+        }
+
+        // Clean up sub-track counter
+        NextSubTrackId::<T, I>::remove(&group);
+
+        Self::deposit_event(Event::GroupRemoved {
+            group,
+            tracks_removed: count,
+        });
         Ok(())
     }
 }

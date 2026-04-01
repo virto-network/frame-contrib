@@ -133,29 +133,90 @@ parameter_types! {
     pub static Admins: Vec<AccountId> = vec![1, 2, 3];
 }
 morph_types! {
+    /// Maps an admin account to the group they manage.
+    /// Accounts 1-3 are admins for groups 0-2 respectively.
     pub type AdminToGroupId: Morph = |account: AccountId| -> GroupId {
         Admins::get().iter().position(|a| *a == account).unwrap() as GroupId
     };
+    /// Maps a track ID to the admin account that manages its group.
     pub type TrackToGroup: TryMorph = |track: &TrackId| -> Result<AccountId, ()> {
         Admins::get().into_iter().find(|a| *a == track.split().0 as AccountId).ok_or(())
     };
-    pub type OriginToGroupAddress: TryMorph = |o: &OriginCaller| -> Result<AccountId, ()> {
-        o.as_signed().copied().ok_or(())
+    /// Maps a sub_origin to the admin account that manages the corresponding group.
+    /// The convention is: sub_origin Signed(N) is managed by admin of group (N / 10).
+    /// e.g. Signed(0..9) -> admin of group 0 (account 1),
+    ///      Signed(10..19) -> admin of group 1 (account 2), etc.
+    /// This allows multiple distinct origins within the same group.
+    pub type OriginToGroupAdmin: TryMorph = |o: &OriginCaller| -> Result<AccountId, ()> {
+        o.as_signed()
+            .and_then(|a| Admins::get().get(if *a < 10 { 0 } else { (*a / 10) as usize }).copied())
+            .ok_or(())
     };
+}
+
+/// Accepts root (returns group 0) or the group's admin for creating sub-tracks.
+pub struct GroupManagerCreateOrRoot;
+impl EnsureOriginWithArg<RuntimeOrigin, PalletsOriginOf<Test>> for GroupManagerCreateOrRoot {
+    type Success = GroupId;
+
+    fn try_origin(
+        o: RuntimeOrigin,
+        arg: &PalletsOriginOf<Test>,
+    ) -> Result<Self::Success, RuntimeOrigin> {
+        if o.clone()
+            .caller
+            .as_system_ref()
+            .map_or(false, |s| matches!(s, frame_system::RawOrigin::Root))
+        {
+            return Ok(Default::default());
+        }
+        TryWithMorphedArg::<
+            RuntimeOrigin,
+            PalletsOriginOf<Test>,
+            OriginToGroupAdmin,
+            EnsureSignedByArg<AdminToGroupId>,
+            GroupId,
+        >::try_origin(o, arg)
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin(_arg: &PalletsOriginOf<Test>) -> Result<RuntimeOrigin, ()> {
+        Ok(RuntimeOrigin::root())
+    }
+}
+
+/// Accepts root or the group's admin for managing tracks.
+pub struct GroupManagerOrRoot;
+impl EnsureOriginWithArg<RuntimeOrigin, TrackId> for GroupManagerOrRoot {
+    type Success = ();
+
+    fn try_origin(o: RuntimeOrigin, id: &TrackId) -> Result<Self::Success, RuntimeOrigin> {
+        // Try root first
+        if o.clone()
+            .caller
+            .as_system_ref()
+            .map_or(false, |s| matches!(s, frame_system::RawOrigin::Root))
+        {
+            return Ok(());
+        }
+        // Fall back to group manager
+        TryWithMorphedArg::<RuntimeOrigin, TrackId, TrackToGroup, EnsureSignedByArg, ()>::try_origin(
+            o, id,
+        )
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin(_id: &TrackId) -> Result<RuntimeOrigin, ()> {
+        Ok(RuntimeOrigin::root())
+    }
 }
 
 impl Config for Test {
     type WeightInfo = ();
     type CreateOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
-    type GroupManagerCreateOrigin = TryWithMorphedArg<
-        RuntimeOrigin,
-        PalletsOriginOf<Test>,
-        OriginToGroupAddress,
-        EnsureSignedByArg<AdminToGroupId>,
-        GroupId,
-    >;
-    type GroupManagerOrigin =
-        TryWithMorphedArg<RuntimeOrigin, TrackId, TrackToGroup, EnsureSignedByArg, ()>;
+    type GroupManagerCreateOrigin = GroupManagerCreateOrRoot;
+    type GroupManagerOrigin = GroupManagerOrRoot;
+    type RemoveGroupOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type TrackId = TrackId;
     type MaxTracks = MaxTracks;
 
