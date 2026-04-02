@@ -9,8 +9,8 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use frame::prelude::*;
 use frame::deps::frame_support::traits::fungibles;
+use frame::prelude::*;
 use sp_runtime::traits::Zero;
 
 #[cfg(test)]
@@ -121,7 +121,8 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         /// Set or update a protocol-level fee. Requires `AdminOrigin`.
         #[pallet::call_index(0)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(Weight::from_parts(10_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads_writes(1, 1)))]
         pub fn set_protocol_fee(
             origin: OriginFor<T>,
             name: FeeNameOf<T>,
@@ -149,11 +150,9 @@ pub mod pallet {
 
         /// Remove a protocol-level fee. Requires `AdminOrigin`.
         #[pallet::call_index(1)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn remove_protocol_fee(
-            origin: OriginFor<T>,
-            name: FeeNameOf<T>,
-        ) -> DispatchResult {
+        #[pallet::weight(Weight::from_parts(10_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads_writes(1, 1)))]
+        pub fn remove_protocol_fee(origin: OriginFor<T>, name: FeeNameOf<T>) -> DispatchResult {
             T::AdminOrigin::ensure_origin(origin)?;
             ProtocolFees::<T>::try_mutate(|fees| {
                 let pos = fees
@@ -169,7 +168,8 @@ pub mod pallet {
 
         /// Set or update a community-level fee. Requires `CommunityOrigin`.
         #[pallet::call_index(2)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(Weight::from_parts(10_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads_writes(1, 1)))]
         pub fn set_community_fee(
             origin: OriginFor<T>,
             name: FeeNameOf<T>,
@@ -197,11 +197,9 @@ pub mod pallet {
 
         /// Remove a community-level fee. Requires `CommunityOrigin`.
         #[pallet::call_index(3)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn remove_community_fee(
-            origin: OriginFor<T>,
-            name: FeeNameOf<T>,
-        ) -> DispatchResult {
+        #[pallet::weight(Weight::from_parts(10_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads_writes(1, 1)))]
+        pub fn remove_community_fee(origin: OriginFor<T>, name: FeeNameOf<T>) -> DispatchResult {
             let community = T::CommunityOrigin::ensure_origin(origin)?;
             CommunityFees::<T>::try_mutate(&community, |fees| {
                 let pos = fees
@@ -217,17 +215,21 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
-        /// Calculate all applicable fees for a transfer by `who`.
+        /// Calculate all applicable fees for a transfer of `amount` on `asset` by `who`.
+        /// Fees are rounded up to the asset's minimum balance to avoid dust.
         /// Returns a list of (beneficiary, fee_amount) pairs.
         pub fn calculate_fees(
+            asset: AssetIdOf<T>,
             who: &T::AccountId,
             amount: BalanceOf<T>,
         ) -> Vec<(T::AccountId, BalanceOf<T>)> {
+            use frame::deps::frame_support::traits::fungibles::Inspect;
+            let min_balance = Some(T::Assets::minimum_balance(asset));
             let mut fees = Vec::new();
 
             // Protocol fees always apply
             for entry in ProtocolFees::<T>::get().iter() {
-                let fee = entry.config.calculate(amount);
+                let fee = entry.config.calculate(amount, min_balance);
                 if !fee.is_zero() {
                     fees.push((entry.beneficiary.clone(), fee));
                 }
@@ -236,7 +238,7 @@ pub mod pallet {
             // Community fees apply if the sender belongs to a community
             if let Some(community) = T::CommunityDetector::community_of(who) {
                 for entry in CommunityFees::<T>::get(&community).iter() {
-                    let fee = entry.config.calculate(amount);
+                    let fee = entry.config.calculate(amount, min_balance);
                     if !fee.is_zero() {
                         fees.push((entry.beneficiary.clone(), fee));
                     }

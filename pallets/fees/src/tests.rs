@@ -5,10 +5,8 @@ use sp_runtime::{
 };
 
 use crate::{
-    mock::*,
-    types::FeeConfig,
-    ChargeFees, CommunityFees as CommunityFeesStorage, Error, Event, ProtocolFees,
-    WithFees,
+    mock::*, types::FeeConfig, ChargeFees, CommunityFees as CommunityFeesStorage, Error, Event,
+    ProtocolFees, WithFees,
 };
 
 fn fee_name(s: &[u8]) -> BoundedVec<u8, MaxFeeNameLen> {
@@ -27,14 +25,9 @@ fn run_extension(
 ) -> <ChargeFees<Test> as DispatchTransaction<RuntimeCall>>::Result {
     let ext = ChargeFees::<Test>::default();
     let info = DispatchInfo::default();
-    ext.test_run(
-        RuntimeOrigin::signed(who),
-        call,
-        &info,
-        0,
-        0,
-        |_| Ok(().into()),
-    )
+    ext.test_run(RuntimeOrigin::signed(who), call, &info, 0, 0, |_| {
+        Ok(().into())
+    })
 }
 
 // ============================================================================
@@ -172,9 +165,7 @@ mod community_fees {
                 RuntimeOrigin::signed(COMMUNITY_1_ADMIN),
                 fee_name(b"fee"),
             ));
-            assert!(
-                CommunityFeesStorage::<Test>::get(COMMUNITY_1_ADMIN as CommunityId).is_empty()
-            );
+            assert!(CommunityFeesStorage::<Test>::get(COMMUNITY_1_ADMIN as CommunityId).is_empty());
         });
     }
 }
@@ -188,14 +179,21 @@ mod fee_config {
 
     #[test]
     fn fixed_fee() {
-        assert_eq!(FeeConfig::Fixed(42u64).calculate(1000), 42);
+        assert_eq!(FeeConfig::Fixed(42u64).calculate(1000, None), 42);
     }
 
     #[test]
     fn percentage_fee() {
         let config = FeeConfig::Percentage(Permill::from_percent(5));
-        assert_eq!(config.calculate(1000u64), 50);
-        assert_eq!(config.calculate(0u64), 0);
+        assert_eq!(config.calculate(1000u64, None), 50);
+        assert_eq!(config.calculate(0u64, None), 0);
+    }
+
+    #[test]
+    fn percentage_rounds_up() {
+        // 1% of 99 = 0.99, mul_ceil rounds up to 1
+        let config = FeeConfig::Percentage(Permill::from_percent(1));
+        assert_eq!(config.calculate(99u64, None), 1);
     }
 
     #[test]
@@ -206,7 +204,7 @@ mod fee_config {
             max: 500,
         };
         // 1% of 100 = 1, but min is 50
-        assert_eq!(config.calculate(100), 50);
+        assert_eq!(config.calculate(100, None), 50);
     }
 
     #[test]
@@ -217,7 +215,7 @@ mod fee_config {
             max: 200,
         };
         // 50% of 1000 = 500, but max is 200
-        assert_eq!(config.calculate(1000), 200);
+        assert_eq!(config.calculate(1000, None), 200);
     }
 
     #[test]
@@ -228,7 +226,34 @@ mod fee_config {
             max: 500,
         };
         // 10% of 1000 = 100, within [5, 500]
-        assert_eq!(config.calculate(1000), 100);
+        assert_eq!(config.calculate(1000, None), 100);
+    }
+
+    #[test]
+    fn rounds_up_to_min_balance() {
+        // 1% of 50 = 1 (after ceil), but min_balance is 10 → round up to 10
+        let config = FeeConfig::Percentage(Permill::from_percent(1));
+        assert_eq!(config.calculate(50u64, Some(10)), 10);
+    }
+
+    #[test]
+    fn no_rounding_when_fee_above_min_balance() {
+        // 5% of 1000 = 50, min_balance is 10 → no rounding needed
+        let config = FeeConfig::Percentage(Permill::from_percent(5));
+        assert_eq!(config.calculate(1000u64, Some(10)), 50);
+    }
+
+    #[test]
+    fn zero_fee_stays_zero_despite_min_balance() {
+        // 5% of 0 = 0, should stay 0 even with min_balance
+        let config = FeeConfig::Percentage(Permill::from_percent(5));
+        assert_eq!(config.calculate(0u64, Some(10)), 0);
+    }
+
+    #[test]
+    fn fixed_fee_rounds_up_to_min_balance() {
+        // Fixed(3) with min_balance 5 → rounds up to 5
+        assert_eq!(FeeConfig::Fixed(3u64).calculate(1000, Some(5)), 5);
     }
 }
 
@@ -489,11 +514,9 @@ mod extension {
             ));
 
             // A non-asset call (system remark)
-            let call = RuntimeCall::System(
-                frame::deps::frame_system::Call::remark {
-                    remark: b"hello".to_vec(),
-                },
-            );
+            let call = RuntimeCall::System(frame::deps::frame_system::Call::remark {
+                remark: b"hello".to_vec(),
+            });
             assert_ok!(run_extension(MEMBER_1A, &call));
 
             // No fees charged
@@ -513,10 +536,7 @@ mod extension {
             ));
 
             let call = transfer_call(MEMBER_1B, 100);
-            assert_noop!(
-                run_extension(MEMBER_1A, &call),
-                InvalidTransaction::Payment,
-            );
+            assert_noop!(run_extension(MEMBER_1A, &call), InvalidTransaction::Payment,);
 
             // Nothing changed
             assert_eq!(balance_of(ASSET_ID, MEMBER_1A), INITIAL_BALANCE);

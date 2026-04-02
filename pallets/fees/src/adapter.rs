@@ -109,7 +109,7 @@ where
         amount: BalanceOf<T>,
         preservation: Preservation,
     ) -> Result<BalanceOf<T>, DispatchError> {
-        let fees = Pallet::<T>::calculate_fees(source, amount);
+        let fees = Pallet::<T>::calculate_fees(asset.clone(), source, amount);
 
         // Charge fees on top — each fee goes from source to the fee beneficiary.
         // Uses the inner implementation directly to avoid recursion.

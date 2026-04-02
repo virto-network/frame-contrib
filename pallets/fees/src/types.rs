@@ -28,7 +28,9 @@ impl<A, C> AccountCommunity<A, C> for () {
 }
 
 /// Describes how a fee amount is calculated from a transfer amount.
-#[derive(Clone, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Debug, PartialEq, Eq)]
+#[derive(
+    Clone, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Debug, PartialEq, Eq,
+)]
 pub enum FeeConfig<Balance> {
     /// A fixed fee amount regardless of transfer size.
     Fixed(Balance),
@@ -43,12 +45,15 @@ pub enum FeeConfig<Balance> {
 }
 
 impl<Balance: sp_runtime::traits::AtLeast32BitUnsigned + Copy> FeeConfig<Balance> {
-    pub fn calculate(&self, amount: Balance) -> Balance {
-        match self {
+    /// Calculate the fee for a given transfer amount.
+    /// If `min_balance` is provided and the raw fee is non-zero but below it,
+    /// the fee is rounded up to `min_balance` to avoid dust.
+    pub fn calculate(&self, amount: Balance, min_balance: Option<Balance>) -> Balance {
+        let raw = match self {
             FeeConfig::Fixed(fee) => *fee,
-            FeeConfig::Percentage(rate) => rate.mul_floor(amount),
+            FeeConfig::Percentage(rate) => rate.mul_ceil(amount),
             FeeConfig::PercentageClamped { rate, min, max } => {
-                let fee = rate.mul_floor(amount);
+                let fee = rate.mul_ceil(amount);
                 if fee < *min {
                     *min
                 } else if fee > *max {
@@ -57,12 +62,19 @@ impl<Balance: sp_runtime::traits::AtLeast32BitUnsigned + Copy> FeeConfig<Balance
                     fee
                 }
             }
+        };
+        // Round up to min_balance if the fee is non-zero but below it
+        match min_balance {
+            Some(mb) if !raw.is_zero() && raw < mb => mb,
+            _ => raw,
         }
     }
 }
 
 /// A named fee entry stored on-chain.
-#[derive(Clone, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Debug, PartialEq, Eq)]
+#[derive(
+    Clone, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Debug, PartialEq, Eq,
+)]
 #[scale_info(skip_type_params(T))]
 #[codec(mel_bound(T: Config))]
 pub struct NamedFeeEntry<T: Config> {

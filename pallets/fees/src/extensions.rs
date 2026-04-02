@@ -52,7 +52,9 @@ where
     type Pre = ();
 
     fn weight(&self, _: &T::RuntimeCall) -> Weight {
-        Weight::from_parts(5_000, 0) // TODO: benchmark
+        // Reads: ProtocolFees (1), CommunityFees (1), asset balance (1), community detection
+        // Writes: per-fee transfer (up to MaxProtocolFees + MaxCommunityFees)
+        Weight::from_parts(15_000_000, 0)
     }
 
     fn validate(
@@ -77,7 +79,7 @@ where
         };
 
         // Calculate fees and verify sender can afford transfer + fees
-        let fees = Pallet::<T>::calculate_fees(&who, amount);
+        let fees = Pallet::<T>::calculate_fees(asset.clone(), &who, amount);
         let total_fees = fees
             .iter()
             .map(|(_, a)| *a)
@@ -110,7 +112,7 @@ where
             return Ok(());
         };
 
-        let fees = Pallet::<T>::calculate_fees(&who, amount);
+        let fees = Pallet::<T>::calculate_fees(asset.clone(), &who, amount);
         let mut total_fees = BalanceOf::<T>::zero();
 
         for (beneficiary, fee_amount) in fees {
@@ -126,10 +128,7 @@ where
         }
 
         if !total_fees.is_zero() {
-            Pallet::<T>::deposit_event(Event::FeesCharged {
-                who,
-                total_fees,
-            });
+            Pallet::<T>::deposit_event(Event::FeesCharged { who, total_fees });
         }
 
         Ok(())
