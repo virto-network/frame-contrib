@@ -1,5 +1,6 @@
 //! Tests for pass pallet.
 use super::{Error, Event, PassAuthenticate};
+use crate::filter::DeviceFilter;
 use crate::mock::*;
 
 use codec::{Encode, MaxEncodedLen};
@@ -314,6 +315,7 @@ mod authenticate {
                         &address,
                     ),
                 }),
+                DeviceFilter::Admin,
             )
             .expect("adding device on an existing account works; qed");
 
@@ -546,12 +548,14 @@ mod add_device {
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::root(),
+                    THE_DEVICE,
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
                             device_id: OTHER_DEVICE,
                             challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
+                    DeviceFilter::Admin,
                 ),
                 DispatchError::BadOrigin
             );
@@ -559,12 +563,14 @@ mod add_device {
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(OTHER),
+                    THE_DEVICE,
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
                             device_id: OTHER_DEVICE,
                             challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
+                    DeviceFilter::Admin,
                 ),
                 DispatchError::BadOrigin
             );
@@ -577,6 +583,7 @@ mod add_device {
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
+                    THE_DEVICE,
                     PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                         device_id: OTHER_DEVICE,
                         context: System::block_number(),
@@ -585,6 +592,7 @@ mod add_device {
                             &[]
                         ),
                     }),
+                    DeviceFilter::Admin,
                 ),
                 Error::<Test>::DeviceAttestationInvalid
             );
@@ -597,12 +605,14 @@ mod add_device {
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
+                    THE_DEVICE,
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
                             device_id: OTHER_DEVICE,
                             challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
+                    DeviceFilter::Admin,
                 ),
                 TokenError::FundsUnavailable
             );
@@ -623,12 +633,14 @@ mod add_device {
 
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(Address::get()),
+                THE_DEVICE,
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
                         device_id: OTHER_DEVICE,
                         challenge: authenticator_a::Authenticator::generate(&(), &[]),
                     }
                 ),
+                DeviceFilter::Admin,
             ));
 
             System::assert_has_event(
@@ -655,23 +667,27 @@ mod add_device {
 
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(Address::get()),
+                THE_DEVICE,
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
                         device_id: OTHER_DEVICE,
                         challenge: authenticator_a::Authenticator::generate(&(), &[]),
                     }
                 ),
+                DeviceFilter::Admin,
             ));
 
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
+                    THE_DEVICE,
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
                             device_id: THIRD_DEVICE,
                             challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
+                    DeviceFilter::Admin,
                 ),
                 Error::<Test>::MaxDevicesExceeded
             );
@@ -998,12 +1014,14 @@ mod dispatch {
                     THE_DEVICE,
                     credentials,
                     crate::Call::add_device {
+                        caller_device: THE_DEVICE,
                         attestation: PassDeviceAttestation::AuthenticatorAAuthenticator(
                             authenticator_a::DeviceAttestation {
                                 device_id: OTHER_DEVICE,
                                 challenge: authenticator_a::Authenticator::generate(&(), &[])
                             }
-                        )
+                        ),
+                        filter: DeviceFilter::Admin,
                     }
                     .into()
                 ),
