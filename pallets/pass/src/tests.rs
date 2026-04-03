@@ -26,6 +26,18 @@ const THE_DEVICE: DeviceId = [10u8; 32];
 const OTHER_DEVICE: DeviceId = [11u8; 32];
 const THIRD_DEVICE: DeviceId = [12u8; 32];
 
+fn remark_only_filter(
+) -> DeviceFilter<u32, u128, frame_support::traits::ConstU32<10>, frame_support::traits::ConstU32<5>>
+{
+    DeviceFilter::Calls(
+        [(0u8, 7u8)]
+            .into_iter()
+            .collect::<alloc::collections::BTreeSet<_>>()
+            .try_into()
+            .unwrap(),
+    )
+}
+
 parameter_types! {
     pub AccountNameA: HashedUserId = <Test as frame_system::Config>::Hashing::hash(
         &*b"@account.a:example.org"
@@ -703,11 +715,21 @@ mod add_session_key {
     fn fails_if_bad_origin() {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_noop!(
-                Pass::add_session_key(RuntimeOrigin::root(), OTHER, Some(DURATION)),
+                Pass::add_session_key(
+                    RuntimeOrigin::root(),
+                    OTHER,
+                    Some(DURATION),
+                    remark_only_filter()
+                ),
                 DispatchError::BadOrigin
             );
             assert_noop!(
-                Pass::add_session_key(RuntimeOrigin::signed(OTHER), OTHER, Some(DURATION)),
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(OTHER),
+                    OTHER,
+                    Some(DURATION),
+                    remark_only_filter()
+                ),
                 DispatchError::BadOrigin
             );
         })
@@ -721,7 +743,8 @@ mod add_session_key {
                 Pass::add_session_key(
                     RuntimeOrigin::signed(Address::get()),
                     CHARLIE,
-                    Some(DURATION)
+                    Some(DURATION),
+                    remark_only_filter(),
                 ),
                 Error::<Test>::AccountForSessionKeyAlreadyExists
             );
@@ -734,7 +757,8 @@ mod add_session_key {
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
-                Some(DURATION)
+                Some(DURATION),
+                remark_only_filter(),
             ));
 
             System::assert_has_event(
@@ -764,14 +788,16 @@ mod add_session_key {
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
-                Some(DURATION)
+                Some(DURATION),
+                remark_only_filter(),
             ));
 
             assert_noop!(
                 Pass::add_session_key(
                     RuntimeOrigin::signed(AddressB::get()),
                     OTHER,
-                    Some(DURATION)
+                    Some(DURATION),
+                    remark_only_filter(),
                 ),
                 Error::<Test>::SessionKeyInUse
             );
@@ -785,12 +811,14 @@ mod add_session_key {
                 RuntimeOrigin::signed(Address::get()),
                 SIGNER,
                 None,
+                remark_only_filter(),
             ));
 
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
+                remark_only_filter(),
             ));
 
             run_to(5);
@@ -800,12 +828,18 @@ mod add_session_key {
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
+                remark_only_filter(),
             ));
 
             run_to(10);
 
             assert_noop!(
-                Pass::add_session_key(RuntimeOrigin::signed(Address::get()), CHARLIE, None),
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    CHARLIE,
+                    None,
+                    remark_only_filter()
+                ),
                 Error::<Test>::MaxSessionsExceeded,
             );
 
@@ -817,6 +851,7 @@ mod add_session_key {
                 RuntimeOrigin::signed(Address::get()),
                 CHARLIE,
                 None,
+                remark_only_filter(),
             ));
         })
     }
@@ -899,6 +934,7 @@ mod dispatch {
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
+                remark_only_filter(),
             ));
 
             assert_ok!(signed(OTHER, Call::get()));
@@ -1062,6 +1098,7 @@ mod dispatch {
                 crate::Call::<Test>::add_session_key {
                     session: SIGNER,
                     duration: None,
+                    filter: remark_only_filter(),
                 }
                 .into(),
             ));
@@ -1083,6 +1120,7 @@ mod dispatch {
                 crate::Call::<Test>::add_session_key {
                     session: OTHER,
                     duration: Some(7),
+                    filter: remark_only_filter(),
                 }
                 .into(),
             ));
@@ -1097,7 +1135,7 @@ mod dispatch {
 mod device_filters {
     use super::*;
     use crate::filter::AssetSpendLimit;
-    use crate::{DeviceFilters, DeviceOf};
+    use crate::{DeviceFilters, DeviceOf, SessionKeys};
     use alloc::collections::BTreeSet;
     use frame_support::traits::ConstU32;
 
@@ -1358,6 +1396,45 @@ mod device_filters {
             ));
 
             assert!(DeviceFilters::<Test>::get(Address::get(), THE_DEVICE).is_none());
+        })
+    }
+
+    #[test]
+    fn session_key_cannot_have_admin_filter() {
+        setup_with_admin_device().execute_with(|| {
+            assert_noop!(
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    SIGNER,
+                    Some(5),
+                    DeviceFilter::Admin,
+                ),
+                Error::<Test>::PermissionEscalation,
+            );
+        })
+    }
+
+    #[test]
+    fn session_key_stores_filter() {
+        setup_with_admin_device().execute_with(|| {
+            let filter = DeviceFilter::Calls(
+                [(0u8, 7u8)]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                SIGNER,
+                Some(5),
+                filter.clone(),
+            ));
+
+            let (account, _, stored_filter) =
+                SessionKeys::<Test>::get(SIGNER).expect("session exists");
+            assert_eq!(account, Address::get());
+            assert_eq!(stored_filter, filter);
         })
     }
 }

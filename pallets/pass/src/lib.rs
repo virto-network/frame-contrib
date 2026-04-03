@@ -194,8 +194,12 @@ pub mod pallet {
         StorageMap<_, Blake2_128Concat, T::AccountId, (T::DeviceConsideration, u32)>;
 
     #[pallet::storage]
-    pub type SessionKeys<T: Config<I>, I: 'static = ()> =
-        CountedStorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T, I>)>;
+    pub type SessionKeys<T: Config<I>, I: 'static = ()> = CountedStorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        (T::AccountId, BlockNumberFor<T, I>, DeviceFilterOf<T, I>),
+    >;
 
     /// Counts how many sessions a pass account has registered and holds an amount to the account.
     #[pallet::storage]
@@ -306,30 +310,35 @@ pub mod pallet {
             Self::try_remove_device(&address, &device_id)
         }
 
+        /// Add a session key with a mandatory call filter.
+        /// `Admin` filter is not allowed for session keys.
         #[pallet::call_index(3)]
         pub fn add_session_key(
             origin: OriginFor<T>,
             session: AccountIdLookupOf<T>,
             duration: Option<BlockNumberFor<T, I>>,
+            filter: DeviceFilterOf<T, I>,
         ) -> DispatchResult {
             let address = &Self::ensure_signer_is_pass_account(origin)?;
             let session_key = &T::Lookup::lookup(session)?;
 
+            // Session keys must not have unrestricted access
+            ensure!(
+                !matches!(filter, DeviceFilter::Admin),
+                Error::<T, I>::PermissionEscalation
+            );
+
             // We must ensure that there is no account registered for that session key.
-            //
-            // Session keys are meant to be ephemeral. Therefore, they should never be tied to an
-            // existing account.
             ensure!(
                 !frame_system::Pallet::<T>::account_exists(session_key),
                 Error::<T, I>::AccountForSessionKeyAlreadyExists
             );
 
-            if let Some((account, _)) = SessionKeys::<T, I>::get(session_key) {
+            if let Some((account, _, _)) = SessionKeys::<T, I>::get(session_key) {
                 // Ensure another user is not using this session key.
                 ensure!(&account == address, Error::<T, I>::SessionKeyInUse);
 
-                // Let's try to remove an existing session that uses the same session key (if any). This is
-                // so we ensure we decrease the provider counter correctly.
+                // Let's try to remove an existing session that uses the same session key (if any).
                 Self::try_remove_session_key(session_key)?;
             }
 
@@ -347,7 +356,7 @@ pub mod pallet {
                 .unwrap_or(T::MaxSessionDuration::get())
                 .min(T::MaxSessionDuration::get());
 
-            SessionKeys::<T, I>::insert(session_key.clone(), (address.clone(), until));
+            SessionKeys::<T, I>::insert(session_key.clone(), (address.clone(), until, filter));
             Self::schedule_next_removal(session_key, duration)?;
 
             Self::deposit_event(Event::<T, I>::SessionCreated {
@@ -374,9 +383,11 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         T::AddressGenerator::generate_address(user)
     }
 
-    /// Extracts the pass account from a session key.
-    pub(crate) fn pass_account_from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
-        SessionKeys::<T, I>::get(who).map(|(s, _)| s)
+    /// Extracts the pass account and filter from a session key.
+    pub(crate) fn pass_account_from_session_key(
+        who: &T::AccountId,
+    ) -> Option<(T::AccountId, DeviceFilterOf<T, I>)> {
+        SessionKeys::<T, I>::get(who).map(|(account, _, filter)| (account, filter))
     }
 
     /// Ensure that the signed origin maps onto an already existing pass account.
@@ -502,7 +513,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     fn try_remove_session_key(session_key: &T::AccountId) -> DispatchResult {
         Self::cancel_scheduled_session_key_removal(session_key);
 
-        if let Some(address) = &Self::pass_account_from_session_key(session_key) {
+        if let Some((address, _)) = &Self::pass_account_from_session_key(session_key) {
             SessionKeys::<T, I>::remove(session_key);
             AccountSessionsCount::<T, I>::insert(
                 address,

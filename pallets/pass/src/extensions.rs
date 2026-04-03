@@ -120,10 +120,24 @@ where
             // Otherwise, just pass the previous origin to the rest of the extensions pipeline.
 
             Ok::<_, TransactionValidityError>(if let Ok(who) = ensure_signed(origin.clone()) {
-                Pallet::<T, I>::pass_account_from_session_key(&who)
-                    .or(Some(who))
-                    .map(|who| RawOrigin::Signed(who).into())
-                    .unwrap()
+                if let Some((account, filter)) = Pallet::<T, I>::pass_account_from_session_key(&who)
+                {
+                    // Session key: check its filter against the call
+                    let call_index = call.using_encoded(|bytes| {
+                        if bytes.len() >= 2 {
+                            (bytes[0], bytes[1])
+                        } else {
+                            (0, 0)
+                        }
+                    });
+                    let spend = T::SpendMatcher::spending_amount(call);
+                    if !filter.allows(call_index, spend) {
+                        return Err(InvalidTransaction::Call.into());
+                    }
+                    RawOrigin::Signed(account).into()
+                } else {
+                    RawOrigin::Signed(who).into()
+                }
             } else {
                 origin
             })
