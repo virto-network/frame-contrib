@@ -1,5 +1,5 @@
 use super::*;
-use crate::{DeviceOf, Pallet};
+use crate::{filter::DeviceFilter, AuthenticatedDevice, DeviceOf, Pallet};
 
 use frame_benchmarking::v2::*;
 use frame_support::{
@@ -138,7 +138,7 @@ mod benchmarks {
     pub fn add_device() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
-        do_register::<T, I>(user_id)?;
+        let admin_device_id = do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
         let attestation = T::BenchmarkHelper::device_attestation(&address.encode());
@@ -148,8 +148,15 @@ mod benchmarks {
             Footprint::from_parts(2, DeviceOf::<T, I>::max_encoded_len()),
         );
 
+        // Set the authenticated device for no-escalation check
+        AuthenticatedDevice::<T, I>::put(admin_device_id);
+
         #[extrinsic_call]
-        _(RawOrigin::Signed(address.clone()), attestation);
+        _(
+            RawOrigin::Signed(address.clone()),
+            attestation,
+            DeviceFilter::Admin,
+        );
 
         // Verification code
         assert_has_event::<T, I>(
@@ -167,7 +174,7 @@ mod benchmarks {
     pub fn remove_device() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
-        do_register::<T, I>(user_id)?;
+        let admin_device_id = do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
         let attestation = T::BenchmarkHelper::device_attestation(&address.encode());
@@ -177,7 +184,12 @@ mod benchmarks {
             Footprint::from_parts(2, DeviceOf::<T, I>::max_encoded_len()),
         );
 
-        Pallet::<T, I>::add_device(RawOrigin::Signed(address.clone()).into(), attestation)?;
+        AuthenticatedDevice::<T, I>::put(admin_device_id);
+        Pallet::<T, I>::add_device(
+            RawOrigin::Signed(address.clone()).into(),
+            attestation,
+            DeviceFilter::Admin,
+        )?;
 
         #[extrinsic_call]
         _(RawOrigin::Signed(address.clone()), new_device_id);
@@ -198,7 +210,7 @@ mod benchmarks {
     pub fn add_session_key() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
-        do_register::<T, I>(user_id)?;
+        let admin_device_id = do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
         let new_session_key: T::AccountId = account("session-key", 0, 0);
@@ -207,11 +219,20 @@ mod benchmarks {
             Footprint::from_parts(2, T::AccountId::max_encoded_len()),
         );
 
+        // Need a non-Admin filter for session keys
+        let filter: crate::DeviceFilterOf<T, I> = DeviceFilter::Pallets(
+            alloc::collections::BTreeSet::from([0u8])
+                .try_into()
+                .expect("within bounds"),
+        );
+        AuthenticatedDevice::<T, I>::put(admin_device_id);
+
         #[extrinsic_call]
         _(
             RawOrigin::Signed(address.clone()),
             T::Lookup::unlookup(new_session_key.clone()),
             None,
+            filter,
         );
 
         // Verification code
@@ -230,7 +251,7 @@ mod benchmarks {
     pub fn remove_session_key() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
-        do_register::<T, I>(user_id)?;
+        let admin_device_id = do_register::<T, I>(user_id)?;
 
         let address = Pallet::<T, I>::address_for(user_id);
         let session_key: T::AccountId = account("session-key", 0, 0);
@@ -239,10 +260,17 @@ mod benchmarks {
             Footprint::from_parts(2, T::AccountId::max_encoded_len()),
         );
 
+        let filter: crate::DeviceFilterOf<T, I> = DeviceFilter::Pallets(
+            alloc::collections::BTreeSet::from([0u8])
+                .try_into()
+                .expect("within bounds"),
+        );
+        AuthenticatedDevice::<T, I>::put(admin_device_id);
         Pallet::<T, I>::add_session_key(
             RawOrigin::Signed(address.clone()).into(),
             T::Lookup::unlookup(session_key.clone()),
             None,
+            filter,
         )?;
 
         #[extrinsic_call]
