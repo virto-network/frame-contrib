@@ -37,10 +37,12 @@ mod mock;
 mod tests;
 
 mod extensions;
+pub mod filter;
 mod types;
 
 pub mod weights;
 pub use extensions::*;
+pub use filter::*;
 pub use pallet::*;
 pub use types::*;
 pub use weights::*;
@@ -85,6 +87,15 @@ pub mod pallet {
         type Scheduler: Named<BlockNumberFor<Self, I>, Self::RuntimeCall, Self::PalletsOrigin>;
         type BlockNumberProvider: BlockNumberProvider;
 
+        // Device filters: types for per-device call authorization.
+
+        /// Asset identifier for spend limits.
+        type AssetId: Parameter + MaxEncodedLen + Ord + Copy + TypeInfo;
+        /// Balance type for spend limits.
+        type AssetBalance: Parameter + MaxEncodedLen + Ord + Copy + Default + TypeInfo;
+        /// Extracts spending info from runtime calls for `Spend` filter evaluation.
+        type SpendMatcher: SpendMatcher<Self::RuntimeCall, Self::AssetId, Self::AssetBalance>;
+
         // Considerations: Costs that are "taken from [the caller's] account temporarily in order to
         // offset the cost to the chain of holding some data Footprint in state".
 
@@ -110,6 +121,12 @@ pub mod pallet {
         /// The maximum duration of a session
         #[pallet::constant]
         type MaxSessionDuration: Get<BlockNumberFor<Self, I>>;
+        /// Maximum entries in a device's call/pallet filter.
+        #[pallet::constant]
+        type MaxFilteredCalls: Get<u32>;
+        /// Maximum assets in a device's spend filter.
+        #[pallet::constant]
+        type MaxFilteredAssets: Get<u32>;
 
         // Benchmarking: Types to handle benchmarks.
 
@@ -159,6 +176,17 @@ pub mod pallet {
     #[pallet::storage]
     pub type DeviceIds<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, DeviceId, ()>;
+
+    /// Per-device call filters. Devices without an entry are treated as `Admin`.
+    #[pallet::storage]
+    pub type DeviceFilters<T: Config<I>, I: 'static = ()> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        Blake2_128Concat,
+        DeviceId,
+        DeviceFilterOf<T, I>,
+    >;
 
     /// Counts how many devices a pass account has registered and holds an amount to the account.
     #[pallet::storage]
@@ -216,6 +244,10 @@ pub mod pallet {
         MaxSessionsExceeded,
         /// The device to register already exists.
         DeviceAlreadyExists,
+        /// The caller tried to grant more permissions than it has.
+        PermissionEscalation,
+        /// The device's filter does not allow this call.
+        CallNotAllowed,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -239,16 +271,33 @@ pub mod pallet {
             >::increment(registrar)?;
 
             Self::create_account(address)?;
-            Self::try_add_device(address, attestation)
+            Self::try_add_device(address, attestation, DeviceFilterOf::<T, I>::default())
         }
 
+        /// Add a new device with a call filter. The `caller_device` must be the
+        /// device used to authenticate this transaction; its filter must be a
+        /// superset of the new device's filter (no-escalation).
         #[pallet::call_index(1)]
         pub fn add_device(
             origin: OriginFor<T>,
+            caller_device: DeviceId,
             attestation: DeviceAttestationOf<T, I>,
+            filter: DeviceFilterOf<T, I>,
         ) -> DispatchResult {
-            let address = &Self::ensure_signer_is_pass_account(origin)?;
-            Self::try_add_device(address, attestation)
+            let address = Self::ensure_signer_is_pass_account(origin)?;
+            // Verify the caller_device actually belongs to this account
+            ensure!(
+                Devices::<T, I>::contains_key(&address, &caller_device),
+                Error::<T, I>::DeviceNotFound
+            );
+            // No-escalation: caller can only grant permissions it has
+            let caller_filter =
+                DeviceFilters::<T, I>::get(&address, caller_device).unwrap_or_default();
+            ensure!(
+                caller_filter.is_superset_of(&filter),
+                Error::<T, I>::PermissionEscalation
+            );
+            Self::try_add_device(&address, attestation, filter)
         }
 
         #[pallet::call_index(2)]
@@ -385,6 +434,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub(crate) fn try_add_device(
         address: &T::AccountId,
         attestation: DeviceAttestationOf<T, I>,
+        filter: DeviceFilterOf<T, I>,
     ) -> DispatchResult {
         let device_id = attestation.device_id();
         ensure!(
@@ -413,6 +463,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
         Devices::<T, I>::insert(address, device_id, device);
         DeviceIds::<T, I>::insert(device_id, ());
+        DeviceFilters::<T, I>::insert(address, device_id, filter);
 
         Self::deposit_event(Event::<T, I>::DeviceAdded {
             who: address.clone(),
@@ -437,6 +488,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
         Devices::<T, I>::remove(address, id);
         DeviceIds::<T, I>::remove(id);
+        DeviceFilters::<T, I>::remove(address, id);
 
         Self::deposit_event(Event::<T, I>::DeviceRemoved {
             who: address.clone(),

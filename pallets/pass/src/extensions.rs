@@ -1,4 +1,4 @@
-use crate::{Config, CredentialOf, Pallet, WeightInfo};
+use crate::{Config, CredentialOf, DeviceFilters, Pallet, SpendMatcher, WeightInfo};
 use codec::{Decode, DecodeWithMemTracking, Encode};
 use fc_traits_authn::DeviceId;
 use frame_support::{
@@ -78,7 +78,7 @@ where
     fn validate(
         &self,
         origin: DispatchOriginOf<RuntimeCallFor<T>>,
-        _call: &RuntimeCallFor<T>,
+        call: &RuntimeCallFor<T>,
         _info: &DispatchInfoOf<RuntimeCallFor<T>>,
         _len: usize,
         _self_implicit: Self::Implicit,
@@ -86,16 +86,33 @@ where
         _source: TransactionSource,
     ) -> ValidateResult<Self::Val, RuntimeCallFor<T>> {
         let origin = if let Some(params) = &self.0 {
-            Pallet::<T, I>::authenticate(
+            let address = Pallet::<T, I>::authenticate(
                 &params.device_id,
                 &params.credential,
                 &inherited_implication.using_encoded(blake2_256),
             )
-            .map(|address| RawOrigin::Signed(address).into())
             .map_err(|e| {
                 log::error!(target: "pallet_pass", "Authentication failed: {:?}", e);
-                InvalidTransaction::BadSigner.into()
-            })
+                TransactionValidityError::from(InvalidTransaction::BadSigner)
+            })?;
+
+            // Check the device's call filter
+            let filter =
+                DeviceFilters::<T, I>::get(&address, &params.device_id).unwrap_or_default();
+            let call_index = call.using_encoded(|bytes| {
+                if bytes.len() >= 2 {
+                    (bytes[0], bytes[1])
+                } else {
+                    (0, 0)
+                }
+            });
+            let spend = T::SpendMatcher::spending_amount(call);
+            if !filter.allows(call_index, spend) {
+                log::error!(target: "pallet_pass", "Device filter rejected call");
+                return Err(InvalidTransaction::Call.into());
+            }
+
+            Ok::<_, TransactionValidityError>(RawOrigin::Signed(address).into())
         } else {
             // If we're not attempting to authenticate, let's check if the origin is signed, and is
             // maybe an existing session key. Given that, we'll pass the actual `pass_account_id`.
