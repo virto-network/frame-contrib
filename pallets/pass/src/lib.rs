@@ -201,6 +201,12 @@ pub mod pallet {
         (T::AccountId, BlockNumberFor<T, I>, DeviceFilterOf<T, I>),
     >;
 
+    /// The device_id that authenticated the current transaction. Set by the
+    /// `PassAuthenticate` extension during `prepare`, cleared in `post_dispatch`.
+    /// Used by extrinsics like `add_device` to enforce no-escalation.
+    #[pallet::storage]
+    pub(crate) type AuthenticatedDevice<T: Config<I>, I: 'static = ()> = StorageValue<_, DeviceId>;
+
     /// Counts how many sessions a pass account has registered and holds an amount to the account.
     #[pallet::storage]
     pub type AccountSessionsCount<T: Config<I>, I: 'static = ()> =
@@ -275,32 +281,21 @@ pub mod pallet {
             >::increment(registrar)?;
 
             Self::create_account(address)?;
-            Self::try_add_device(address, attestation, DeviceFilterOf::<T, I>::default())
+            Self::try_add_device(address, attestation, DeviceFilter::Admin)
         }
 
-        /// Add a new device with a call filter. The `caller_device` must be the
-        /// device used to authenticate this transaction; its filter must be a
-        /// superset of the new device's filter (no-escalation).
+        /// Add a new device with a call filter. The caller's device filter
+        /// must be a superset of the new device's filter (no-escalation).
+        /// The caller's device is determined by `AuthenticatedDevice` storage,
+        /// which is set by the `PassAuthenticate` transaction extension.
         #[pallet::call_index(1)]
         pub fn add_device(
             origin: OriginFor<T>,
-            caller_device: DeviceId,
             attestation: DeviceAttestationOf<T, I>,
             filter: DeviceFilterOf<T, I>,
         ) -> DispatchResult {
             let address = Self::ensure_signer_is_pass_account(origin)?;
-            // Verify the caller_device actually belongs to this account
-            ensure!(
-                Devices::<T, I>::contains_key(&address, &caller_device),
-                Error::<T, I>::DeviceNotFound
-            );
-            // No-escalation: caller can only grant permissions it has
-            let caller_filter =
-                DeviceFilters::<T, I>::get(&address, caller_device).unwrap_or_default();
-            ensure!(
-                caller_filter.is_superset_of(&filter),
-                Error::<T, I>::PermissionEscalation
-            );
+            Self::check_no_escalation(&address, &filter)?;
             Self::try_add_device(&address, attestation, filter)
         }
 
@@ -327,6 +322,9 @@ pub mod pallet {
                 !matches!(filter, DeviceFilter::Admin),
                 Error::<T, I>::PermissionEscalation
             );
+
+            // No-escalation: caller can only grant permissions it has
+            Self::check_no_escalation(address, &filter)?;
 
             // We must ensure that there is no account registered for that session key.
             ensure!(
@@ -388,6 +386,27 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         who: &T::AccountId,
     ) -> Option<(T::AccountId, DeviceFilterOf<T, I>)> {
         SessionKeys::<T, I>::get(who).map(|(account, _, filter)| (account, filter))
+    }
+
+    /// Verify the no-escalation invariant: the authenticated device's filter must
+    /// be a superset of the requested filter.
+    fn check_no_escalation(
+        address: &T::AccountId,
+        requested: &DeviceFilterOf<T, I>,
+    ) -> DispatchResult {
+        let caller_device_id =
+            AuthenticatedDevice::<T, I>::get().ok_or(DispatchError::BadOrigin)?;
+        ensure!(
+            Devices::<T, I>::contains_key(address, &caller_device_id),
+            Error::<T, I>::DeviceNotFound
+        );
+        let caller_filter = DeviceFilters::<T, I>::get(address, caller_device_id)
+            .ok_or(DispatchError::BadOrigin)?;
+        ensure!(
+            caller_filter.is_superset_of(requested),
+            Error::<T, I>::PermissionEscalation
+        );
+        Ok(())
     }
 
     /// Ensure that the signed origin maps onto an already existing pass account.

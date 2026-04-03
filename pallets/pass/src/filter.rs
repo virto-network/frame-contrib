@@ -49,14 +49,6 @@ pub struct AssetSpendLimit<AssetId: Clone + Debug + Eq, Balance: Clone + Debug +
     pub max_amount: Balance,
 }
 
-impl<A: Ord + Clone + Debug + Eq, B: Clone + Debug + Eq, C: Get<u32>, D: Get<u32>> Default
-    for DeviceFilter<A, B, C, D>
-{
-    fn default() -> Self {
-        Self::Admin
-    }
-}
-
 impl<
         AssetId: Ord + Clone + Debug + Eq,
         Balance: Ord + Clone + Debug + Eq,
