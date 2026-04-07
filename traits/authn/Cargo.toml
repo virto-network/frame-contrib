@@ -8,11 +8,12 @@ version = "0.1.0"
 
 [dependencies]
 codec.workspace = true
-frame-support.workspace = true
+frame-support = { workspace = true, optional = true }
 fc-traits-authn-proc.workspace = true
 log.workspace = true
 scale-info.workspace = true
 
 [features]
-default = ["std"]
-std = ["codec/std", "frame-support/std", "log/std", "scale-info/std"]
+default = ["std", "runtime"]
+runtime = ["dep:frame-support"]
+std = ["codec/std", "frame-support?/std", "log/std", "scale-info/std"]
