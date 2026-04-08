@@ -1,16 +1,22 @@
-use crate::{Config, CredentialOf, Pallet, WeightInfo};
+use crate::{
+    AuthenticatedDevice, CallMatcher, Config, CredentialOf, DeviceFilters, Pallet, SpendMatcher,
+    WeightInfo,
+};
 use codec::{Decode, DecodeWithMemTracking, Encode};
 use fc_traits_authn::DeviceId;
 use frame_support::{
     dispatch::RawOrigin,
-    pallet_prelude::{TransactionValidityError, Weight},
+    pallet_prelude::{DispatchResult, TransactionValidityError, Weight},
     CloneNoBound, DebugNoBound, DefaultNoBound, EqNoBound, PartialEqNoBound,
 };
 use frame_system::{ensure_signed, pallet_prelude::RuntimeCallFor};
 use scale_info::TypeInfo;
 use sp_core::blake2_256;
 use sp_runtime::{
-    traits::{DispatchInfoOf, DispatchOriginOf, Implication, TransactionExtension, ValidateResult},
+    traits::{
+        DispatchInfoOf, DispatchOriginOf, Implication, PostDispatchInfoOf, TransactionExtension,
+        ValidateResult,
+    },
     transaction_validity::{InvalidTransaction, TransactionSource, ValidTransaction},
 };
 
@@ -68,8 +74,9 @@ where
 {
     const IDENTIFIER: &'static str = "PassAuthenticate";
     type Implicit = ();
-    type Val = ();
-    type Pre = ();
+    /// The authenticated (account, device_id), if any.
+    type Val = Option<(T::AccountId, DeviceId)>;
+    type Pre = Option<(T::AccountId, DeviceId)>;
 
     fn weight(&self, _call: &RuntimeCallFor<T>) -> Weight {
         T::WeightInfo::authenticate()
@@ -78,51 +85,95 @@ where
     fn validate(
         &self,
         origin: DispatchOriginOf<RuntimeCallFor<T>>,
-        _call: &RuntimeCallFor<T>,
+        call: &RuntimeCallFor<T>,
         _info: &DispatchInfoOf<RuntimeCallFor<T>>,
         _len: usize,
         _self_implicit: Self::Implicit,
         inherited_implication: &impl Implication,
         _source: TransactionSource,
     ) -> ValidateResult<Self::Val, RuntimeCallFor<T>> {
-        let origin = if let Some(params) = &self.0 {
-            Pallet::<T, I>::authenticate(
+        let (device_id, origin) = if let Some(params) = &self.0 {
+            let address = Pallet::<T, I>::authenticate(
                 &params.device_id,
                 &params.credential,
                 &inherited_implication.using_encoded(blake2_256),
             )
-            .map(|address| RawOrigin::Signed(address).into())
             .map_err(|e| {
                 log::error!(target: "pallet_pass", "Authentication failed: {:?}", e);
-                InvalidTransaction::BadSigner.into()
-            })
-        } else {
-            // If we're not attempting to authenticate, let's check if the origin is signed, and is
-            // maybe an existing session key. Given that, we'll pass the actual `pass_account_id`.
-            //
-            // Otherwise, just pass the previous origin to the rest of the extensions pipeline.
+                TransactionValidityError::from(InvalidTransaction::BadSigner)
+            })?;
 
-            Ok::<_, TransactionValidityError>(if let Ok(who) = ensure_signed(origin.clone()) {
-                Pallet::<T, I>::pass_account_from_session_key(&who)
-                    .or(Some(who))
-                    .map(|who| RawOrigin::Signed(who).into())
-                    .unwrap()
+            // Check the device's call filter (missing filter = denied)
+            let filter = DeviceFilters::<T, I>::get(&address, &params.device_id)
+                .ok_or(TransactionValidityError::from(InvalidTransaction::Call))?;
+            if !filter.allows(
+                T::CallMatcher::call_indices(call),
+                T::SpendMatcher::spending_amount(call),
+            ) {
+                log::error!(target: "pallet_pass", "Device filter rejected call");
+                return Err(InvalidTransaction::Call.into());
+            }
+
+            Ok::<_, TransactionValidityError>((
+                Some((address.clone(), params.device_id)),
+                RawOrigin::Signed(address).into(),
+            ))
+        } else {
+            // Check if the origin is signed by a session key.
+            // Otherwise, pass the origin through unchanged.
+            if let Ok(who) = ensure_signed(origin.clone()) {
+                if let Some((account, filter)) = Pallet::<T, I>::pass_account_from_session_key(&who)
+                {
+                    if !filter.allows(
+                        T::CallMatcher::call_indices(call),
+                        T::SpendMatcher::spending_amount(call),
+                    ) {
+                        return Err(InvalidTransaction::Call.into());
+                    }
+                    Ok((None, RawOrigin::Signed(account).into()))
+                } else {
+                    Ok((None, RawOrigin::Signed(who).into()))
+                }
             } else {
-                origin
-            })
+                Ok((None, origin))
+            }
         }?;
 
-        Ok((ValidTransaction::default(), (), origin))
+        Ok((ValidTransaction::default(), device_id, origin))
     }
 
     fn prepare(
         self,
-        _val: Self::Val,
+        val: Self::Val,
         _origin: &DispatchOriginOf<RuntimeCallFor<T>>,
         _call: &RuntimeCallFor<T>,
         _info: &DispatchInfoOf<RuntimeCallFor<T>>,
         _len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
-        Ok(())
+        // Defense-in-depth: clear any stale authentication context from a
+        // previous transaction whose `post_dispatch_details` may have failed
+        // to run (e.g. due to a node panic mid-dispatch).
+        AuthenticatedDevice::<T, I>::kill();
+
+        // Store the authenticated (account, device_id) so extrinsics can
+        // read it for no-escalation checks.
+        if let Some(ref auth) = val {
+            AuthenticatedDevice::<T, I>::put(auth);
+        }
+        Ok(val)
+    }
+
+    fn post_dispatch_details(
+        pre: Self::Pre,
+        _info: &DispatchInfoOf<RuntimeCallFor<T>>,
+        _post_info: &PostDispatchInfoOf<RuntimeCallFor<T>>,
+        _len: usize,
+        _result: &DispatchResult,
+    ) -> Result<Weight, TransactionValidityError> {
+        // Clear transient storage regardless of success/failure.
+        if pre.is_some() {
+            AuthenticatedDevice::<T, I>::kill();
+        }
+        Ok(Weight::zero())
     }
 }

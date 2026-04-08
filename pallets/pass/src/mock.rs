@@ -184,10 +184,14 @@ impl Config for Test {
     >;
     type SessionKeyConsideration =
         FirstItemIsFree<HoldConsideration<AccountId, Balances, HoldSessionKeys, ItemStoragePrice>>;
+    type SpendMatcher = ();
+    type CallMatcher = crate::filter::ScaleCallMatcher;
     type PalletId = PassPalletId;
     type MaxDevicesPerAccount = ConstU32<2>;
     type MaxSessionsPerAccount = ConstU32<2>;
     type MaxSessionDuration = ConstU64<10>;
+    type MaxFilteredCalls = ConstU32<10>;
+    type MaxFilteredAssets = ConstU32<5>;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = benchmarks::BenchmarkHelper;
 }

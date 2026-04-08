@@ -1,5 +1,6 @@
 //! Tests for pass pallet.
 use super::{Error, Event, PassAuthenticate};
+use crate::filter::DeviceFilter;
 use crate::mock::*;
 
 use codec::{Encode, MaxEncodedLen};
@@ -24,6 +25,18 @@ const CHARLIE: AccountId = AccountId::new([3u8; 32]);
 const THE_DEVICE: DeviceId = [10u8; 32];
 const OTHER_DEVICE: DeviceId = [11u8; 32];
 const THIRD_DEVICE: DeviceId = [12u8; 32];
+
+fn remark_only_filter(
+) -> DeviceFilter<(), u128, frame_support::traits::ConstU32<10>, frame_support::traits::ConstU32<5>>
+{
+    DeviceFilter::Calls(
+        [(0u8, 7u8)]
+            .into_iter()
+            .collect::<alloc::collections::BTreeSet<_>>()
+            .try_into()
+            .unwrap(),
+    )
+}
 
 parameter_types! {
     pub AccountNameA: HashedUserId = <Test as frame_system::Config>::Hashing::hash(
@@ -314,6 +327,7 @@ mod authenticate {
                         &address,
                     ),
                 }),
+                DeviceFilter::Admin,
             )
             .expect("adding device on an existing account works; qed");
 
@@ -543,6 +557,7 @@ mod add_device {
     #[test]
     fn fails_if_bad_origin() {
         prepare(AccountNameA::get()).execute_with(|| {
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::root(),
@@ -552,6 +567,7 @@ mod add_device {
                             challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
+                    DeviceFilter::Admin,
                 ),
                 DispatchError::BadOrigin
             );
@@ -565,6 +581,7 @@ mod add_device {
                             challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
+                    DeviceFilter::Admin,
                 ),
                 DispatchError::BadOrigin
             );
@@ -574,6 +591,7 @@ mod add_device {
     #[test]
     fn fails_if_invalid_challenge() {
         prepare(AccountNameA::get()).execute_with(|| {
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
@@ -585,6 +603,7 @@ mod add_device {
                             &[]
                         ),
                     }),
+                    DeviceFilter::Admin,
                 ),
                 Error::<Test>::DeviceAttestationInvalid
             );
@@ -594,6 +613,7 @@ mod add_device {
     #[test]
     fn deposit_logic_works() {
         prepare(AccountNameA::get()).execute_with(|| {
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
@@ -603,6 +623,7 @@ mod add_device {
                             challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
+                    DeviceFilter::Admin,
                 ),
                 TokenError::FundsUnavailable
             );
@@ -621,6 +642,7 @@ mod add_device {
                     ))
             ));
 
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
@@ -629,6 +651,7 @@ mod add_device {
                         challenge: authenticator_a::Authenticator::generate(&(), &[]),
                     }
                 ),
+                DeviceFilter::Admin,
             ));
 
             System::assert_has_event(
@@ -653,6 +676,7 @@ mod add_device {
                     ))
             ));
 
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
@@ -661,8 +685,10 @@ mod add_device {
                         challenge: authenticator_a::Authenticator::generate(&(), &[]),
                     }
                 ),
+                DeviceFilter::Admin,
             ));
 
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
@@ -672,6 +698,7 @@ mod add_device {
                             challenge: authenticator_a::Authenticator::generate(&(), &[]),
                         }
                     ),
+                    DeviceFilter::Admin,
                 ),
                 Error::<Test>::MaxDevicesExceeded
             );
@@ -687,11 +714,21 @@ mod add_session_key {
     fn fails_if_bad_origin() {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_noop!(
-                Pass::add_session_key(RuntimeOrigin::root(), OTHER, Some(DURATION)),
+                Pass::add_session_key(
+                    RuntimeOrigin::root(),
+                    OTHER,
+                    Some(DURATION),
+                    remark_only_filter()
+                ),
                 DispatchError::BadOrigin
             );
             assert_noop!(
-                Pass::add_session_key(RuntimeOrigin::signed(OTHER), OTHER, Some(DURATION)),
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(OTHER),
+                    OTHER,
+                    Some(DURATION),
+                    remark_only_filter()
+                ),
                 DispatchError::BadOrigin
             );
         })
@@ -701,11 +738,13 @@ mod add_session_key {
     fn fails_if_account_exists() {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_ok!(Balances::mint_into(&CHARLIE, ExistentialDeposit::get()));
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_session_key(
                     RuntimeOrigin::signed(Address::get()),
                     CHARLIE,
-                    Some(DURATION)
+                    Some(DURATION),
+                    remark_only_filter(),
                 ),
                 Error::<Test>::AccountForSessionKeyAlreadyExists
             );
@@ -715,10 +754,12 @@ mod add_session_key {
     #[test]
     fn it_works() {
         prepare(AccountNameA::get()).execute_with(|| {
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
-                Some(DURATION)
+                Some(DURATION),
+                remark_only_filter(),
             ));
 
             System::assert_has_event(
@@ -745,17 +786,21 @@ mod add_session_key {
                 ),
             ));
 
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
-                Some(DURATION)
+                Some(DURATION),
+                remark_only_filter(),
             ));
 
+            crate::AuthenticatedDevice::<Test>::put((AddressB::get(), OTHER_DEVICE));
             assert_noop!(
                 Pass::add_session_key(
                     RuntimeOrigin::signed(AddressB::get()),
                     OTHER,
-                    Some(DURATION)
+                    Some(DURATION),
+                    remark_only_filter(),
                 ),
                 Error::<Test>::SessionKeyInUse
             );
@@ -765,31 +810,43 @@ mod add_session_key {
     #[test]
     fn max_sessions_per_account_works() {
         prepare(AccountNameA::get()).execute_with(|| {
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 SIGNER,
                 None,
+                remark_only_filter(),
             ));
 
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
+                remark_only_filter(),
             ));
 
             run_to(5);
 
             // Extending a session key works
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
+                remark_only_filter(),
             ));
 
             run_to(10);
 
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
-                Pass::add_session_key(RuntimeOrigin::signed(Address::get()), CHARLIE, None),
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    CHARLIE,
+                    None,
+                    remark_only_filter()
+                ),
                 Error::<Test>::MaxSessionsExceeded,
             );
 
@@ -797,10 +854,12 @@ mod add_session_key {
 
             // Sessions count of an account changes once the session of an already existing session
             // expires.
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 CHARLIE,
                 None,
+                remark_only_filter(),
             ));
         })
     }
@@ -879,10 +938,12 @@ mod dispatch {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_ok!(Balances::mint_into(&Address::get(), Balance::MAX));
 
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
+                remark_only_filter(),
             ));
 
             assert_ok!(signed(OTHER, Call::get()));
@@ -1003,7 +1064,8 @@ mod dispatch {
                                 device_id: OTHER_DEVICE,
                                 challenge: authenticator_a::Authenticator::generate(&(), &[])
                             }
-                        )
+                        ),
+                        filter: DeviceFilter::Admin,
                     }
                     .into()
                 ),
@@ -1044,6 +1106,7 @@ mod dispatch {
                 crate::Call::<Test>::add_session_key {
                     session: SIGNER,
                     duration: None,
+                    filter: remark_only_filter(),
                 }
                 .into(),
             ));
@@ -1065,6 +1128,7 @@ mod dispatch {
                 crate::Call::<Test>::add_session_key {
                     session: OTHER,
                     duration: Some(7),
+                    filter: remark_only_filter(),
                 }
                 .into(),
             ));
@@ -1073,5 +1137,339 @@ mod dispatch {
 
             assert!(!SessionKeys::<Test>::contains_key(OTHER));
         });
+    }
+}
+
+mod device_filters {
+    use super::*;
+    use crate::filter::AssetSpendLimit;
+    use crate::{DeviceFilters, DeviceOf, SessionKeys};
+    use alloc::collections::BTreeSet;
+    use frame_support::traits::ConstU32;
+
+    fn setup_with_admin_device() -> sp_io::TestExternalities {
+        prepare(AccountNameA::get())
+    }
+
+    #[test]
+    fn first_device_gets_admin_filter() {
+        setup_with_admin_device().execute_with(|| {
+            let filter = DeviceFilters::<Test>::get(Address::get(), THE_DEVICE);
+            assert_eq!(filter, Some(DeviceFilter::Admin));
+        })
+    }
+
+    #[test]
+    fn admin_can_add_device_with_any_filter() {
+        setup_with_admin_device().execute_with(|| {
+            assert_ok!(Balances::mint_into(
+                &Address::get(),
+                ExistentialDeposit::get()
+                    + ItemStoragePrice::convert(Footprint::from_parts(
+                        1,
+                        DeviceOf::<Test>::max_encoded_len(),
+                    ))
+            ));
+
+            let calls_filter = DeviceFilter::Calls(
+                [(0u8, 1u8)]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
+
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
+            assert_ok!(Pass::add_device(
+                RuntimeOrigin::signed(Address::get()),
+                PassDeviceAttestation::AuthenticatorAAuthenticator(
+                    authenticator_a::DeviceAttestation {
+                        device_id: OTHER_DEVICE,
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
+                    }
+                ),
+                calls_filter.clone(),
+            ));
+
+            assert_eq!(
+                DeviceFilters::<Test>::get(Address::get(), OTHER_DEVICE),
+                Some(calls_filter)
+            );
+        })
+    }
+
+    #[test]
+    fn restricted_device_cannot_escalate_to_admin() {
+        setup_with_admin_device().execute_with(|| {
+            assert_ok!(Balances::mint_into(
+                &Address::get(),
+                ExistentialDeposit::get()
+                    + ItemStoragePrice::convert(Footprint::from_parts(
+                        2,
+                        DeviceOf::<Test>::max_encoded_len(),
+                    ))
+            ));
+
+            // Add a Calls-restricted device
+            let calls_filter = DeviceFilter::Calls(
+                [(0u8, 1u8)]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
+            assert_ok!(Pass::add_device(
+                RuntimeOrigin::signed(Address::get()),
+                PassDeviceAttestation::AuthenticatorAAuthenticator(
+                    authenticator_a::DeviceAttestation {
+                        device_id: OTHER_DEVICE,
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
+                    }
+                ),
+                calls_filter,
+            ));
+
+            // Now try to use that restricted device to add an Admin device — must fail
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), OTHER_DEVICE));
+            assert_noop!(
+                Pass::add_device(
+                    RuntimeOrigin::signed(Address::get()),
+                    PassDeviceAttestation::AuthenticatorAAuthenticator(
+                        authenticator_a::DeviceAttestation {
+                            device_id: THIRD_DEVICE,
+                            challenge: authenticator_a::Authenticator::generate(&(), &[]),
+                        }
+                    ),
+                    DeviceFilter::Admin, // trying to escalate
+                ),
+                Error::<Test>::PermissionEscalation,
+            );
+        })
+    }
+
+    #[test]
+    fn restricted_device_can_add_subset_filter() {
+        // Needs 3 devices total, but MaxDevicesPerAccount=2 in mock.
+        // Use a fresh ext with higher limit or just test is_superset_of directly.
+        setup_with_admin_device().execute_with(|| {
+            // Test the superset logic directly since we can't add 3 devices in mock
+            let pallets: DeviceFilter<(), u128, ConstU32<10>, ConstU32<5>> = DeviceFilter::Pallets(
+                [0u8, 5, 10]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            let calls_subset: DeviceFilter<(), u128, ConstU32<10>, ConstU32<5>> =
+                DeviceFilter::Calls(
+                    [(0u8, 1u8), (5u8, 0u8)]
+                        .into_iter()
+                        .collect::<BTreeSet<_>>()
+                        .try_into()
+                        .unwrap(),
+                );
+            let calls_outside: DeviceFilter<(), u128, ConstU32<10>, ConstU32<5>> =
+                DeviceFilter::Calls(
+                    [(99u8, 0u8)]
+                        .into_iter()
+                        .collect::<BTreeSet<_>>()
+                        .try_into()
+                        .unwrap(),
+                );
+
+            assert!(pallets.is_superset_of(&calls_subset));
+            assert!(!pallets.is_superset_of(&calls_outside));
+            assert!(!pallets.is_superset_of(&DeviceFilter::Admin));
+        })
+    }
+
+    #[test]
+    fn spend_device_cannot_escalate_to_calls() {
+        setup_with_admin_device().execute_with(|| {
+            assert_ok!(Balances::mint_into(
+                &Address::get(),
+                ExistentialDeposit::get()
+                    + ItemStoragePrice::convert(Footprint::from_parts(
+                        2,
+                        DeviceOf::<Test>::max_encoded_len(),
+                    ))
+            ));
+
+            // Add a Spend-only device
+            let spend_filter = DeviceFilter::Spend(
+                vec![AssetSpendLimit {
+                    asset: (),
+                    max_amount: 1000u128,
+                }]
+                .try_into()
+                .unwrap(),
+            );
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
+            assert_ok!(Pass::add_device(
+                RuntimeOrigin::signed(Address::get()),
+                PassDeviceAttestation::AuthenticatorAAuthenticator(
+                    authenticator_a::DeviceAttestation {
+                        device_id: OTHER_DEVICE,
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
+                    }
+                ),
+                spend_filter,
+            ));
+
+            // Spend device tries to add a Calls device — must fail
+            let calls_filter = DeviceFilter::Calls(
+                [(0u8, 0u8)]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), OTHER_DEVICE));
+            assert_noop!(
+                Pass::add_device(
+                    RuntimeOrigin::signed(Address::get()),
+                    PassDeviceAttestation::AuthenticatorAAuthenticator(
+                        authenticator_a::DeviceAttestation {
+                            device_id: THIRD_DEVICE,
+                            challenge: authenticator_a::Authenticator::generate(&(), &[]),
+                        }
+                    ),
+                    calls_filter,
+                ),
+                Error::<Test>::PermissionEscalation,
+            );
+        })
+    }
+
+    #[test]
+    fn spend_filter_superset_logic() {
+        new_test_ext().execute_with(|| {
+            type F = DeviceFilter<(), u128, ConstU32<10>, ConstU32<5>>;
+
+            let spend_1000: F = DeviceFilter::Spend(
+                vec![AssetSpendLimit {
+                    asset: (),
+                    max_amount: 1000u128,
+                }]
+                .try_into()
+                .unwrap(),
+            );
+            let spend_500: F = DeviceFilter::Spend(
+                vec![AssetSpendLimit {
+                    asset: (),
+                    max_amount: 500u128,
+                }]
+                .try_into()
+                .unwrap(),
+            );
+            let spend_2000: F = DeviceFilter::Spend(
+                vec![AssetSpendLimit {
+                    asset: (),
+                    max_amount: 2000u128,
+                }]
+                .try_into()
+                .unwrap(),
+            );
+            // Can delegate with lower limit
+            assert!(spend_1000.is_superset_of(&spend_500));
+            // Cannot delegate with higher limit
+            assert!(!spend_1000.is_superset_of(&spend_2000));
+            // Admin can delegate any spend
+            assert!(F::Admin.is_superset_of(&spend_1000));
+            // Spend can't escalate to admin
+            assert!(!spend_1000.is_superset_of(&F::Admin));
+            // Calls cannot delegate to Spend (security fix)
+            let calls: F = DeviceFilter::Calls(
+                [(0u8, 1u8)]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            assert!(!calls.is_superset_of(&spend_1000));
+        })
+    }
+
+    #[test]
+    fn filter_is_removed_with_device() {
+        setup_with_admin_device().execute_with(|| {
+            assert!(DeviceFilters::<Test>::get(Address::get(), THE_DEVICE).is_some());
+
+            assert_ok!(Pass::remove_device(
+                RuntimeOrigin::signed(Address::get()),
+                THE_DEVICE
+            ));
+
+            assert!(DeviceFilters::<Test>::get(Address::get(), THE_DEVICE).is_none());
+        })
+    }
+
+    #[test]
+    fn session_key_cannot_have_admin_filter() {
+        setup_with_admin_device().execute_with(|| {
+            assert_noop!(
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    SIGNER,
+                    Some(5),
+                    DeviceFilter::Admin,
+                ),
+                Error::<Test>::PermissionEscalation,
+            );
+        })
+    }
+
+    #[test]
+    fn stale_auth_from_different_account_is_ignored() {
+        // Security test: if AuthenticatedDevice storage contains a stale
+        // entry for account A, but the current call is from account B,
+        // the escalation check must reject it (treat as not authenticated).
+        setup_with_admin_device().execute_with(|| {
+            // Simulate stale auth context from a DIFFERENT account
+            let other_account: AccountId = AccountId::new([99u8; 32]);
+            crate::AuthenticatedDevice::<Test>::put((other_account, THE_DEVICE));
+
+            assert_noop!(
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    SIGNER,
+                    Some(5),
+                    DeviceFilter::Calls(
+                        [(0u8, 7u8)]
+                            .into_iter()
+                            .collect::<BTreeSet<_>>()
+                            .try_into()
+                            .unwrap(),
+                    ),
+                ),
+                Error::<Test>::NotAuthenticatedByDevice,
+            );
+        })
+    }
+
+    #[test]
+    fn session_key_stores_filter() {
+        setup_with_admin_device().execute_with(|| {
+            let filter = DeviceFilter::Calls(
+                [(0u8, 7u8)]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                SIGNER,
+                Some(5),
+                filter.clone(),
+            ));
+
+            let (account, _, stored_filter) =
+                SessionKeys::<Test>::get(SIGNER).expect("session exists");
+            assert_eq!(account, Address::get());
+            assert_eq!(stored_filter, filter);
+        })
     }
 }

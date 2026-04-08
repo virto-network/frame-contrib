@@ -37,10 +37,12 @@ mod mock;
 mod tests;
 
 mod extensions;
+pub mod filter;
 mod types;
 
 pub mod weights;
 pub use extensions::*;
+pub use filter::*;
 pub use pallet::*;
 pub use types::*;
 pub use weights::*;
@@ -85,6 +87,15 @@ pub mod pallet {
         type Scheduler: Named<BlockNumberFor<Self, I>, Self::RuntimeCall, Self::PalletsOrigin>;
         type BlockNumberProvider: BlockNumberProvider;
 
+        // Device filters: types for per-device call authorization.
+
+        /// Extracts spending info from runtime calls for `Spend` filter evaluation.
+        /// Use `()` if spend-only devices aren't needed.
+        type SpendMatcher: SpendMatcher<Self::RuntimeCall>;
+        /// Identifies calls as `(pallet_index, call_index)` for filter
+        /// matching. Defaults can use `ScaleCallMatcher` from this pallet.
+        type CallMatcher: CallMatcher<Self::RuntimeCall>;
+
         // Considerations: Costs that are "taken from [the caller's] account temporarily in order to
         // offset the cost to the chain of holding some data Footprint in state".
 
@@ -110,6 +121,12 @@ pub mod pallet {
         /// The maximum duration of a session
         #[pallet::constant]
         type MaxSessionDuration: Get<BlockNumberFor<Self, I>>;
+        /// Maximum entries in a device's call/pallet filter.
+        #[pallet::constant]
+        type MaxFilteredCalls: Get<u32>;
+        /// Maximum assets in a device's spend filter.
+        #[pallet::constant]
+        type MaxFilteredAssets: Get<u32>;
 
         // Benchmarking: Types to handle benchmarks.
 
@@ -160,14 +177,58 @@ pub mod pallet {
     pub type DeviceIds<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, DeviceId, ()>;
 
+    /// Per-device call filters. Devices without an entry are treated as `Admin`.
+    #[pallet::storage]
+    pub type DeviceFilters<T: Config<I>, I: 'static = ()> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        Blake2_128Concat,
+        DeviceId,
+        DeviceFilterOf<T, I>,
+    >;
+
     /// Counts how many devices a pass account has registered and holds an amount to the account.
     #[pallet::storage]
     pub type DeviceConsiderations<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, T::AccountId, (T::DeviceConsideration, u32)>;
 
     #[pallet::storage]
-    pub type SessionKeys<T: Config<I>, I: 'static = ()> =
-        CountedStorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, BlockNumberFor<T, I>)>;
+    pub type SessionKeys<T: Config<I>, I: 'static = ()> = CountedStorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        (T::AccountId, BlockNumberFor<T, I>, DeviceFilterOf<T, I>),
+    >;
+
+    /// The `(pass_account, device_id)` that authenticated the current
+    /// transaction.
+    ///
+    /// # Lifecycle
+    ///
+    /// - **Set**: by `PassAuthenticate::prepare` when the tx was
+    ///   authenticated with a device credential.
+    /// - **Read**: by `check_no_escalation` during `add_device` /
+    ///   `add_session_key`.
+    /// - **Cleared**: at the start of every `PassAuthenticate::prepare`
+    ///   (defense-in-depth) AND in `post_dispatch_details`.
+    ///
+    /// # Invariants
+    ///
+    /// 1. **Sole setter**: only `PassAuthenticate::prepare` writes to this
+    ///    slot. Do not add other setters — the integrity of the no-escalation
+    ///    check depends on this being a faithful record of the current tx's
+    ///    device authentication. The `pub(crate)` visibility is load-bearing.
+    /// 2. **Cleared between transactions**: must be `None` before each
+    ///    `prepare` begins. Enforced by the `kill()` at the start of
+    ///    `prepare` and the `kill()` in `post_dispatch_details`.
+    /// 3. **Account-bound**: consumers (`check_no_escalation`) must verify
+    ///    that the stored `AccountId` matches the call's signer. This
+    ///    prevents stale values from a prior transaction (if cleanup ever
+    ///    fails) from being usable across accounts.
+    #[pallet::storage]
+    pub(crate) type AuthenticatedDevice<T: Config<I>, I: 'static = ()> =
+        StorageValue<_, (T::AccountId, DeviceId)>;
 
     /// Counts how many sessions a pass account has registered and holds an amount to the account.
     #[pallet::storage]
@@ -216,6 +277,13 @@ pub mod pallet {
         MaxSessionsExceeded,
         /// The device to register already exists.
         DeviceAlreadyExists,
+        /// The caller tried to grant more permissions than it has.
+        PermissionEscalation,
+        /// The device's filter does not allow this call.
+        CallNotAllowed,
+        /// The transaction did not carry a device authentication, so no
+        /// device filter context is available for this operation.
+        NotAuthenticatedByDevice,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -239,16 +307,22 @@ pub mod pallet {
             >::increment(registrar)?;
 
             Self::create_account(address)?;
-            Self::try_add_device(address, attestation)
+            Self::try_add_device(address, attestation, DeviceFilter::Admin)
         }
 
+        /// Add a new device with a call filter. The caller's device filter
+        /// must be a superset of the new device's filter (no-escalation).
+        /// The caller's device is determined by `AuthenticatedDevice` storage,
+        /// which is set by the `PassAuthenticate` transaction extension.
         #[pallet::call_index(1)]
         pub fn add_device(
             origin: OriginFor<T>,
             attestation: DeviceAttestationOf<T, I>,
+            filter: DeviceFilterOf<T, I>,
         ) -> DispatchResult {
-            let address = &Self::ensure_signer_is_pass_account(origin)?;
-            Self::try_add_device(address, attestation)
+            let address = Self::ensure_signer_is_pass_account(origin)?;
+            Self::check_no_escalation(&address, &filter)?;
+            Self::try_add_device(&address, attestation, filter)
         }
 
         #[pallet::call_index(2)]
@@ -257,30 +331,38 @@ pub mod pallet {
             Self::try_remove_device(&address, &device_id)
         }
 
+        /// Add a session key with a mandatory call filter.
+        /// `Admin` filter is not allowed for session keys.
         #[pallet::call_index(3)]
         pub fn add_session_key(
             origin: OriginFor<T>,
             session: AccountIdLookupOf<T>,
             duration: Option<BlockNumberFor<T, I>>,
+            filter: DeviceFilterOf<T, I>,
         ) -> DispatchResult {
             let address = &Self::ensure_signer_is_pass_account(origin)?;
             let session_key = &T::Lookup::lookup(session)?;
 
+            // Session keys must not have unrestricted access
+            ensure!(
+                !matches!(filter, DeviceFilter::Admin),
+                Error::<T, I>::PermissionEscalation
+            );
+
+            // No-escalation: caller can only grant permissions it has
+            Self::check_no_escalation(address, &filter)?;
+
             // We must ensure that there is no account registered for that session key.
-            //
-            // Session keys are meant to be ephemeral. Therefore, they should never be tied to an
-            // existing account.
             ensure!(
                 !frame_system::Pallet::<T>::account_exists(session_key),
                 Error::<T, I>::AccountForSessionKeyAlreadyExists
             );
 
-            if let Some((account, _)) = SessionKeys::<T, I>::get(session_key) {
+            if let Some((account, _, _)) = SessionKeys::<T, I>::get(session_key) {
                 // Ensure another user is not using this session key.
                 ensure!(&account == address, Error::<T, I>::SessionKeyInUse);
 
-                // Let's try to remove an existing session that uses the same session key (if any). This is
-                // so we ensure we decrease the provider counter correctly.
+                // Let's try to remove an existing session that uses the same session key (if any).
                 Self::try_remove_session_key(session_key)?;
             }
 
@@ -298,7 +380,7 @@ pub mod pallet {
                 .unwrap_or(T::MaxSessionDuration::get())
                 .min(T::MaxSessionDuration::get());
 
-            SessionKeys::<T, I>::insert(session_key.clone(), (address.clone(), until));
+            SessionKeys::<T, I>::insert(session_key.clone(), (address.clone(), until, filter));
             Self::schedule_next_removal(session_key, duration)?;
 
             Self::deposit_event(Event::<T, I>::SessionCreated {
@@ -325,9 +407,37 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         T::AddressGenerator::generate_address(user)
     }
 
-    /// Extracts the pass account from a session key.
-    pub(crate) fn pass_account_from_session_key(who: &T::AccountId) -> Option<T::AccountId> {
-        SessionKeys::<T, I>::get(who).map(|(s, _)| s)
+    /// Extracts the pass account and filter from a session key.
+    pub(crate) fn pass_account_from_session_key(
+        who: &T::AccountId,
+    ) -> Option<(T::AccountId, DeviceFilterOf<T, I>)> {
+        SessionKeys::<T, I>::get(who).map(|(account, _, filter)| (account, filter))
+    }
+
+    /// Verify the no-escalation invariant: the authenticated device's filter must
+    /// be a superset of the requested filter.
+    fn check_no_escalation(
+        address: &T::AccountId,
+        requested: &DeviceFilterOf<T, I>,
+    ) -> DispatchResult {
+        let (auth_account, caller_device_id) =
+            AuthenticatedDevice::<T, I>::get().ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
+        // Stale authentication context from a different account is ignored.
+        ensure!(
+            &auth_account == address,
+            Error::<T, I>::NotAuthenticatedByDevice
+        );
+        ensure!(
+            Devices::<T, I>::contains_key(address, &caller_device_id),
+            Error::<T, I>::DeviceNotFound
+        );
+        let caller_filter = DeviceFilters::<T, I>::get(address, caller_device_id)
+            .ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
+        ensure!(
+            caller_filter.is_superset_of(requested),
+            Error::<T, I>::PermissionEscalation
+        );
+        Ok(())
     }
 
     /// Ensure that the signed origin maps onto an already existing pass account.
@@ -385,6 +495,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub(crate) fn try_add_device(
         address: &T::AccountId,
         attestation: DeviceAttestationOf<T, I>,
+        filter: DeviceFilterOf<T, I>,
     ) -> DispatchResult {
         let device_id = attestation.device_id();
         ensure!(
@@ -413,6 +524,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
         Devices::<T, I>::insert(address, device_id, device);
         DeviceIds::<T, I>::insert(device_id, ());
+        DeviceFilters::<T, I>::insert(address, device_id, filter);
 
         Self::deposit_event(Event::<T, I>::DeviceAdded {
             who: address.clone(),
@@ -437,6 +549,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
         Devices::<T, I>::remove(address, id);
         DeviceIds::<T, I>::remove(id);
+        DeviceFilters::<T, I>::remove(address, id);
 
         Self::deposit_event(Event::<T, I>::DeviceRemoved {
             who: address.clone(),
@@ -450,7 +563,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     fn try_remove_session_key(session_key: &T::AccountId) -> DispatchResult {
         Self::cancel_scheduled_session_key_removal(session_key);
 
-        if let Some(address) = &Self::pass_account_from_session_key(session_key) {
+        if let Some((address, _)) = &Self::pass_account_from_session_key(session_key) {
             SessionKeys::<T, I>::remove(session_key);
             AccountSessionsCount::<T, I>::insert(
                 address,
