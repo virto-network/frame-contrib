@@ -27,7 +27,7 @@ const OTHER_DEVICE: DeviceId = [11u8; 32];
 const THIRD_DEVICE: DeviceId = [12u8; 32];
 
 fn remark_only_filter(
-) -> DeviceFilter<u32, u128, frame_support::traits::ConstU32<10>, frame_support::traits::ConstU32<5>>
+) -> DeviceFilter<(), u128, frame_support::traits::ConstU32<10>, frame_support::traits::ConstU32<5>>
 {
     DeviceFilter::Calls(
         [(0u8, 7u8)]
@@ -1254,14 +1254,14 @@ mod device_filters {
         // Use a fresh ext with higher limit or just test is_superset_of directly.
         setup_with_admin_device().execute_with(|| {
             // Test the superset logic directly since we can't add 3 devices in mock
-            let pallets: DeviceFilter<u32, u128, ConstU32<10>, ConstU32<5>> = DeviceFilter::Pallets(
+            let pallets: DeviceFilter<(), u128, ConstU32<10>, ConstU32<5>> = DeviceFilter::Pallets(
                 [0u8, 5, 10]
                     .into_iter()
                     .collect::<BTreeSet<_>>()
                     .try_into()
                     .unwrap(),
             );
-            let calls_subset: DeviceFilter<u32, u128, ConstU32<10>, ConstU32<5>> =
+            let calls_subset: DeviceFilter<(), u128, ConstU32<10>, ConstU32<5>> =
                 DeviceFilter::Calls(
                     [(0u8, 1u8), (5u8, 0u8)]
                         .into_iter()
@@ -1269,7 +1269,7 @@ mod device_filters {
                         .try_into()
                         .unwrap(),
                 );
-            let calls_outside: DeviceFilter<u32, u128, ConstU32<10>, ConstU32<5>> =
+            let calls_outside: DeviceFilter<(), u128, ConstU32<10>, ConstU32<5>> =
                 DeviceFilter::Calls(
                     [(99u8, 0u8)]
                         .into_iter()
@@ -1299,7 +1299,7 @@ mod device_filters {
             // Add a Spend-only device
             let spend_filter = DeviceFilter::Spend(
                 vec![AssetSpendLimit {
-                    asset: 1u32,
+                    asset: (),
                     max_amount: 1000u128,
                 }]
                 .try_into()
@@ -1345,11 +1345,11 @@ mod device_filters {
     #[test]
     fn spend_filter_superset_logic() {
         new_test_ext().execute_with(|| {
-            type F = DeviceFilter<u32, u128, ConstU32<10>, ConstU32<5>>;
+            type F = DeviceFilter<(), u128, ConstU32<10>, ConstU32<5>>;
 
             let spend_1000: F = DeviceFilter::Spend(
                 vec![AssetSpendLimit {
-                    asset: 1u32,
+                    asset: (),
                     max_amount: 1000u128,
                 }]
                 .try_into()
@@ -1357,7 +1357,7 @@ mod device_filters {
             );
             let spend_500: F = DeviceFilter::Spend(
                 vec![AssetSpendLimit {
-                    asset: 1u32,
+                    asset: (),
                     max_amount: 500u128,
                 }]
                 .try_into()
@@ -1365,31 +1365,29 @@ mod device_filters {
             );
             let spend_2000: F = DeviceFilter::Spend(
                 vec![AssetSpendLimit {
-                    asset: 1u32,
+                    asset: (),
                     max_amount: 2000u128,
                 }]
                 .try_into()
                 .unwrap(),
             );
-            let spend_other_asset: F = DeviceFilter::Spend(
-                vec![AssetSpendLimit {
-                    asset: 2u32,
-                    max_amount: 100u128,
-                }]
-                .try_into()
-                .unwrap(),
-            );
-
             // Can delegate with lower limit
             assert!(spend_1000.is_superset_of(&spend_500));
             // Cannot delegate with higher limit
             assert!(!spend_1000.is_superset_of(&spend_2000));
-            // Cannot delegate for an asset you don't have
-            assert!(!spend_1000.is_superset_of(&spend_other_asset));
             // Admin can delegate any spend
             assert!(F::Admin.is_superset_of(&spend_1000));
             // Spend can't escalate to admin
             assert!(!spend_1000.is_superset_of(&F::Admin));
+            // Calls cannot delegate to Spend (security fix)
+            let calls: F = DeviceFilter::Calls(
+                [(0u8, 1u8)]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            assert!(!calls.is_superset_of(&spend_1000));
         })
     }
 

@@ -89,12 +89,12 @@ pub mod pallet {
 
         // Device filters: types for per-device call authorization.
 
-        /// Asset identifier for spend limits.
-        type AssetId: Parameter + MaxEncodedLen + Ord + Copy + TypeInfo;
-        /// Balance type for spend limits.
-        type AssetBalance: Parameter + MaxEncodedLen + Ord + Copy + Default + TypeInfo;
         /// Extracts spending info from runtime calls for `Spend` filter evaluation.
-        type SpendMatcher: SpendMatcher<Self::RuntimeCall, Self::AssetId, Self::AssetBalance>;
+        /// Use `()` if spend-only devices aren't needed.
+        type SpendMatcher: SpendMatcher<Self::RuntimeCall>;
+        /// Identifies calls as `(pallet_index, call_index)` for filter
+        /// matching. Defaults can use `ScaleCallMatcher` from this pallet.
+        type CallMatcher: CallMatcher<Self::RuntimeCall>;
 
         // Considerations: Costs that are "taken from [the caller's] account temporarily in order to
         // offset the cost to the chain of holding some data Footprint in state".
@@ -201,9 +201,14 @@ pub mod pallet {
         (T::AccountId, BlockNumberFor<T, I>, DeviceFilterOf<T, I>),
     >;
 
-    /// The device_id that authenticated the current transaction. Set by the
-    /// `PassAuthenticate` extension during `prepare`, cleared in `post_dispatch`.
-    /// Used by extrinsics like `add_device` to enforce no-escalation.
+    /// The device_id that authenticated the current transaction.
+    ///
+    /// Set by `PassAuthenticate::prepare` and cleared in
+    /// `post_dispatch_details` — FRAME guarantees the latter runs even when
+    /// the call fails. Used by `add_device`/`add_session_key` to enforce the
+    /// no-escalation invariant without a full custom origin.
+    ///
+    /// **Invariant**: must be `None` between transactions.
     #[pallet::storage]
     pub(crate) type AuthenticatedDevice<T: Config<I>, I: 'static = ()> = StorageValue<_, DeviceId>;
 
@@ -258,6 +263,9 @@ pub mod pallet {
         PermissionEscalation,
         /// The device's filter does not allow this call.
         CallNotAllowed,
+        /// The transaction did not carry a device authentication, so no
+        /// device filter context is available for this operation.
+        NotAuthenticatedByDevice,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -395,13 +403,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         requested: &DeviceFilterOf<T, I>,
     ) -> DispatchResult {
         let caller_device_id =
-            AuthenticatedDevice::<T, I>::get().ok_or(DispatchError::BadOrigin)?;
+            AuthenticatedDevice::<T, I>::get().ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
         ensure!(
             Devices::<T, I>::contains_key(address, &caller_device_id),
             Error::<T, I>::DeviceNotFound
         );
         let caller_filter = DeviceFilters::<T, I>::get(address, caller_device_id)
-            .ok_or(DispatchError::BadOrigin)?;
+            .ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
         ensure!(
             caller_filter.is_superset_of(requested),
             Error::<T, I>::PermissionEscalation

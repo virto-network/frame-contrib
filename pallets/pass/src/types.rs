@@ -1,5 +1,5 @@
 use super::*;
-use crate::filter::DeviceFilter;
+use crate::filter::{DeviceFilter, SpendMatcher};
 
 use alloc::borrow::ToOwned;
 use codec::EncodeLike;
@@ -24,12 +24,17 @@ pub type DeviceAttestationOf<T, I = ()> =
 pub type AccountIdLookupOf<T> = <<T as frame_system::Config>::Lookup as StaticLookup>::Source;
 pub type BalanceOf<T, I = ()> =
     <<T as Config<I>>::Balances as Inspect<<T as frame_system::Config>::AccountId>>::Balance;
-pub type DeviceFilterOf<T, I = ()> = DeviceFilter<
-    <T as Config<I>>::AssetId,
-    <T as Config<I>>::AssetBalance,
-    <T as Config<I>>::MaxFilteredCalls,
-    <T as Config<I>>::MaxFilteredAssets,
->;
+pub type DeviceFilterOf<T, I = ()> =
+    DeviceFilter<
+        <<T as Config<I>>::SpendMatcher as SpendMatcher<
+            <T as frame_system::Config>::RuntimeCall,
+        >>::AssetId,
+        <<T as Config<I>>::SpendMatcher as SpendMatcher<
+            <T as frame_system::Config>::RuntimeCall,
+        >>::Balance,
+        <T as Config<I>>::MaxFilteredCalls,
+        <T as Config<I>>::MaxFilteredAssets,
+    >;
 pub type DepositInformation<T, I = ()> = (
     <T as frame_system::Config>::AccountId,
     BalanceOf<T, I>,

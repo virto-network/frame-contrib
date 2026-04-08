@@ -1,3 +1,49 @@
+//! # Device Call Filters
+//!
+//! Per-device call authorization based on the principle of least privilege.
+//! Each device is bound to a [`DeviceFilter`] that gates which extrinsics
+//! it may dispatch. The first/recovery device gets `Admin` (unrestricted);
+//! additional devices must have an explicit, more restrictive filter.
+//!
+//! ## Variants
+//!
+//! - [`DeviceFilter::Admin`] — unrestricted. Only the first device (from
+//!   `register()`), and only one Admin device per account is expected.
+//! - [`DeviceFilter::Pallets`] — whitelist by pallet index.
+//! - [`DeviceFilter::Calls`] — whitelist by `(pallet_index, call_index)`.
+//! - [`DeviceFilter::Spend`] — transfer listed assets up to per-asset limits.
+//!   Non-spending calls are rejected.
+//!
+//! ## Delegation (no-escalation invariant)
+//!
+//! A device can only create new devices or session keys whose filter is a
+//! subset of its own (see [`DeviceFilter::is_superset_of`]). The hierarchy:
+//!
+//! ```text
+//! Admin  ──┬─► Pallets ──► Calls
+//!          │
+//!          └─► Spend
+//! ```
+//!
+//! - `Admin` can delegate to anything
+//! - `Pallets(S)` can delegate to `Pallets(S' ⊆ S)` or `Calls` within `S`
+//! - `Calls(S)` can only delegate to `Calls(S' ⊆ S)`
+//! - `Spend` can only delegate to `Spend` with lower/equal per-asset limits
+//! - `Pallets`/`Calls` **cannot** delegate to `Spend` — this would let a
+//!   device with access to e.g. `system.remark` spawn spend-capable devices.
+//!   Spend filters must originate from an `Admin` device.
+//!
+//! ## Session keys
+//!
+//! Session keys are ephemeral and cannot use `Admin`. They still undergo the
+//! no-escalation check against the device that created them.
+//!
+//! ## Spending inspection
+//!
+//! The runtime provides a [`SpendMatcher`] implementation that extracts
+//! `(asset_id, amount)` from runtime calls. For runtimes that don't use
+//! spend filters, `()` is a no-op implementation.
+
 use core::fmt::Debug;
 
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
@@ -70,8 +116,11 @@ impl<
                 a.iter()
                     .any(|al| al.asset == bl.asset && al.max_amount >= bl.max_amount)
             }),
-            // More permissive scopes can delegate down to Spend
-            (Self::Pallets(_) | Self::Calls(_), Self::Spend(_)) => true,
+            // Pallets/Calls CANNOT delegate to Spend: a Calls device with
+            // access to `system.remark` must not be able to spawn a Spend
+            // device that can transfer arbitrary assets. Spend must come
+            // directly from an Admin device.
+            (Self::Pallets(_) | Self::Calls(_), Self::Spend(_)) => false,
             // Spend can't grant call/pallet access
             (Self::Spend(_), _) => false,
             // Calls can't grant pallet-wide access
@@ -103,16 +152,52 @@ impl<
     }
 }
 
-/// Trait to extract spending information from a runtime call.
-/// Implemented by the runtime to support `Spend` device filters.
-pub trait SpendMatcher<Call, AssetId, Balance> {
+/// Extracts spending information from a runtime call.
+///
+/// Runtimes implement this to support `Spend` device filters. If `Spend`
+/// filters are not needed, use `()` which has no assets and rejects all
+/// spending attempts.
+pub trait SpendMatcher<Call> {
+    /// The asset identifier used in `Spend` filter entries.
+    type AssetId: Parameter + MaxEncodedLen + Ord + Copy;
+    /// The balance type used for per-asset spend limits.
+    type Balance: Parameter + MaxEncodedLen + Ord + Copy;
+
     /// If the call is a spending operation (transfer, payment, etc.),
-    /// returns the `(asset_id, amount)`. Otherwise returns `None`.
-    fn spending_amount(call: &Call) -> Option<(AssetId, Balance)>;
+    /// return `(asset_id, amount)`. Otherwise return `None`.
+    fn spending_amount(call: &Call) -> Option<(Self::AssetId, Self::Balance)>;
 }
 
-impl<C, A, B> SpendMatcher<C, A, B> for () {
-    fn spending_amount(_: &C) -> Option<(A, B)> {
+impl<C> SpendMatcher<C> for () {
+    type AssetId = ();
+    type Balance = u128;
+
+    fn spending_amount(_: &C) -> Option<((), u128)> {
         None
+    }
+}
+
+/// Identifies a runtime call as a `(pallet_index, call_index)` pair for
+/// filter matching.
+///
+/// The default implementation reads the first two bytes of the SCALE-encoded
+/// call, which matches FRAME's current encoding. Runtimes with non-standard
+/// encoding (e.g. XCM-wrapped calls) can provide a custom implementation.
+pub trait CallMatcher<Call> {
+    fn call_indices(call: &Call) -> (u8, u8);
+}
+
+/// Default matcher: reads `(pallet_index, call_index)` from the first two
+/// bytes of the SCALE-encoded call. Suitable for standard FRAME runtimes.
+pub struct ScaleCallMatcher;
+impl<Call: Encode> CallMatcher<Call> for ScaleCallMatcher {
+    fn call_indices(call: &Call) -> (u8, u8) {
+        call.using_encoded(|bytes| {
+            if bytes.len() >= 2 {
+                (bytes[0], bytes[1])
+            } else {
+                (0, 0)
+            }
+        })
     }
 }

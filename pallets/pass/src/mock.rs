@@ -184,9 +184,8 @@ impl Config for Test {
     >;
     type SessionKeyConsideration =
         FirstItemIsFree<HoldConsideration<AccountId, Balances, HoldSessionKeys, ItemStoragePrice>>;
-    type AssetId = u32;
-    type AssetBalance = u128;
     type SpendMatcher = ();
+    type CallMatcher = crate::filter::ScaleCallMatcher;
     type PalletId = PassPalletId;
     type MaxDevicesPerAccount = ConstU32<2>;
     type MaxSessionsPerAccount = ConstU32<2>;
