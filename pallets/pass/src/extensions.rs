@@ -74,9 +74,9 @@ where
 {
     const IDENTIFIER: &'static str = "PassAuthenticate";
     type Implicit = ();
-    /// The authenticated device_id, if any.
-    type Val = Option<DeviceId>;
-    type Pre = Option<DeviceId>;
+    /// The authenticated (account, device_id), if any.
+    type Val = Option<(T::AccountId, DeviceId)>;
+    type Pre = Option<(T::AccountId, DeviceId)>;
 
     fn weight(&self, _call: &RuntimeCallFor<T>) -> Weight {
         T::WeightInfo::authenticate()
@@ -115,7 +115,7 @@ where
             }
 
             Ok::<_, TransactionValidityError>((
-                Some(params.device_id),
+                Some((address.clone(), params.device_id)),
                 RawOrigin::Signed(address).into(),
             ))
         } else {
@@ -150,10 +150,15 @@ where
         _info: &DispatchInfoOf<RuntimeCallFor<T>>,
         _len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
-        // Store the authenticated device_id so extrinsics can read it
-        // for no-escalation checks.
-        if let Some(device_id) = val {
-            AuthenticatedDevice::<T, I>::put(device_id);
+        // Defense-in-depth: clear any stale authentication context from a
+        // previous transaction whose `post_dispatch_details` may have failed
+        // to run (e.g. due to a node panic mid-dispatch).
+        AuthenticatedDevice::<T, I>::kill();
+
+        // Store the authenticated (account, device_id) so extrinsics can
+        // read it for no-escalation checks.
+        if let Some(ref auth) = val {
+            AuthenticatedDevice::<T, I>::put(auth);
         }
         Ok(val)
     }
@@ -165,7 +170,7 @@ where
         _len: usize,
         _result: &DispatchResult,
     ) -> Result<Weight, TransactionValidityError> {
-        // Clear transient storage regardless of success/failure
+        // Clear transient storage regardless of success/failure.
         if pre.is_some() {
             AuthenticatedDevice::<T, I>::kill();
         }

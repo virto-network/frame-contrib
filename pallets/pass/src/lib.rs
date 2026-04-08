@@ -201,16 +201,24 @@ pub mod pallet {
         (T::AccountId, BlockNumberFor<T, I>, DeviceFilterOf<T, I>),
     >;
 
-    /// The device_id that authenticated the current transaction.
+    /// The `(pass_account, device_id)` that authenticated the current
+    /// transaction.
     ///
-    /// Set by `PassAuthenticate::prepare` and cleared in
-    /// `post_dispatch_details` — FRAME guarantees the latter runs even when
-    /// the call fails. Used by `add_device`/`add_session_key` to enforce the
-    /// no-escalation invariant without a full custom origin.
+    /// Set by `PassAuthenticate::prepare` and cleared both at the start of
+    /// the next `prepare` (defense-in-depth) and in `post_dispatch_details`.
+    /// Used by `add_device`/`add_session_key` to enforce the no-escalation
+    /// invariant without a full custom origin.
+    ///
+    /// Storing the account alongside the device_id prevents cross-account
+    /// privilege leaks if this value ever persists across transactions
+    /// (e.g. due to a panic between `prepare` and `post_dispatch_details`):
+    /// `check_no_escalation` requires the stored account to match the call's
+    /// signer, so stale values from a different account are ignored.
     ///
     /// **Invariant**: must be `None` between transactions.
     #[pallet::storage]
-    pub(crate) type AuthenticatedDevice<T: Config<I>, I: 'static = ()> = StorageValue<_, DeviceId>;
+    pub(crate) type AuthenticatedDevice<T: Config<I>, I: 'static = ()> =
+        StorageValue<_, (T::AccountId, DeviceId)>;
 
     /// Counts how many sessions a pass account has registered and holds an amount to the account.
     #[pallet::storage]
@@ -402,8 +410,13 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         address: &T::AccountId,
         requested: &DeviceFilterOf<T, I>,
     ) -> DispatchResult {
-        let caller_device_id =
+        let (auth_account, caller_device_id) =
             AuthenticatedDevice::<T, I>::get().ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
+        // Stale authentication context from a different account is ignored.
+        ensure!(
+            &auth_account == address,
+            Error::<T, I>::NotAuthenticatedByDevice
+        );
         ensure!(
             Devices::<T, I>::contains_key(address, &caller_device_id),
             Error::<T, I>::DeviceNotFound

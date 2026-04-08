@@ -149,7 +149,7 @@ mod benchmarks {
         );
 
         // Set the authenticated device for no-escalation check
-        AuthenticatedDevice::<T, I>::put(admin_device_id);
+        AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
 
         #[extrinsic_call]
         _(
@@ -184,7 +184,7 @@ mod benchmarks {
             Footprint::from_parts(2, DeviceOf::<T, I>::max_encoded_len()),
         );
 
-        AuthenticatedDevice::<T, I>::put(admin_device_id);
+        AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
         Pallet::<T, I>::add_device(
             RawOrigin::Signed(address.clone()).into(),
             attestation,
@@ -225,7 +225,7 @@ mod benchmarks {
                 .try_into()
                 .expect("within bounds"),
         );
-        AuthenticatedDevice::<T, I>::put(admin_device_id);
+        AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
 
         #[extrinsic_call]
         _(
@@ -265,7 +265,7 @@ mod benchmarks {
                 .try_into()
                 .expect("within bounds"),
         );
-        AuthenticatedDevice::<T, I>::put(admin_device_id);
+        AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
         Pallet::<T, I>::add_session_key(
             RawOrigin::Signed(address.clone()).into(),
             T::Lookup::unlookup(session_key.clone()),

@@ -557,7 +557,7 @@ mod add_device {
     #[test]
     fn fails_if_bad_origin() {
         prepare(AccountNameA::get()).execute_with(|| {
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::root(),
@@ -591,7 +591,7 @@ mod add_device {
     #[test]
     fn fails_if_invalid_challenge() {
         prepare(AccountNameA::get()).execute_with(|| {
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
@@ -613,7 +613,7 @@ mod add_device {
     #[test]
     fn deposit_logic_works() {
         prepare(AccountNameA::get()).execute_with(|| {
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
@@ -642,7 +642,7 @@ mod add_device {
                     ))
             ));
 
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
@@ -676,7 +676,7 @@ mod add_device {
                     ))
             ));
 
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
@@ -688,7 +688,7 @@ mod add_device {
                 DeviceFilter::Admin,
             ));
 
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
@@ -738,7 +738,7 @@ mod add_session_key {
     fn fails_if_account_exists() {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_ok!(Balances::mint_into(&CHARLIE, ExistentialDeposit::get()));
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_session_key(
                     RuntimeOrigin::signed(Address::get()),
@@ -754,7 +754,7 @@ mod add_session_key {
     #[test]
     fn it_works() {
         prepare(AccountNameA::get()).execute_with(|| {
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
@@ -786,7 +786,7 @@ mod add_session_key {
                 ),
             ));
 
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
@@ -794,7 +794,7 @@ mod add_session_key {
                 remark_only_filter(),
             ));
 
-            crate::AuthenticatedDevice::<Test>::put(OTHER_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((AddressB::get(), OTHER_DEVICE));
             assert_noop!(
                 Pass::add_session_key(
                     RuntimeOrigin::signed(AddressB::get()),
@@ -810,7 +810,7 @@ mod add_session_key {
     #[test]
     fn max_sessions_per_account_works() {
         prepare(AccountNameA::get()).execute_with(|| {
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 SIGNER,
@@ -818,7 +818,7 @@ mod add_session_key {
                 remark_only_filter(),
             ));
 
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
@@ -829,7 +829,7 @@ mod add_session_key {
             run_to(5);
 
             // Extending a session key works
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
@@ -839,7 +839,7 @@ mod add_session_key {
 
             run_to(10);
 
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
                 Pass::add_session_key(
                     RuntimeOrigin::signed(Address::get()),
@@ -854,7 +854,7 @@ mod add_session_key {
 
             // Sessions count of an account changes once the session of an already existing session
             // expires.
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 CHARLIE,
@@ -938,7 +938,7 @@ mod dispatch {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_ok!(Balances::mint_into(&Address::get(), Balance::MAX));
 
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
@@ -1179,7 +1179,7 @@ mod device_filters {
                     .unwrap(),
             );
 
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
@@ -1218,7 +1218,7 @@ mod device_filters {
                     .try_into()
                     .unwrap(),
             );
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
@@ -1231,7 +1231,7 @@ mod device_filters {
             ));
 
             // Now try to use that restricted device to add an Admin device — must fail
-            crate::AuthenticatedDevice::<Test>::put(OTHER_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), OTHER_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
@@ -1305,7 +1305,7 @@ mod device_filters {
                 .try_into()
                 .unwrap(),
             );
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_device(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
@@ -1325,7 +1325,7 @@ mod device_filters {
                     .try_into()
                     .unwrap(),
             );
-            crate::AuthenticatedDevice::<Test>::put(OTHER_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), OTHER_DEVICE));
             assert_noop!(
                 Pass::add_device(
                     RuntimeOrigin::signed(Address::get()),
@@ -1421,6 +1421,34 @@ mod device_filters {
     }
 
     #[test]
+    fn stale_auth_from_different_account_is_ignored() {
+        // Security test: if AuthenticatedDevice storage contains a stale
+        // entry for account A, but the current call is from account B,
+        // the escalation check must reject it (treat as not authenticated).
+        setup_with_admin_device().execute_with(|| {
+            // Simulate stale auth context from a DIFFERENT account
+            let other_account: AccountId = AccountId::new([99u8; 32]);
+            crate::AuthenticatedDevice::<Test>::put((other_account, THE_DEVICE));
+
+            assert_noop!(
+                Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    SIGNER,
+                    Some(5),
+                    DeviceFilter::Calls(
+                        [(0u8, 7u8)]
+                            .into_iter()
+                            .collect::<BTreeSet<_>>()
+                            .try_into()
+                            .unwrap(),
+                    ),
+                ),
+                Error::<Test>::NotAuthenticatedByDevice,
+            );
+        })
+    }
+
+    #[test]
     fn session_key_stores_filter() {
         setup_with_admin_device().execute_with(|| {
             let filter = DeviceFilter::Calls(
@@ -1430,7 +1458,7 @@ mod device_filters {
                     .try_into()
                     .unwrap(),
             );
-            crate::AuthenticatedDevice::<Test>::put(THE_DEVICE);
+            crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_ok!(Pass::add_session_key(
                 RuntimeOrigin::signed(Address::get()),
                 SIGNER,
