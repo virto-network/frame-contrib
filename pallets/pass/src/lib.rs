@@ -204,18 +204,28 @@ pub mod pallet {
     /// The `(pass_account, device_id)` that authenticated the current
     /// transaction.
     ///
-    /// Set by `PassAuthenticate::prepare` and cleared both at the start of
-    /// the next `prepare` (defense-in-depth) and in `post_dispatch_details`.
-    /// Used by `add_device`/`add_session_key` to enforce the no-escalation
-    /// invariant without a full custom origin.
+    /// # Lifecycle
     ///
-    /// Storing the account alongside the device_id prevents cross-account
-    /// privilege leaks if this value ever persists across transactions
-    /// (e.g. due to a panic between `prepare` and `post_dispatch_details`):
-    /// `check_no_escalation` requires the stored account to match the call's
-    /// signer, so stale values from a different account are ignored.
+    /// - **Set**: by `PassAuthenticate::prepare` when the tx was
+    ///   authenticated with a device credential.
+    /// - **Read**: by `check_no_escalation` during `add_device` /
+    ///   `add_session_key`.
+    /// - **Cleared**: at the start of every `PassAuthenticate::prepare`
+    ///   (defense-in-depth) AND in `post_dispatch_details`.
     ///
-    /// **Invariant**: must be `None` between transactions.
+    /// # Invariants
+    ///
+    /// 1. **Sole setter**: only `PassAuthenticate::prepare` writes to this
+    ///    slot. Do not add other setters — the integrity of the no-escalation
+    ///    check depends on this being a faithful record of the current tx's
+    ///    device authentication. The `pub(crate)` visibility is load-bearing.
+    /// 2. **Cleared between transactions**: must be `None` before each
+    ///    `prepare` begins. Enforced by the `kill()` at the start of
+    ///    `prepare` and the `kill()` in `post_dispatch_details`.
+    /// 3. **Account-bound**: consumers (`check_no_escalation`) must verify
+    ///    that the stored `AccountId` matches the call's signer. This
+    ///    prevents stale values from a prior transaction (if cleanup ever
+    ///    fails) from being usable across accounts.
     #[pallet::storage]
     pub(crate) type AuthenticatedDevice<T: Config<I>, I: 'static = ()> =
         StorageValue<_, (T::AccountId, DeviceId)>;
