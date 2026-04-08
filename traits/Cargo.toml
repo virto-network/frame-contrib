@@ -7,7 +7,7 @@ repository.workspace = true
 version = "0.1.0"
 
 [dependencies]
-fc-traits-authn.workspace = true
+fc-traits-authn = { workspace = true, features = ["runtime"] }
 fc-traits-gas-tank.workspace = true
 fc-traits-listings.workspace = true
 fc-traits-memberships.workspace = true

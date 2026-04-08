@@ -1,15 +1,20 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(feature = "runtime")]
 use codec::{FullCodec, MaxEncodedLen};
+#[cfg(feature = "runtime")]
 use frame_support::{traits::Get, Parameter};
+#[cfg(feature = "runtime")]
 use scale_info::TypeInfo;
 
 pub mod util;
 
 pub use fc_traits_authn_proc::composite_authenticator;
 
+#[cfg(feature = "runtime")]
 const LOG_TARGET: &str = "authn";
 
+#[cfg(feature = "runtime")]
 pub mod prelude {
     pub use crate::{
         Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
@@ -43,6 +48,7 @@ macro_rules! composite_authenticators {
 // A reasonably sized secure challenge
 const CHALLENGE_SIZE: usize = 32;
 pub type Challenge = [u8; CHALLENGE_SIZE];
+#[cfg(feature = "runtime")]
 type CxOf<C> = <C as Challenger>::Context;
 
 pub type DeviceId = [u8; 32];
@@ -56,6 +62,7 @@ pub trait ExtrinsicContext: AsRef<[u8]> + core::fmt::Debug {}
 impl<T> ExtrinsicContext for T where T: AsRef<[u8]> + core::fmt::Debug {}
 
 /// Given some context it deterministically generates a "challenge" used by authenticators
+#[cfg(feature = "runtime")]
 pub trait Challenger {
     type Context: Parameter;
 
@@ -72,6 +79,7 @@ pub trait Challenger {
 }
 
 /// Authenticator is used to verify authentication devices that in turn are used to verify users
+#[cfg(feature = "runtime")]
 pub trait Authenticator {
     type Authority: Get<AuthorityId>;
     type Challenger: Challenger;
@@ -108,6 +116,7 @@ pub trait Authenticator {
 }
 
 /// A device capable of verifying a user provided credential
+#[cfg(feature = "runtime")]
 pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
     type Authority: Get<AuthorityId>;
     type Challenger: Challenger;
@@ -145,6 +154,7 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
 }
 
 /// A response to a challenge for creating a new authentication device
+#[cfg(feature = "runtime")]
 pub trait DeviceChallengeResponse<Cx>: Parameter {
     fn is_valid(&self) -> bool;
     fn used_challenge(&self) -> (Cx, Challenge);
@@ -153,6 +163,7 @@ pub trait DeviceChallengeResponse<Cx>: Parameter {
 }
 
 /// A response to a challenge for identifying a user
+#[cfg(feature = "runtime")]
 pub trait UserChallengeResponse<Cx>: Parameter {
     fn is_valid(&self) -> bool;
     fn used_challenge(&self) -> (Cx, Challenge);
