@@ -1129,6 +1129,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-pallet-account-profile"
+version = "1.0.0"
+dependencies = [
+ "fc-pallet-content",
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "pallet-balances",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "fc-pallet-black-hole"
 version = "1.0.0"
 dependencies = [
@@ -1162,6 +1177,22 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "staging-xcm",
+]
+
+[[package]]
+name = "fc-pallet-content"
+version = "1.0.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "pallet-balances",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
 ]
 
 [[package]]
