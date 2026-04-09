@@ -75,7 +75,7 @@ pub type ItemInfo<Name, Price> = (Name, Option<Price>);
     Clone,
     PartialEq,
     Eq,
-    RuntimeDebug,
+    Debug,
     MaxEncodedLen,
     TypeInfo,
 )]

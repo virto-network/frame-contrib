@@ -141,7 +141,7 @@ pub mod pallet {
     >;
 
     #[derive(
-        Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, DecodeWithMemTracking, TypeInfo,
+        Clone, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo,
     )]
     pub enum UpdateType {
         /// Decision deposit was updated
