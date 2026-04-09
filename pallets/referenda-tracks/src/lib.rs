@@ -140,9 +140,7 @@ pub mod pallet {
         TrackInfoOf<T, I>,
     >;
 
-    #[derive(
-        Clone, Eq, PartialEq, RuntimeDebug, Encode, Decode, DecodeWithMemTracking, TypeInfo,
-    )]
+    #[derive(Clone, Debug, Eq, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
     pub enum UpdateType {
         /// Decision deposit was updated
         DecisionDeposit,
