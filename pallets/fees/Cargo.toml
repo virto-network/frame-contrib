@@ -9,11 +9,11 @@ version = "0.1.0"
 [dependencies]
 codec.workspace = true
 frame.workspace = true
+pallet-assets.workspace = true
 scale-info.workspace = true
 sp-runtime.workspace = true
 
 [dev-dependencies]
-pallet-assets.workspace = true
 pallet-balances.workspace = true
 sp-io.workspace = true
 

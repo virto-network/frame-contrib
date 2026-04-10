@@ -9,9 +9,8 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use frame::deps::frame_support::traits::fungibles;
 use frame::prelude::*;
-use sp_runtime::traits::Zero;
+use sp_runtime::{traits::Zero, Permill, Saturating};
 
 #[cfg(test)]
 mod mock;
@@ -32,7 +31,9 @@ pub mod pallet {
     use super::*;
 
     #[pallet::config]
-    pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
+    pub trait Config:
+        frame_system::Config<RuntimeEvent: From<Event<Self>>> + pallet_assets::Config
+    {
         /// Community identifier type.
         type CommunityId: Parameter + MaxEncodedLen + Copy;
 
@@ -56,15 +57,6 @@ pub mod pallet {
 
         /// Maps accounts to their community.
         type CommunityDetector: AccountCommunity<Self::AccountId, Self::CommunityId>;
-
-        /// The fungibles implementation providing asset transfers.
-        type Assets: fungibles::Inspect<Self::AccountId, Balance: Ord>
-            + fungibles::Unbalanced<Self::AccountId>
-            + fungibles::Mutate<Self::AccountId>;
-
-        /// Inspects runtime calls to detect asset transfer operations
-        /// for the transaction extension.
-        type CallInspector: CallInspector<Self::RuntimeCall, AssetIdOf<Self>, BalanceOf<Self>>;
     }
 
     #[pallet::pallet]
@@ -105,6 +97,7 @@ pub mod pallet {
         /// Fees were charged on a transfer.
         FeesCharged {
             who: T::AccountId,
+            asset: AssetIdOf<T>,
             total_fees: BalanceOf<T>,
         },
     }
@@ -115,6 +108,8 @@ pub mod pallet {
         TooManyFees,
         /// The specified fee was not found.
         FeeNotFound,
+        /// Invalid fee configuration (e.g. min > max in PercentageClamped).
+        InvalidFeeConfig,
     }
 
     #[pallet::call]
@@ -130,6 +125,7 @@ pub mod pallet {
             beneficiary: T::AccountId,
         ) -> DispatchResult {
             T::AdminOrigin::ensure_origin(origin)?;
+            ensure!(config.is_valid(), Error::<T>::InvalidFeeConfig);
             ProtocolFees::<T>::try_mutate(|fees| {
                 if let Some(entry) = fees.iter_mut().find(|e| e.name == name) {
                     entry.config = config;
@@ -177,7 +173,8 @@ pub mod pallet {
             beneficiary: T::AccountId,
         ) -> DispatchResult {
             let community = T::CommunityOrigin::ensure_origin(origin)?;
-            CommunityFees::<T>::try_mutate(&community, |fees| {
+            ensure!(config.is_valid(), Error::<T>::InvalidFeeConfig);
+            CommunityFees::<T>::try_mutate(community, |fees| {
                 if let Some(entry) = fees.iter_mut().find(|e| e.name == name) {
                     entry.config = config;
                     entry.beneficiary = beneficiary;
@@ -201,7 +198,7 @@ pub mod pallet {
             .saturating_add(T::DbWeight::get().reads_writes(1, 1)))]
         pub fn remove_community_fee(origin: OriginFor<T>, name: FeeNameOf<T>) -> DispatchResult {
             let community = T::CommunityOrigin::ensure_origin(origin)?;
-            CommunityFees::<T>::try_mutate(&community, |fees| {
+            CommunityFees::<T>::try_mutate(community, |fees| {
                 let pos = fees
                     .iter()
                     .position(|e| e.name == name)
@@ -217,6 +214,8 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         /// Calculate all applicable fees for a transfer of `amount` on `asset` by `who`.
         /// Fees are rounded up to the asset's minimum balance to avoid dust.
+        /// Total fees are capped at `amount` — if they exceed it, each fee is
+        /// scaled down proportionally.
         /// Returns a list of (beneficiary, fee_amount) pairs.
         pub fn calculate_fees(
             asset: AssetIdOf<T>,
@@ -224,7 +223,9 @@ pub mod pallet {
             amount: BalanceOf<T>,
         ) -> Vec<(T::AccountId, BalanceOf<T>)> {
             use frame::deps::frame_support::traits::fungibles::Inspect;
-            let min_balance = Some(T::Assets::minimum_balance(asset));
+            let min_balance = Some(
+                <pallet_assets::Pallet<T> as Inspect<T::AccountId>>::minimum_balance(asset),
+            );
             let mut fees = Vec::new();
 
             // Protocol fees always apply
@@ -237,11 +238,24 @@ pub mod pallet {
 
             // Community fees apply if the sender belongs to a community
             if let Some(community) = T::CommunityDetector::community_of(who) {
-                for entry in CommunityFees::<T>::get(&community).iter() {
+                for entry in CommunityFees::<T>::get(community).iter() {
                     let fee = entry.config.calculate(amount, min_balance);
                     if !fee.is_zero() {
                         fees.push((entry.beneficiary.clone(), fee));
                     }
+                }
+            }
+
+            // Cap total fees at the transfer amount
+            let total: BalanceOf<T> = fees
+                .iter()
+                .map(|(_, f)| *f)
+                .fold(BalanceOf::<T>::zero(), |a, b| a.saturating_add(b));
+
+            if total > amount && !amount.is_zero() {
+                let ratio = Permill::from_rational(amount, total);
+                for (_, fee) in fees.iter_mut() {
+                    *fee = ratio.mul_ceil(*fee);
                 }
             }
 

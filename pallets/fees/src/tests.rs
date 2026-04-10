@@ -130,6 +130,25 @@ mod protocol_fees {
             );
         });
     }
+
+    #[test]
+    fn rejects_invalid_fee_config() {
+        new_test_ext().execute_with(|| {
+            assert_noop!(
+                Fees::set_protocol_fee(
+                    RuntimeOrigin::root(),
+                    fee_name(b"bad"),
+                    FeeConfig::PercentageClamped {
+                        rate: Permill::from_percent(10),
+                        min: 500,
+                        max: 100, // min > max
+                    },
+                    FEE_RECEIVER_PROTOCOL,
+                ),
+                Error::<Test>::InvalidFeeConfig,
+            );
+        });
+    }
 }
 
 mod community_fees {
@@ -255,6 +274,28 @@ mod fee_config {
         // Fixed(3) with min_balance 5 → rounds up to 5
         assert_eq!(FeeConfig::Fixed(3u64).calculate(1000, Some(5)), 5);
     }
+
+    #[test]
+    fn validate_rejects_min_greater_than_max() {
+        let config = FeeConfig::<u64>::PercentageClamped {
+            rate: Permill::from_percent(10),
+            min: 500,
+            max: 100, // min > max
+        };
+        assert!(!config.is_valid());
+    }
+
+    #[test]
+    fn validate_accepts_valid_config() {
+        assert!(FeeConfig::Fixed(42u64).is_valid());
+        assert!(FeeConfig::<u64>::Percentage(Permill::from_percent(5)).is_valid());
+        assert!(FeeConfig::<u64>::PercentageClamped {
+            rate: Permill::from_percent(10),
+            min: 10,
+            max: 500,
+        }
+        .is_valid());
+    }
 }
 
 // ============================================================================
@@ -351,31 +392,97 @@ mod adapter {
     }
 
     #[test]
-    fn transfer_fails_if_insufficient_for_fees() {
+    fn transfer_fails_if_insufficient_balance() {
         new_test_ext().execute_with(|| {
-            // Set a huge fixed protocol fee
+            // Set a 50% fee — even after capping, transfer + fee exceeds balance
             assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"big_fee"),
-                FeeConfig::Fixed(INITIAL_BALANCE), // fee equals entire balance
+                FeeConfig::Percentage(Permill::from_percent(50)),
                 FEE_RECEIVER_PROTOCOL,
             ));
 
-            // Try to transfer — should fail since balance can't cover transfer + fee
+            // Try to transfer almost entire balance — 50% fee on top makes it unaffordable
             assert_noop!(
                 <WithFees<Test> as Mutate<AccountId>>::transfer(
                     ASSET_ID,
                     &NO_COMMUNITY,
                     &MEMBER_1A,
-                    1000,
+                    INITIAL_BALANCE, // can't afford amount + 50% fee
                     Preservation::Preserve,
                 ),
-                sp_runtime::TokenError::NotExpendable,
+                sp_runtime::TokenError::FundsUnavailable,
             );
 
-            // Balances unchanged
+            // Balances unchanged (atomic rollback)
             assert_eq!(balance_of(ASSET_ID, NO_COMMUNITY), INITIAL_BALANCE);
             assert_eq!(balance_of(ASSET_ID, MEMBER_1A), INITIAL_BALANCE);
+        });
+    }
+
+    #[test]
+    fn oversized_fee_is_capped_at_transfer_amount() {
+        new_test_ext().execute_with(|| {
+            // Fee that would be larger than transfer amount
+            assert_ok!(Fees::set_protocol_fee(
+                RuntimeOrigin::root(),
+                fee_name(b"huge"),
+                FeeConfig::Fixed(5000),
+                FEE_RECEIVER_PROTOCOL,
+            ));
+
+            // Transfer 100 — fee gets capped from 5000 to 100
+            assert_ok!(<WithFees<Test> as Mutate<AccountId>>::transfer(
+                ASSET_ID,
+                &NO_COMMUNITY,
+                &MEMBER_1A,
+                100,
+                Preservation::Preserve,
+            ));
+
+            // Fee capped to transfer amount: sender pays 100 (fee) + 100 (transfer) = 200
+            assert_eq!(balance_of(ASSET_ID, NO_COMMUNITY), INITIAL_BALANCE - 200);
+            assert_eq!(balance_of(ASSET_ID, MEMBER_1A), INITIAL_BALANCE + 100);
+            assert_eq!(balance_of(ASSET_ID, FEE_RECEIVER_PROTOCOL), 100);
+        });
+    }
+
+    #[test]
+    fn atomic_rollback_on_partial_fee_failure() {
+        new_test_ext().execute_with(|| {
+            // Set two fees that together with the transfer exceed the balance
+            assert_ok!(Fees::set_protocol_fee(
+                RuntimeOrigin::root(),
+                fee_name(b"fee1"),
+                FeeConfig::Percentage(Permill::from_percent(40)),
+                FEE_RECEIVER_PROTOCOL,
+            ));
+            assert_ok!(Fees::set_protocol_fee(
+                RuntimeOrigin::root(),
+                fee_name(b"fee2"),
+                FeeConfig::Percentage(Permill::from_percent(40)),
+                FEE_RECEIVER_COMMUNITY,
+            ));
+
+            // Transfer amount where fees (80%) + transfer exceed balance
+            // Balance = 10000, transfer = 8000, fees = 80% of 8000 = 6400 total
+            // 8000 + 6400 = 14400 > 10000
+            assert_noop!(
+                <WithFees<Test> as Mutate<AccountId>>::transfer(
+                    ASSET_ID,
+                    &NO_COMMUNITY,
+                    &MEMBER_1A,
+                    8000,
+                    Preservation::Preserve,
+                ),
+                sp_runtime::TokenError::FundsUnavailable,
+            );
+
+            // All balances unchanged — atomic rollback
+            assert_eq!(balance_of(ASSET_ID, NO_COMMUNITY), INITIAL_BALANCE);
+            assert_eq!(balance_of(ASSET_ID, MEMBER_1A), INITIAL_BALANCE);
+            assert_eq!(balance_of(ASSET_ID, FEE_RECEIVER_PROTOCOL), 0);
+            assert_eq!(balance_of(ASSET_ID, FEE_RECEIVER_COMMUNITY), 0);
         });
     }
 
@@ -446,7 +553,7 @@ mod extension {
     fn transfer_call(dest: AccountId, amount: Balance) -> RuntimeCall {
         RuntimeCall::Assets(pallet_assets::Call::transfer {
             id: ASSET_ID,
-            target: dest.into(),
+            target: dest,
             amount,
         })
     }
@@ -528,18 +635,53 @@ mod extension {
     #[test]
     fn rejects_if_insufficient_balance_for_fees() {
         new_test_ext().execute_with(|| {
+            // 50% fee + transfer of almost full balance = unaffordable
             assert_ok!(Fees::set_protocol_fee(
                 RuntimeOrigin::root(),
                 fee_name(b"big_fee"),
-                FeeConfig::Fixed(INITIAL_BALANCE + 1), // more than balance
+                FeeConfig::Percentage(Permill::from_percent(50)),
                 FEE_RECEIVER_PROTOCOL,
             ));
 
-            let call = transfer_call(MEMBER_1B, 100);
+            // Transfer that leaves no room for the 50% fee
+            let call = transfer_call(MEMBER_1B, INITIAL_BALANCE);
             assert_noop!(run_extension(MEMBER_1A, &call), InvalidTransaction::Payment,);
 
             // Nothing changed
             assert_eq!(balance_of(ASSET_ID, MEMBER_1A), INITIAL_BALANCE);
+        });
+    }
+
+    #[test]
+    fn refunds_fees_on_dispatch_failure() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(Fees::set_protocol_fee(
+                RuntimeOrigin::root(),
+                fee_name(b"protocol"),
+                FeeConfig::Fixed(50),
+                FEE_RECEIVER_PROTOCOL,
+            ));
+
+            let ext = ChargeFees::<Test>::default();
+            let info = DispatchInfo::default();
+            let call = transfer_call(MEMBER_1B, 1000);
+
+            // Simulate a failing dispatch
+            let result = ext.test_run(
+                RuntimeOrigin::signed(MEMBER_1A),
+                &call,
+                &info,
+                0,
+                0,
+                |_| Err(sp_runtime::DispatchError::Other("simulated failure").into()),
+            );
+
+            // The dispatch result is the inner error
+            assert!(result.unwrap().is_err());
+
+            // Fees should have been refunded
+            assert_eq!(balance_of(ASSET_ID, MEMBER_1A), INITIAL_BALANCE);
+            assert_eq!(balance_of(ASSET_ID, FEE_RECEIVER_PROTOCOL), 0);
         });
     }
 }

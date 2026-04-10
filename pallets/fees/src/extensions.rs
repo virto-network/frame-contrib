@@ -1,11 +1,16 @@
 use super::*;
+use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use codec::{Decode, DecodeWithMemTracking, Encode};
 use frame::deps::{
     frame_support::{
         dispatch::DispatchInfo,
-        traits::{fungibles, tokens::Preservation},
+        traits::{
+            fungibles::{Inspect, Mutate},
+            tokens::Preservation,
+            IsSubType,
+        },
     },
     frame_system,
 };
@@ -13,18 +18,37 @@ use scale_info::TypeInfo;
 use sp_runtime::{
     traits::{
         DispatchInfoOf, DispatchOriginOf, Implication, PostDispatchInfoOf, TransactionExtension,
-        ValidateResult,
+        ValidateResult, Zero,
     },
     transaction_validity::{InvalidTransaction, TransactionSource, ValidTransaction},
+    Saturating,
 };
 
 use crate::types::{AssetIdOf, BalanceOf};
 
+type Inner<T> = pallet_assets::Pallet<T>;
+
+/// Extracts asset transfer info from a runtime call using `IsSubType`.
+fn extract_asset_transfer<T>(call: &T::RuntimeCall) -> Option<(AssetIdOf<T>, BalanceOf<T>)>
+where
+    T: Config,
+    T::RuntimeCall: IsSubType<pallet_assets::Call<T>>,
+{
+    match call.is_sub_type()? {
+        pallet_assets::Call::transfer { id, amount, .. }
+        | pallet_assets::Call::transfer_keep_alive { id, amount, .. }
+        | pallet_assets::Call::transfer_approved { id, amount, .. } => {
+            Some((id.clone().into(), *amount))
+        }
+        _ => None,
+    }
+}
+
 /// Transaction extension that charges community and protocol fees
-/// on direct pallet-assets calls detected by `T::CallInspector`.
+/// on direct pallet-assets calls.
 ///
-/// Fees are charged in `prepare` (before the call executes) so
-/// the sender's balance is reduced before the transfer runs.
+/// Fees are charged in `prepare` (before the call executes).
+/// If the call fails, fees are refunded in `post_dispatch_details`.
 #[derive(Encode, Decode, DecodeWithMemTracking, Clone, Eq, PartialEq, TypeInfo)]
 #[scale_info(skip_type_params(T))]
 pub struct ChargeFees<T: Config>(#[codec(skip)] PhantomData<T>);
@@ -41,19 +65,26 @@ impl<T: Config> core::fmt::Debug for ChargeFees<T> {
     }
 }
 
+/// State stored between prepare and post_dispatch for fee refunds.
+pub type ChargeFeePre<T> = Vec<(
+    <T as frame_system::Config>::AccountId, // payer
+    AssetIdOf<T>,                           // asset
+    BalanceOf<T>,                           // fee amount
+    <T as frame_system::Config>::AccountId, // beneficiary
+)>;
+
 impl<T> TransactionExtension<T::RuntimeCall> for ChargeFees<T>
 where
     T: Config + Send + Sync,
-    T::RuntimeCall: Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>,
+    T::RuntimeCall:
+        Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo> + IsSubType<pallet_assets::Call<T>>,
 {
     const IDENTIFIER: &'static str = "ChargeFees";
     type Implicit = ();
     type Val = Option<(AssetIdOf<T>, BalanceOf<T>, T::AccountId)>;
-    type Pre = ();
+    type Pre = ChargeFeePre<T>;
 
     fn weight(&self, _: &T::RuntimeCall) -> Weight {
-        // Reads: ProtocolFees (1), CommunityFees (1), asset balance (1), community detection
-        // Writes: per-fee transfer (up to MaxProtocolFees + MaxCommunityFees)
         Weight::from_parts(15_000_000, 0)
     }
 
@@ -74,7 +105,7 @@ where
         };
 
         // Check if the call is an asset operation
-        let Some((asset, amount)) = T::CallInspector::extract_asset_transfer(call) else {
+        let Some((asset, amount)) = extract_asset_transfer::<T>(call) else {
             return Ok((ValidTransaction::default(), None, origin));
         };
 
@@ -86,8 +117,7 @@ where
             .fold(BalanceOf::<T>::zero(), |a, b| a.saturating_add(b));
 
         if !total_fees.is_zero() {
-            let balance =
-                <T::Assets as fungibles::Inspect<T::AccountId>>::balance(asset.clone(), &who);
+            let balance = <Inner<T> as Inspect<T::AccountId>>::balance(asset.clone(), &who);
             if balance < amount.saturating_add(total_fees) {
                 return Err(InvalidTransaction::Payment.into());
             }
@@ -109,14 +139,15 @@ where
         _len: usize,
     ) -> Result<Self::Pre, sp_runtime::transaction_validity::TransactionValidityError> {
         let Some((asset, amount, who)) = val else {
-            return Ok(());
+            return Ok(Vec::new());
         };
 
         let fees = Pallet::<T>::calculate_fees(asset.clone(), &who, amount);
         let mut total_fees = BalanceOf::<T>::zero();
+        let mut charged = Vec::new();
 
         for (beneficiary, fee_amount) in fees {
-            <T::Assets as fungibles::Mutate<T::AccountId>>::transfer(
+            <Inner<T> as Mutate<T::AccountId>>::transfer(
                 asset.clone(),
                 &who,
                 &beneficiary,
@@ -125,22 +156,41 @@ where
             )
             .map_err(|_| InvalidTransaction::Payment)?;
             total_fees = total_fees.saturating_add(fee_amount);
+            charged.push((who.clone(), asset.clone(), fee_amount, beneficiary));
         }
 
         if !total_fees.is_zero() {
-            Pallet::<T>::deposit_event(Event::FeesCharged { who, total_fees });
+            Pallet::<T>::deposit_event(Event::FeesCharged {
+                who,
+                asset,
+                total_fees,
+            });
         }
 
-        Ok(())
+        Ok(charged)
     }
 
     fn post_dispatch_details(
-        _pre: Self::Pre,
+        pre: Self::Pre,
         _info: &DispatchInfoOf<T::RuntimeCall>,
         _post_info: &PostDispatchInfoOf<T::RuntimeCall>,
         _len: usize,
-        _result: &DispatchResult,
+        result: &DispatchResult,
     ) -> Result<Weight, sp_runtime::transaction_validity::TransactionValidityError> {
+        // Refund fees if the call failed
+        if result.is_err() {
+            for (payer, asset, amount, beneficiary) in pre {
+                // Best-effort refund — use Expendable since the beneficiary account
+                // may need to be fully drained to return the fee
+                let _ = <Inner<T> as Mutate<T::AccountId>>::transfer(
+                    asset,
+                    &beneficiary,
+                    &payer,
+                    amount,
+                    Preservation::Expendable,
+                );
+            }
+        }
         Ok(Weight::zero())
     }
 }
