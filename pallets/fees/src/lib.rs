@@ -223,9 +223,8 @@ pub mod pallet {
             amount: BalanceOf<T>,
         ) -> Vec<(T::AccountId, BalanceOf<T>)> {
             use frame::deps::frame_support::traits::fungibles::Inspect;
-            let min_balance = Some(
-                <pallet_assets::Pallet<T> as Inspect<T::AccountId>>::minimum_balance(asset),
-            );
+            let min_balance =
+                Some(<pallet_assets::Pallet<T> as Inspect<T::AccountId>>::minimum_balance(asset));
             let mut fees = Vec::new();
 
             // Protocol fees always apply

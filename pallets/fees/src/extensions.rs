@@ -76,8 +76,8 @@ pub type ChargeFeePre<T> = Vec<(
 impl<T> TransactionExtension<T::RuntimeCall> for ChargeFees<T>
 where
     T: Config + Send + Sync,
-    T::RuntimeCall:
-        Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo> + IsSubType<pallet_assets::Call<T>>,
+    T::RuntimeCall: Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>
+        + IsSubType<pallet_assets::Call<T>>,
 {
     const IDENTIFIER: &'static str = "ChargeFees";
     type Implicit = ();

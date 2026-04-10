@@ -667,14 +667,9 @@ mod extension {
             let call = transfer_call(MEMBER_1B, 1000);
 
             // Simulate a failing dispatch
-            let result = ext.test_run(
-                RuntimeOrigin::signed(MEMBER_1A),
-                &call,
-                &info,
-                0,
-                0,
-                |_| Err(sp_runtime::DispatchError::Other("simulated failure").into()),
-            );
+            let result = ext.test_run(RuntimeOrigin::signed(MEMBER_1A), &call, &info, 0, 0, |_| {
+                Err(sp_runtime::DispatchError::Other("simulated failure").into())
+            });
 
             // The dispatch result is the inner error
             assert!(result.unwrap().is_err());
