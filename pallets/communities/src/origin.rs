@@ -1,9 +1,9 @@
 use crate::{
-    types::{CommunityIdOf, CommunityState::Active, MembershipIdOf, RuntimeOriginFor},
+    types::{CommunityIdOf, CommunityState::Active, RuntimeOriginFor},
     AccountIdOf, CommunityIdFor, Config, Info, Pallet,
 };
 use core::marker::PhantomData;
-use frame_contrib_traits::memberships::{GenericRank, Inspect};
+use frame_contrib_traits::memberships::GenericRank;
 use frame_support::{
     pallet_prelude::*,
     traits::{EnsureOriginWithArg, MapSuccess, OriginTrait},
@@ -77,7 +77,7 @@ where
 
         match o.clone().into() {
             Ok(Signed(who)) => {
-                if T::MemberMgmt::is_member_of(community_id, &who) {
+                if Pallet::<T>::is_member(community_id, &who) {
                     Ok(())
                 } else {
                     Err(o.clone())
@@ -125,7 +125,7 @@ impl<T: Config> RawOrigin<T> {
     Clone, Debug, Decode, DecodeWithMemTracking, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo,
 )]
 pub enum Subset<T: Config> {
-    Member(MembershipIdOf<T>),
+    Member(AccountIdOf<T>),
     Members { count: u32 },
     Fraction(Permill),
     AtLeastRank(GenericRank),

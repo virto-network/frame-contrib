@@ -1142,6 +1142,7 @@ dependencies = [
 name = "fc-pallet-communities"
 version = "1.0.0"
 dependencies = [
+ "binary-merkle-tree",
  "fc-pallet-referenda-tracks",
  "frame-benchmarking",
  "frame-contrib-traits",

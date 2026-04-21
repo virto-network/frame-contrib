@@ -1,7 +1,7 @@
 use super::*;
 
 use crate::{CommunityDecisionMethod, Config};
-use frame_contrib_traits::memberships::{Inspect, Rank};
+use frame_contrib_traits::memberships::GenericRank;
 
 use frame_support::traits::{
     fungible::{self, Inspect as FunInspect},
@@ -23,7 +23,6 @@ pub type PollIndexOf<T> = <<T as Config>::Polls as Polling<Tally<T>>>::Index;
 pub type AccountIdLookupOf<T> = <<T as frame_system::Config>::Lookup as StaticLookup>::Source;
 pub type PalletsOriginOf<T> =
     <<T as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin;
-pub type MembershipIdOf<T> = <T as Config>::MembershipId;
 pub type RuntimeCallFor<T> = <T as frame_system::Config>::RuntimeCall;
 pub type RuntimeOriginFor<T> = <T as frame_system::Config>::RuntimeOrigin;
 pub type BlockNumberFor<T> =
@@ -31,6 +30,86 @@ pub type BlockNumberFor<T> =
 
 #[cfg(feature = "runtime-benchmarks")]
 pub type BenchmarkHelperOf<T> = <T as Config>::BenchmarkHelper;
+
+/// Privacy level determines what membership data is stored on-chain
+#[derive(
+    Clone,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Default,
+    Encode,
+    Eq,
+    MaxEncodedLen,
+    PartialEq,
+    TypeInfo,
+)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum PrivacyLevel {
+    #[default]
+    Public,
+    Private,
+    Hybrid,
+}
+
+/// Status of a community member
+#[derive(
+    Clone,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Default,
+    Encode,
+    Eq,
+    MaxEncodedLen,
+    PartialEq,
+    TypeInfo,
+)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum MemberStatus {
+    #[default]
+    Active,
+    Suspended,
+}
+
+/// A member's on-chain record
+#[derive(
+    Clone,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Default,
+    Encode,
+    Eq,
+    MaxEncodedLen,
+    PartialEq,
+    TypeInfo,
+)]
+pub struct MemberRecord {
+    pub rank: GenericRank,
+    pub nonce: u32,
+    pub status: MemberStatus,
+}
+
+/// Gas/transaction budget for a community per session
+#[derive(
+    Clone,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Default,
+    Encode,
+    Eq,
+    MaxEncodedLen,
+    PartialEq,
+    TypeInfo,
+)]
+pub struct CommunityBudget<BlockNumber> {
+    pub capacity: u64,
+    pub used: u64,
+    pub session_start: BlockNumber,
+    pub session_length: BlockNumber,
+}
 
 /// The Community struct holds the basic definition of a community. It includes
 /// the current state of a community, the [`AccountId`][1] for the community
@@ -42,6 +121,10 @@ pub type BenchmarkHelperOf<T> = <T as Config>::BenchmarkHelper;
 pub struct CommunityInfo {
     /// The current state of the community.
     pub state: CommunityState,
+    /// The privacy level of the community.
+    pub privacy: PrivacyLevel,
+    /// Maximum number of members.
+    pub capacity: u32,
 }
 
 /// The current state of the community. It represents whether a community
@@ -151,8 +234,8 @@ impl<T> Default for Tally<T> {
 impl<T: Config> Tally<T> {
     pub(crate) fn max_support(community_id: CommunityIdOf<T>) -> VoteWeight {
         match CommunityDecisionMethod::<T>::get(community_id) {
-            DecisionMethod::Membership => T::MemberMgmt::members_total(&community_id),
-            DecisionMethod::Rank => T::MemberMgmt::ranks_total(&community_id),
+            DecisionMethod::Membership => crate::MemberCount::<T>::get(community_id),
+            DecisionMethod::Rank => crate::RanksTotal::<T>::get(community_id),
             DecisionMethod::NativeToken => {
                 T::Balances::total_issuance().saturated_into::<VoteWeight>()
             }
@@ -191,15 +274,8 @@ pub trait BenchmarkHelper<T: Config> {
         u8::MAX as u32
     }
 
-    /// Initializes the membership collection of a community.
-    fn initialize_memberships_collection() -> Result<(), frame_benchmarking::BenchmarkError>;
-
-    /// Extends the membership collection of a community with a given
-    /// membership ID.
-    fn issue_membership(
-        community_id: CommunityIdOf<T>,
-        membership_id: MembershipIdOf<T>,
-    ) -> Result<(), frame_benchmarking::BenchmarkError>;
+    /// Sets up members for benchmarking
+    fn setup_members(community_id: CommunityIdOf<T>, count: u32) -> Result<(), BenchmarkError>;
 
     /// This method prepares the referenda track to be used
     /// to submit the poll, for benchmarking purposes.

@@ -1,6 +1,6 @@
 use super::*;
 
-use frame_contrib_traits::memberships::{GenericRank, Inspect, Rank};
+use frame_contrib_traits::memberships::GenericRank;
 use frame_support::{
     fail,
     traits::{
@@ -23,20 +23,15 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn is_member(community_id: &T::CommunityId, who: &AccountIdOf<T>) -> bool {
-        T::MemberMgmt::is_member_of(community_id, who)
+        Members::<T>::get(community_id, who)
+            .map(|m| m.status == MemberStatus::Active)
+            .unwrap_or(false)
     }
 
-    pub fn member_rank(community_id: &T::CommunityId, m: &MembershipIdOf<T>) -> GenericRank {
-        T::MemberMgmt::rank_of(community_id, m).unwrap_or_default()
-    }
-
-    pub fn get_memberships(
-        community_id: T::CommunityId,
-        who: &AccountIdOf<T>,
-    ) -> Vec<MembershipIdOf<T>> {
-        T::MemberMgmt::user_memberships(who, Some(community_id))
-            .map(|(_, m)| m)
-            .collect::<Vec<_>>()
+    pub fn member_rank(community_id: &T::CommunityId, who: &AccountIdOf<T>) -> GenericRank {
+        Members::<T>::get(community_id, who)
+            .map(|m| m.rank)
+            .unwrap_or_default()
     }
 
     pub fn force_state(community_id: &CommunityIdOf<T>, state: CommunityState) {
@@ -70,7 +65,14 @@ impl<T: Config> Pallet<T> {
         }
 
         CommunityIdFor::<T>::insert(admin, community_id);
-        Info::<T>::insert(community_id, CommunityInfo::default());
+        Info::<T>::insert(
+            community_id,
+            CommunityInfo {
+                state: CommunityState::default(),
+                privacy: PrivacyLevel::default(),
+                capacity: T::MaxMembers::get(),
+            },
+        );
         frame_system::Pallet::<T>::inc_providers(&Self::community_account(community_id));
 
         Ok(())
@@ -80,7 +82,6 @@ impl<T: Config> Pallet<T> {
         community_id: &CommunityIdOf<T>,
         decision_method: &DecisionMethodFor<T>,
         who: &AccountIdOf<T>,
-        membership_id: &MembershipIdOf<T>,
         poll_index: PollIndexOf<T>,
         vote: &VoteOf<T>,
     ) -> DispatchResult {
@@ -89,9 +90,10 @@ impl<T: Config> Pallet<T> {
             ensure!(community_id == &class, Error::<T>::InvalidTrack);
 
             let vote_multiplier = match CommunityDecisionMethod::<T>::get(community_id) {
-                DecisionMethod::Rank => T::MemberMgmt::rank_of(community_id, membership_id)
-                    .unwrap_or_default()
-                    .into(),
+                DecisionMethod::Rank => {
+                    let rank: u32 = Self::member_rank(community_id, who).into();
+                    rank
+                }
                 _ => 1,
             };
 
@@ -111,7 +113,7 @@ impl<T: Config> Pallet<T> {
             let vote_weight = VoteWeight::from(vote);
             tally.add_vote(say, vote_multiplier * vote_weight, vote_weight);
 
-            CommunityVotes::<T>::insert(poll_index, membership_id, (vote, who));
+            CommunityVotes::<T>::insert(poll_index, who, (vote, who));
             Self::update_locks(who, poll_index, vote, LockUpdateType::Add)
         })
     }
@@ -119,26 +121,27 @@ impl<T: Config> Pallet<T> {
     pub(crate) fn try_remove_vote(
         community_id: &CommunityIdOf<T>,
         decision_method: &DecisionMethodFor<T>,
-        membership_id: &MembershipIdOf<T>,
+        who: &AccountIdOf<T>,
         poll_index: PollIndexOf<T>,
     ) -> DispatchResult {
         T::Polls::try_access_poll(poll_index, |poll_status| {
             let (tally, class) = poll_status.ensure_ongoing().ok_or(Error::<T>::NotOngoing)?;
             ensure!(community_id == &class, Error::<T>::InvalidTrack);
 
-            let (vote, voter) = CommunityVotes::<T>::get(poll_index, membership_id)
+            let (vote, voter) = CommunityVotes::<T>::get(poll_index, who)
                 .ok_or(Error::<T>::NoVoteCasted)?;
             let vote_multiplier = match decision_method {
-                DecisionMethod::Rank => T::MemberMgmt::rank_of(community_id, membership_id)
-                    .unwrap_or_default()
-                    .into(),
+                DecisionMethod::Rank => {
+                    let rank: u32 = Self::member_rank(community_id, who).into();
+                    rank
+                }
                 _ => 1,
             };
 
             let vote_weight = VoteWeight::from(&vote);
             tally.remove_vote(vote.say(), vote_multiplier * vote_weight, vote_weight);
 
-            CommunityVotes::<T>::remove(poll_index, membership_id);
+            CommunityVotes::<T>::remove(poll_index, who);
             Self::update_locks(&voter, poll_index, &vote, LockUpdateType::Remove)
         })
     }
