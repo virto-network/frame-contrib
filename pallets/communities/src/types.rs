@@ -72,6 +72,27 @@ pub enum MemberStatus {
     Suspended,
 }
 
+/// Role of a community member
+#[derive(
+    Clone,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Default,
+    Encode,
+    Eq,
+    MaxEncodedLen,
+    PartialEq,
+    TypeInfo,
+)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum Role {
+    Admin,
+    Manager,
+    #[default]
+    Member,
+}
+
 /// A member's on-chain record
 #[derive(
     Clone,
@@ -89,6 +110,7 @@ pub struct MemberRecord {
     pub rank: GenericRank,
     pub nonce: u32,
     pub status: MemberStatus,
+    pub role: Role,
 }
 
 /// Gas/transaction budget for a community per session

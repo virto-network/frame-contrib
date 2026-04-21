@@ -10,7 +10,7 @@ use frame_support::{
         Polling,
     },
 };
-use sp_runtime::traits::{AccountIdConversion, Dispatchable};
+use sp_runtime::traits::{AccountIdConversion, Dispatchable, Hash as _};
 
 impl<T: Config> Pallet<T> {
     #[inline]
@@ -226,6 +226,33 @@ impl<T: Config> Pallet<T> {
         call.dispatch(signer.into())
             .map(|_| ())
             .map_err(|e| e.error)
+    }
+
+    /// Recompute and store the merkle root for public communities.
+    /// For private/hybrid communities this is a no-op (root is set manually).
+    pub fn recompute_merkle_root(community_id: &CommunityIdOf<T>) {
+        let info = match Info::<T>::get(community_id) {
+            Some(info) if info.privacy == PrivacyLevel::Public => info,
+            _ => return,
+        };
+        let _ = info; // used only for the privacy check above
+
+        let mut leaves: alloc::vec::Vec<<T::Hasher as sp_runtime::traits::Hash>::Output> =
+            Members::<T>::iter_prefix(community_id)
+                .filter(|(_, record)| record.status == MemberStatus::Active)
+                .map(|(who, record)| {
+                    T::Hasher::hash_of(&(who, community_id, record.rank, record.nonce))
+                })
+                .collect();
+
+        leaves.sort();
+
+        if leaves.is_empty() {
+            MerkleRoot::<T>::remove(community_id);
+        } else {
+            let root = binary_merkle_tree::merkle_root::<T::Hasher, _>(leaves);
+            MerkleRoot::<T>::insert(community_id, root);
+        }
     }
 }
 

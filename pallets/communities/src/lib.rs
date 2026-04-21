@@ -130,10 +130,10 @@ use sp_runtime::traits::{BlockNumberProvider, StaticLookup};
 // #[cfg(feature = "runtime-benchmarks")]
 // mod benchmarking;
 
-// #[cfg(test)]
-// mod mock;
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod mock;
+#[cfg(test)]
+mod tests;
 
 mod functions;
 mod impls;
@@ -361,9 +361,19 @@ pub mod pallet {
         MemberRemoved {
             who: AccountIdOf<T>,
         },
+        MemberSuspended {
+            who: AccountIdOf<T>,
+        },
         MemberRankUpdated {
             who: AccountIdOf<T>,
             rank: GenericRank,
+        },
+        MembershipRootUpdated {
+            community_id: CommunityIdOf<T>,
+        },
+        SubRootUpdated {
+            community_id: CommunityIdOf<T>,
+            sub_track_id: u16,
         },
         VoteCasted {
             who: AccountIdOf<T>,
@@ -410,6 +420,12 @@ pub mod pallet {
         AlreadyAdmin,
         /// The vote is below the minimum requried
         VoteBelowMinimum,
+        /// Cannot add members directly to a private community
+        CommunityIsPrivate,
+        /// Cannot update membership root for a public community
+        CommunityIsPublic,
+        /// The member is suspended
+        MemberIsSuspended,
     }
 
     // Dispatchable functions allows users to interact with the pallet and invoke
@@ -463,7 +479,12 @@ pub mod pallet {
 
         /// Enroll an account as a community member.
         #[pallet::call_index(3)]
-        pub fn add_member(origin: OriginFor<T>, who: AccountIdLookupOf<T>) -> DispatchResult {
+        pub fn add_member(
+            origin: OriginFor<T>,
+            who: AccountIdLookupOf<T>,
+            rank: Option<GenericRank>,
+            role: Option<Role>,
+        ) -> DispatchResult {
             let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
             let who = T::Lookup::lookup(who)?;
 
@@ -471,6 +492,10 @@ pub mod pallet {
             ensure!(
                 info.state == CommunityState::Active,
                 Error::<T>::CommunityDoesNotExist
+            );
+            ensure!(
+                info.privacy != PrivacyLevel::Private,
+                Error::<T>::CommunityIsPrivate
             );
             ensure!(
                 !Members::<T>::contains_key(&community_id, &who),
@@ -485,9 +510,25 @@ pub mod pallet {
             };
             ensure!(count < max, Error::<T>::CommunityAtCapacity);
 
-            Members::<T>::insert(&community_id, &who, MemberRecord::default());
-            MemberCount::<T>::mutate(&community_id, |c| *c = c.saturating_add(1));
+            let member_rank = rank.unwrap_or_default();
+            let member_role = role.unwrap_or_default();
+            let rank_val: u32 = member_rank.into();
 
+            Members::<T>::insert(
+                &community_id,
+                &who,
+                MemberRecord {
+                    rank: member_rank,
+                    role: member_role,
+                    ..Default::default()
+                },
+            );
+            MemberCount::<T>::mutate(&community_id, |c| *c = c.saturating_add(1));
+            if rank_val > 0 {
+                RanksTotal::<T>::mutate(&community_id, |t| *t = t.saturating_add(rank_val));
+            }
+
+            Self::recompute_merkle_root(&community_id);
             Self::deposit_event(Event::MemberAdded { who });
             Ok(())
         }
@@ -511,6 +552,7 @@ pub mod pallet {
                 RanksTotal::<T>::mutate(&community_id, |t| *t = t.saturating_sub(rank_val));
             }
 
+            Self::recompute_merkle_root(&community_id);
             Self::deposit_event(Event::MemberRemoved { who });
             Ok(())
         }
@@ -534,6 +576,7 @@ pub mod pallet {
                 *t = t.saturating_sub(old_rank_val).saturating_add(new_rank_val);
             });
 
+            Self::recompute_merkle_root(&community_id);
             Self::deposit_event(Event::MemberRankUpdated {
                 who,
                 rank: new_rank,
@@ -560,9 +603,76 @@ pub mod pallet {
                 *t = t.saturating_sub(old_rank_val).saturating_add(new_rank_val);
             });
 
+            Self::recompute_merkle_root(&community_id);
             Self::deposit_event(Event::MemberRankUpdated {
                 who,
                 rank: new_rank,
+            });
+            Ok(())
+        }
+
+        /// Suspend a community member
+        #[pallet::call_index(12)]
+        pub fn suspend_member(
+            origin: OriginFor<T>,
+            who: AccountIdLookupOf<T>,
+        ) -> DispatchResult {
+            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+            let who = T::Lookup::lookup(who)?;
+
+            let mut record =
+                Members::<T>::get(&community_id, &who).ok_or(Error::<T>::NotAMember)?;
+            ensure!(
+                record.status == MemberStatus::Active,
+                Error::<T>::MemberIsSuspended
+            );
+
+            record.status = MemberStatus::Suspended;
+            record.nonce = record.nonce.saturating_add(1);
+            Members::<T>::insert(&community_id, &who, &record);
+            MemberCount::<T>::mutate(&community_id, |c| *c = c.saturating_sub(1));
+
+            Self::recompute_merkle_root(&community_id);
+            Self::deposit_event(Event::MemberSuspended { who });
+            Ok(())
+        }
+
+        /// Manually update the membership merkle root for private/hybrid communities
+        #[pallet::call_index(13)]
+        pub fn update_membership_root(
+            origin: OriginFor<T>,
+            new_root: <T::Hasher as sp_runtime::traits::Hash>::Output,
+            member_count: u32,
+        ) -> DispatchResult {
+            let community_id = T::AdminOrigin::ensure_origin(origin)?;
+
+            let info = Info::<T>::get(&community_id).ok_or(Error::<T>::CommunityDoesNotExist)?;
+            ensure!(
+                info.privacy != PrivacyLevel::Public,
+                Error::<T>::CommunityIsPublic
+            );
+
+            MerkleRoot::<T>::insert(&community_id, new_root);
+            MemberCount::<T>::insert(&community_id, member_count);
+
+            Self::deposit_event(Event::MembershipRootUpdated { community_id });
+            Ok(())
+        }
+
+        /// Update a sub-root for sharded membership trees
+        #[pallet::call_index(14)]
+        pub fn update_sub_root(
+            origin: OriginFor<T>,
+            sub_track_id: u16,
+            new_root: <T::Hasher as sp_runtime::traits::Hash>::Output,
+        ) -> DispatchResult {
+            let community_id = T::AdminOrigin::ensure_origin(origin)?;
+
+            SubRoots::<T>::insert(&community_id, sub_track_id, new_root);
+
+            Self::deposit_event(Event::SubRootUpdated {
+                community_id,
+                sub_track_id,
             });
             Ok(())
         }
