@@ -11,6 +11,7 @@ use frame_support::{
 use frame_system::EnsureSigned;
 #[cfg(feature = "xcm")]
 use sp_runtime::traits::TryConvert;
+use sp_core::H256;
 use sp_runtime::{morph_types, Permill};
 
 pub struct EnsureCommunity<T>(PhantomData<T>);
@@ -126,6 +127,10 @@ impl<T: Config> RawOrigin<T> {
 )]
 pub enum Subset<T: Config> {
     Member(AccountIdOf<T>),
+    AnonymousMember {
+        rank: GenericRank,
+        nullifier: H256,
+    },
     Members { count: u32 },
     Fraction(Permill),
     AtLeastRank(GenericRank),
@@ -160,6 +165,7 @@ where
         let part = match o.subset {
             None => BodyPart::Voice,
             Some(Subset::Member(_)) => BodyPart::Members { count: 1 },
+            Some(Subset::AnonymousMember { .. }) => return Err(()),
             Some(Subset::Members { count }) => BodyPart::Members { count },
             Some(Subset::Fraction(per)) => BodyPart::Fraction {
                 nom: per.deconstruct(),

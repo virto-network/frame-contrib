@@ -1,11 +1,11 @@
 use frame_support::{assert_noop, assert_ok};
-use sp_runtime::traits::BlakeTwo256;
+use sp_runtime::traits::{BlakeTwo256, Hash as _};
 
 use frame_contrib_traits::memberships::GenericRank;
 
 use crate::mock::*;
 use crate::types::*;
-use crate::{Budget, MemberCount, Members, MerkleRoot, SubRoots, RanksTotal};
+use crate::{Budget, MemberCount, Members, MerkleRoot, SubRoots, RanksTotal, UsedNullifiers};
 
 type Error = crate::Error<Test>;
 
@@ -342,5 +342,106 @@ fn test_budget_exhaustion() {
 
             // Check on community without budget should also fail
             assert!(Communities::check_budget(&999, 1).is_err());
+        });
+}
+
+#[test]
+fn test_anonymous_membership_proof_validation() {
+    let alice = account(1);
+    let bob = account(2);
+    let charlie = account(3);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .add_member(COMMUNITY, bob.clone())
+        .add_member(COMMUNITY, charlie.clone())
+        .build()
+        .execute_with(|| {
+            // The merkle root should be set
+            let root = MerkleRoot::<Test>::get(COMMUNITY).expect("root should exist");
+
+            // Compute the leaves the same way recompute_merkle_root does
+            let mut leaves: alloc::vec::Vec<sp_core::H256> =
+                Members::<Test>::iter_prefix(COMMUNITY)
+                    .filter(|(_, record)| record.status == MemberStatus::Active)
+                    .map(|(who, record)| {
+                        BlakeTwo256::hash_of(&(who, COMMUNITY, record.rank, record.nonce))
+                    })
+                    .collect();
+            leaves.sort();
+
+            // Find alice's leaf
+            let alice_record = Members::<Test>::get(COMMUNITY, &alice).unwrap();
+            let alice_leaf =
+                BlakeTwo256::hash_of(&(alice.clone(), COMMUNITY, alice_record.rank, alice_record.nonce));
+            let alice_index = leaves.iter().position(|l| l == &alice_leaf).expect("alice leaf in tree");
+
+            // Generate merkle proof
+            let proof = binary_merkle_tree::merkle_proof::<BlakeTwo256, _, _>(
+                leaves.iter().map(|l| l.as_ref()),
+                alice_index as u32,
+            );
+
+            // The proof root should match the stored root
+            assert_eq!(proof.root, root, "proof root must match stored root");
+
+            // Verify the proof
+            let valid = binary_merkle_tree::verify_proof::<BlakeTwo256, _, _>(
+                &root,
+                proof.proof.clone(),
+                proof.number_of_leaves,
+                proof.leaf_index,
+                &alice_leaf,
+            );
+            assert!(valid, "merkle proof should be valid for alice");
+
+            // Verify with wrong leaf should fail
+            let wrong_leaf = BlakeTwo256::hash_of(b"wrong");
+            let invalid = binary_merkle_tree::verify_proof::<BlakeTwo256, _, _>(
+                &root,
+                proof.proof,
+                proof.number_of_leaves,
+                proof.leaf_index,
+                &wrong_leaf,
+            );
+            assert!(!invalid, "merkle proof should be invalid for wrong leaf");
+        });
+}
+
+#[test]
+fn test_nullifier_prevents_replay() {
+    use sp_core::H256;
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .build()
+        .execute_with(|| {
+            let action_scope = H256::from([0xAA; 32]);
+            let nullifier = H256::from([0xBB; 32]);
+
+            // Initially the nullifier should not exist
+            assert!(
+                !UsedNullifiers::<Test>::contains_key((&COMMUNITY, &action_scope, &nullifier))
+            );
+
+            // Insert the nullifier
+            UsedNullifiers::<Test>::insert((&COMMUNITY, &action_scope, &nullifier), ());
+
+            // Now it should be detected
+            assert!(
+                UsedNullifiers::<Test>::contains_key((&COMMUNITY, &action_scope, &nullifier))
+            );
+
+            // A different action_scope should not be affected
+            let other_scope = H256::from([0xCC; 32]);
+            assert!(
+                !UsedNullifiers::<Test>::contains_key((&COMMUNITY, &other_scope, &nullifier))
+            );
+
+            // A different community should not be affected
+            assert!(
+                !UsedNullifiers::<Test>::contains_key((&999u32, &action_scope, &nullifier))
+            );
         });
 }

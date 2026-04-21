@@ -123,6 +123,7 @@ use frame_support::{
     Blake2_128Concat, Parameter,
 };
 use frame_system::pallet_prelude::{ensure_signed, OriginFor};
+use sp_core::H256;
 use sp_runtime::traits::AccountIdConversion;
 use sp_runtime::traits::{BlockNumberProvider, StaticLookup};
 
@@ -147,6 +148,8 @@ pub mod weights;
 pub use weights::*;
 
 pub mod origin;
+
+pub mod extensions;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -310,6 +313,18 @@ pub mod pallet {
         Blake2_128Concat,
         u16,
         <T::Hasher as sp_runtime::traits::Hash>::Output,
+    >;
+
+    /// Tracks used nullifiers to prevent double-actions per scope
+    #[pallet::storage]
+    pub type UsedNullifiers<T: Config> = StorageNMap<
+        _,
+        (
+            NMapKey<Blake2_128Concat, CommunityIdOf<T>>,
+            NMapKey<Blake2_128Concat, H256>,
+            NMapKey<Blake2_128Concat, H256>,
+        ),
+        (),
     >;
 
     /// Number of members in a community
