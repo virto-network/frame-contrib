@@ -11,6 +11,7 @@ use frame_support::{
     },
 };
 use sp_runtime::traits::{AccountIdConversion, Dispatchable, Hash as _};
+use sp_runtime::Saturating;
 
 impl<T: Config> Pallet<T> {
     #[inline]
@@ -226,6 +227,48 @@ impl<T: Config> Pallet<T> {
         call.dispatch(signer.into())
             .map(|_| ())
             .map_err(|e| e.error)
+    }
+
+    /// Check if community has enough budget for the given cost.
+    /// Resets session if expired. Returns remaining capacity after deduction.
+    pub fn check_budget(community_id: &CommunityIdOf<T>, cost: u64) -> Result<u64, Error<T>> {
+        let mut budget = Budget::<T>::get(community_id).ok_or(Error::<T>::BudgetExhausted)?;
+        let now = T::BlockNumberProvider::current_block_number();
+
+        // Reset session if expired
+        if now >= budget.session_start.saturating_add(budget.session_length) {
+            budget.used = 0;
+            budget.session_start = now;
+        }
+
+        let remaining = budget.capacity.saturating_sub(budget.used);
+        if remaining < cost {
+            return Err(Error::<T>::BudgetExhausted);
+        }
+        Ok(remaining.saturating_sub(cost))
+    }
+
+    /// Burn gas from community budget. Resets session if expired.
+    pub fn burn_budget(community_id: &CommunityIdOf<T>, cost: u64) {
+        Budget::<T>::mutate(community_id, |maybe_budget| {
+            if let Some(budget) = maybe_budget {
+                let now = T::BlockNumberProvider::current_block_number();
+                if now >= budget.session_start.saturating_add(budget.session_length) {
+                    budget.used = 0;
+                    budget.session_start = now;
+                }
+                budget.used = budget.used.saturating_add(cost);
+            }
+        });
+    }
+
+    /// Refund gas back to community budget.
+    pub fn refund_budget(community_id: &CommunityIdOf<T>, amount: u64) {
+        Budget::<T>::mutate(community_id, |maybe_budget| {
+            if let Some(budget) = maybe_budget {
+                budget.used = budget.used.saturating_sub(amount);
+            }
+        });
     }
 
     /// Recompute and store the merkle root for public communities.

@@ -46,6 +46,7 @@ pub trait WeightInfo {
 	fn suspend_member() -> Weight { Weight::zero() }
 	fn update_membership_root() -> Weight { Weight::zero() }
 	fn update_sub_root() -> Weight { Weight::zero() }
+	fn set_budget() -> Weight { Weight::zero() }
 }
 
 /// Weights for pallet_communities using the Substrate node and recommended hardware.

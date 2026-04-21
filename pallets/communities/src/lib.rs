@@ -384,6 +384,9 @@ pub mod pallet {
             who: AccountIdOf<T>,
             poll_index: PollIndexOf<T>,
         },
+        BudgetSet {
+            community_id: CommunityIdOf<T>,
+        },
     }
 
     // Errors inform users that something worked or went wrong.
@@ -426,6 +429,8 @@ pub mod pallet {
         CommunityIsPublic,
         /// The member is suspended
         MemberIsSuspended,
+        /// The community's gas budget has been exhausted
+        BudgetExhausted,
     }
 
     // Dispatchable functions allows users to interact with the pallet and invoke
@@ -674,6 +679,28 @@ pub mod pallet {
                 community_id,
                 sub_track_id,
             });
+            Ok(())
+        }
+
+        // === Budget ===
+
+        /// Set the gas budget for a community
+        #[pallet::call_index(15)]
+        pub fn set_budget(
+            origin: OriginFor<T>,
+            capacity: u64,
+            session_length: BlockNumberFor<T>,
+        ) -> DispatchResult {
+            let community_id = T::AdminOrigin::ensure_origin(origin)?;
+            ensure!(Self::community_exists(&community_id), Error::<T>::CommunityDoesNotExist);
+            let now = T::BlockNumberProvider::current_block_number();
+            Budget::<T>::insert(&community_id, CommunityBudget {
+                capacity,
+                used: 0,
+                session_start: now,
+                session_length,
+            });
+            Self::deposit_event(Event::BudgetSet { community_id });
             Ok(())
         }
 
