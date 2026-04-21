@@ -10,7 +10,7 @@ use frame_support::{
         Polling,
     },
 };
-use sp_runtime::traits::{AccountIdConversion, Dispatchable, Hash as _};
+use sp_runtime::traits::{AccountIdConversion, Dispatchable};
 use sp_runtime::Saturating;
 
 impl<T: Config> Pallet<T> {
@@ -79,24 +79,17 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    pub(crate) fn try_vote(
+    pub(crate) fn try_vote_by_key(
         community_id: &CommunityIdOf<T>,
         decision_method: &DecisionMethodFor<T>,
-        who: &AccountIdOf<T>,
+        vote_multiplier: u32,
+        voter_key: &<T::Hasher as sp_runtime::traits::Hash>::Output,
         poll_index: PollIndexOf<T>,
         vote: &VoteOf<T>,
     ) -> DispatchResult {
         T::Polls::try_access_poll(poll_index, |poll_status| {
             let (tally, class) = poll_status.ensure_ongoing().ok_or(Error::<T>::NotOngoing)?;
             ensure!(community_id == &class, Error::<T>::InvalidTrack);
-
-            let vote_multiplier = match CommunityDecisionMethod::<T>::get(community_id) {
-                DecisionMethod::Rank => {
-                    let rank: u32 = Self::member_rank(community_id, who).into();
-                    rank
-                }
-                _ => 1,
-            };
 
             let say = *match (vote, decision_method) {
                 (
@@ -112,38 +105,31 @@ impl<T: Config> Pallet<T> {
             };
 
             let vote_weight = VoteWeight::from(vote);
-            tally.add_vote(say, vote_multiplier * vote_weight, vote_weight);
+            let multiplied = vote_multiplier * vote_weight;
+            tally.add_vote(say, multiplied, vote_weight);
 
-            CommunityVotes::<T>::insert(poll_index, who, (vote, who));
-            Self::update_locks(who, poll_index, vote, LockUpdateType::Add)
+            CommunityVotes::<T>::insert(poll_index, voter_key, (vote, multiplied));
+            Ok(())
         })
     }
 
-    pub(crate) fn try_remove_vote(
+    pub(crate) fn try_remove_vote_by_key(
         community_id: &CommunityIdOf<T>,
-        decision_method: &DecisionMethodFor<T>,
-        who: &AccountIdOf<T>,
+        voter_key: &<T::Hasher as sp_runtime::traits::Hash>::Output,
         poll_index: PollIndexOf<T>,
     ) -> DispatchResult {
         T::Polls::try_access_poll(poll_index, |poll_status| {
             let (tally, class) = poll_status.ensure_ongoing().ok_or(Error::<T>::NotOngoing)?;
             ensure!(community_id == &class, Error::<T>::InvalidTrack);
 
-            let (vote, voter) = CommunityVotes::<T>::get(poll_index, who)
+            let (vote, multiplied) = CommunityVotes::<T>::get(poll_index, voter_key)
                 .ok_or(Error::<T>::NoVoteCasted)?;
-            let vote_multiplier = match decision_method {
-                DecisionMethod::Rank => {
-                    let rank: u32 = Self::member_rank(community_id, who).into();
-                    rank
-                }
-                _ => 1,
-            };
 
             let vote_weight = VoteWeight::from(&vote);
-            tally.remove_vote(vote.say(), vote_multiplier * vote_weight, vote_weight);
+            tally.remove_vote(vote.say(), multiplied, vote_weight);
 
-            CommunityVotes::<T>::remove(poll_index, who);
-            Self::update_locks(&voter, poll_index, &vote, LockUpdateType::Remove)
+            CommunityVotes::<T>::remove(poll_index, voter_key);
+            Ok(())
         })
     }
 
@@ -296,6 +282,15 @@ impl<T: Config> Pallet<T> {
             let root = binary_merkle_tree::merkle_root::<T::Hasher, _>(leaves);
             MerkleRoot::<T>::insert(community_id, root);
         }
+    }
+
+    /// Extract a community origin from a runtime origin.
+    /// Returns BadOrigin if the origin is not a community origin.
+    pub(crate) fn extract_community_origin(
+        origin: OriginFor<T>,
+    ) -> Result<origin::RawOrigin<T>, DispatchError> {
+        let raw: Result<origin::RawOrigin<T>, _> = origin.into();
+        raw.map_err(|_| DispatchError::BadOrigin)
     }
 }
 

@@ -1,11 +1,12 @@
-use frame_support::{assert_noop, assert_ok};
+use frame_support::{assert_noop, assert_ok, traits::Hooks};
 use sp_runtime::traits::{BlakeTwo256, Hash as _};
 
 use frame_contrib_traits::memberships::GenericRank;
+use sp_core::H256;
 
 use crate::mock::*;
 use crate::types::*;
-use crate::{Budget, MemberCount, Members, MerkleRoot, SubRoots, RanksTotal, UsedNullifiers};
+use crate::{Budget, CommunityDecisionMethod, CommunityVotes, MemberCount, Members, MerkleRoot, SubRoots, RanksTotal, UsedNullifiers};
 
 type Error = crate::Error<Test>;
 
@@ -443,5 +444,305 @@ fn test_nullifier_prevents_replay() {
             assert!(
                 !UsedNullifiers::<Test>::contains_key((&999u32, &action_scope, &nullifier))
             );
+        });
+}
+
+// Helper to create a track, submit a referendum, and advance to decision phase
+fn setup_poll(community_id: CommunityId) -> u32 {
+    use codec::Encode;
+    use frame_support::traits::OriginTrait;
+    use fc_pallet_referenda_tracks::SplitId;
+    use pallet_referenda::{BoundedCallOf, Curve, TrackInfo, TrackInfoOf};
+    use sp_runtime::{str_array as s, BoundedVec, Perbill};
+
+    let track_info: TrackInfoOf<Test> = TrackInfo {
+        name: s("Community"),
+        max_deciding: 1,
+        decision_deposit: 5,
+        prepare_period: 1,
+        decision_period: 5,
+        confirm_period: 1,
+        min_enactment_period: 1,
+        min_approval: Curve::LinearDecreasing {
+            length: Perbill::from_percent(100),
+            floor: Perbill::from_percent(50),
+            ceil: Perbill::from_percent(100),
+        },
+        min_support: Curve::LinearDecreasing {
+            length: Perbill::from_percent(100),
+            floor: Perbill::from_percent(0),
+            ceil: Perbill::from_percent(100),
+        },
+    };
+
+    let community_origin_caller = community_origin(community_id).caller().clone();
+
+    // Directly insert track storage for the exact track_id = community_id
+    let track_id: CommunityId = community_id;
+    let (group, sub_track) = track_id.split();
+
+    fc_pallet_referenda_tracks::TracksIds::<Test, ()>::try_mutate(|ids| ids.try_insert(track_id))
+        .expect("can insert track id");
+    fc_pallet_referenda_tracks::Tracks::<Test, ()>::set(group, sub_track, Some(track_info));
+    fc_pallet_referenda_tracks::OriginToTrackId::<Test, ()>::set(
+        community_origin_caller.clone(),
+        Some(track_id),
+    );
+    fc_pallet_referenda_tracks::TrackIdToOrigin::<Test, ()>::set(
+        track_id,
+        Some(community_origin_caller.clone()),
+    );
+
+    // Need a funded account to submit and deposit
+    let submitter = account(99);
+    assert_ok!(Balances::force_set_balance(
+        RuntimeOrigin::root(),
+        submitter.clone(),
+        100
+    ));
+
+    // Create a dummy proposal call
+    let call: RuntimeCall = crate::Call::<Test>::set_decision_method {
+        community_id,
+        decision_method: DecisionMethod::Membership,
+    }
+    .into();
+    let proposal = BoundedCallOf::<Test, ()>::Inline(BoundedVec::truncate_from(call.encode()));
+
+    assert_ok!(Referenda::submit(
+        RuntimeOrigin::signed(submitter.clone()),
+        Box::new(community_origin_caller),
+        proposal,
+        frame_support::traits::schedule::DispatchTime::After(1),
+    ));
+
+    // Find the poll index from events
+    let poll_index = 0u32; // First referendum
+
+    assert_ok!(Referenda::place_decision_deposit(
+        RuntimeOrigin::signed(submitter),
+        poll_index
+    ));
+
+    // Advance to decision phase
+    System::set_block_number(System::block_number() + 1);
+    Referenda::on_initialize(System::block_number());
+    Scheduler::on_initialize(System::block_number());
+
+    poll_index
+}
+
+fn anon_origin(community_id: CommunityId, rank: GenericRank, nullifier: H256) -> RuntimeOrigin {
+    let mut raw = crate::origin::RawOrigin::<Test>::new(community_id);
+    raw.with_subset(crate::origin::Subset::AnonymousMember { rank, nullifier });
+    raw.into()
+}
+
+#[test]
+fn test_named_vote_still_works() {
+    let alice = account(1);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .build()
+        .execute_with(|| {
+            let poll_index = setup_poll(COMMUNITY);
+
+            // Named vote should work
+            assert_ok!(Communities::vote(
+                RuntimeOrigin::signed(alice.clone()),
+                poll_index,
+                Vote::Standard(true),
+            ));
+
+            // Verify vote was recorded with hash of account as key
+            let voter_key = BlakeTwo256::hash_of(&alice);
+            assert!(CommunityVotes::<Test>::get(poll_index, &voter_key).is_some());
+
+            // Verify event
+            System::assert_has_event(
+                crate::Event::<Test>::VoteCasted {
+                    who: Some(alice.clone()),
+                    poll_index,
+                    vote: Vote::Standard(true),
+                }
+                .into(),
+            );
+        });
+}
+
+#[test]
+fn test_anonymous_vote_uses_nullifier_key() {
+    let alice = account(1);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .build()
+        .execute_with(|| {
+            let poll_index = setup_poll(COMMUNITY);
+            let nullifier = H256::from_low_u64_be(42);
+
+            // Anonymous vote with membership decision method
+            let origin = anon_origin(COMMUNITY, GenericRank::default(), nullifier);
+            assert_ok!(Communities::vote(
+                origin,
+                poll_index,
+                Vote::Standard(true),
+            ));
+
+            // Verify vote was recorded with hash of nullifier as key
+            let voter_key = BlakeTwo256::hash_of(&nullifier);
+            let (vote, multiplied) = CommunityVotes::<Test>::get(poll_index, &voter_key)
+                .expect("vote should be stored");
+            assert_eq!(vote, Vote::Standard(true));
+            assert_eq!(multiplied, 1); // membership = 1x multiplier
+
+            // Verify event has None for who (anonymous)
+            System::assert_has_event(
+                crate::Event::<Test>::VoteCasted {
+                    who: None,
+                    poll_index,
+                    vote: Vote::Standard(true),
+                }
+                .into(),
+            );
+        });
+}
+
+#[test]
+fn test_anonymous_vote_with_rank() {
+    let alice = account(1);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .build()
+        .execute_with(|| {
+            // Set decision method to Rank
+            CommunityDecisionMethod::<Test>::set(COMMUNITY, DecisionMethod::Rank);
+
+            let poll_index = setup_poll(COMMUNITY);
+            let nullifier = H256::from_low_u64_be(100);
+            let rank = GenericRank::from(3u8);
+
+            let origin = anon_origin(COMMUNITY, rank, nullifier);
+            assert_ok!(Communities::vote(
+                origin,
+                poll_index,
+                Vote::Standard(true),
+            ));
+
+            // Verify the multiplied weight reflects rank
+            let voter_key = BlakeTwo256::hash_of(&nullifier);
+            let (_, multiplied) = CommunityVotes::<Test>::get(poll_index, &voter_key)
+                .expect("vote should be stored");
+            // rank 3 * vote weight 1 = 3
+            assert_eq!(multiplied, 3);
+        });
+}
+
+#[test]
+fn test_anonymous_vote_token_weighted_rejected() {
+    let alice = account(1);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .build()
+        .execute_with(|| {
+            // Set decision method to NativeToken
+            CommunityDecisionMethod::<Test>::set(COMMUNITY, DecisionMethod::NativeToken);
+
+            let poll_index = setup_poll(COMMUNITY);
+            let nullifier = H256::from_low_u64_be(200);
+
+            // Anonymous vote with NativeToken should fail
+            let origin = anon_origin(COMMUNITY, GenericRank::default(), nullifier);
+            assert_noop!(
+                Communities::vote(
+                    origin,
+                    poll_index,
+                    Vote::Standard(true),
+                ),
+                Error::InvalidVoteType
+            );
+        });
+}
+
+#[test]
+fn test_anonymous_vote_duplicate_nullifier_rejected() {
+    let alice = account(1);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .build()
+        .execute_with(|| {
+            let poll_index = setup_poll(COMMUNITY);
+            let nullifier = H256::from_low_u64_be(300);
+
+            // First anonymous vote succeeds
+            let origin = anon_origin(COMMUNITY, GenericRank::default(), nullifier);
+            assert_ok!(Communities::vote(
+                origin,
+                poll_index,
+                Vote::Standard(true),
+            ));
+
+            // Second anonymous vote with same nullifier should fail (AlreadyOngoing)
+            let origin2 = anon_origin(COMMUNITY, GenericRank::default(), nullifier);
+            assert_noop!(
+                Communities::vote(
+                    origin2,
+                    poll_index,
+                    Vote::Standard(false),
+                ),
+                Error::AlreadyOngoing
+            );
+        });
+}
+
+#[test]
+fn test_anonymous_vote_different_nullifiers_both_counted() {
+    let alice = account(1);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .build()
+        .execute_with(|| {
+            let poll_index = setup_poll(COMMUNITY);
+            let nullifier1 = H256::from_low_u64_be(400);
+            let nullifier2 = H256::from_low_u64_be(401);
+
+            // Two different anonymous voters should both succeed
+            let origin1 = anon_origin(COMMUNITY, GenericRank::default(), nullifier1);
+            assert_ok!(Communities::vote(
+                origin1,
+                poll_index,
+                Vote::Standard(true),
+            ));
+
+            let origin2 = anon_origin(COMMUNITY, GenericRank::default(), nullifier2);
+            assert_ok!(Communities::vote(
+                origin2,
+                poll_index,
+                Vote::Standard(false),
+            ));
+
+            // Both votes should be stored
+            let key1 = BlakeTwo256::hash_of(&nullifier1);
+            let key2 = BlakeTwo256::hash_of(&nullifier2);
+            assert!(CommunityVotes::<Test>::get(poll_index, &key1).is_some());
+            assert!(CommunityVotes::<Test>::get(poll_index, &key2).is_some());
+
+            // Check tally via Polling
+            use frame_support::traits::Polling;
+            let (tally, _) = Referenda::as_ongoing(poll_index).expect("poll should be ongoing");
+            assert_eq!(tally.ayes, 1);
+            assert_eq!(tally.nays, 1);
+            assert_eq!(tally.bare_ayes, 1);
         });
 }

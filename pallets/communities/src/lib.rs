@@ -125,7 +125,7 @@ use frame_support::{
 use frame_system::pallet_prelude::{ensure_signed, OriginFor};
 use sp_core::H256;
 use sp_runtime::traits::AccountIdConversion;
-use sp_runtime::traits::{BlockNumberProvider, StaticLookup};
+use sp_runtime::traits::{BlockNumberProvider, Hash as _, StaticLookup};
 
 // TODO: Re-enable after storage model rework
 // #[cfg(feature = "runtime-benchmarks")]
@@ -167,7 +167,8 @@ pub mod pallet {
         frame_system::Config<
         RuntimeEvent: From<Event<Self>>,
         RuntimeCall: From<Call<Self>>,
-        RuntimeOrigin: From<Origin<Self>>,
+        RuntimeOrigin: From<Origin<Self>>
+            + Into<Result<Origin<Self>, <Self as frame_system::Config>::RuntimeOrigin>>,
     >
     where
         AssetIdOf<Self>: MaybeSerializeDeserialize,
@@ -278,14 +279,16 @@ pub mod pallet {
         StorageMap<_, Blake2_128Concat, CommunityIdOf<T>, DecisionMethodFor<T>, ValueQuery>;
 
     /// Stores the list of votes for a community.
+    /// Key: (poll_index, voter_key) where voter_key is hash of account (named) or hash of nullifier (anonymous)
+    /// Value: (vote, multiplied_weight) for correct removal
     #[pallet::storage]
-    pub(super) type CommunityVotes<T> = StorageDoubleMap<
+    pub(super) type CommunityVotes<T: Config> = StorageDoubleMap<
         _,
         Blake2_128Concat,
         PollIndexOf<T>,
         Blake2_128Concat,
-        AccountIdOf<T>,
-        (VoteOf<T>, AccountIdOf<T>),
+        <T::Hasher as sp_runtime::traits::Hash>::Output,
+        (VoteOf<T>, VoteWeight),
     >;
 
     /// Stores the list of votes for a community.
@@ -391,7 +394,7 @@ pub mod pallet {
             sub_track_id: u16,
         },
         VoteCasted {
-            who: AccountIdOf<T>,
+            who: Option<AccountIdOf<T>>,
             poll_index: PollIndexOf<T>,
             vote: VoteOf<T>,
         },
@@ -743,7 +746,8 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Cast a vote on an on-going referendum
+        /// Cast a vote on an on-going referendum.
+        /// Supports both named (signed) and anonymous (community origin) voting paths.
         #[pallet::call_index(8)]
         pub fn vote(
             origin: OriginFor<T>,
@@ -751,44 +755,83 @@ pub mod pallet {
             vote: VoteOf<T>,
         ) -> DispatchResult {
             ensure!(VoteWeight::from(&vote).gt(&0), Error::<T>::VoteBelowMinimum);
-            let who = ensure_signed(origin)?;
 
-            // Get community_id from the poll's class
-            let community_id = T::Polls::as_ongoing(poll_index)
-                .map(|t| t.1)
-                .ok_or(Error::<T>::NotOngoing)?;
-
-            ensure!(
-                Self::is_member(&community_id, &who),
-                Error::<T>::NotAMember
-            );
+            // Determine voting path: signed (named) or community origin (anonymous)
+            let (community_id, voter_key, vote_multiplier, maybe_who): (
+                CommunityIdOf<T>,
+                <T::Hasher as sp_runtime::traits::Hash>::Output,
+                u32,
+                Option<AccountIdOf<T>>,
+            ) = if let Some(who) = origin.as_system_ref()
+                .and_then(|s| if let frame_system::RawOrigin::Signed(who) = s { Some(who.clone()) } else { None })
+            {
+                // Named vote path - signed origin
+                let community_id = T::Polls::as_ongoing(poll_index)
+                    .map(|t| t.1)
+                    .ok_or(Error::<T>::NotOngoing)?;
+                ensure!(Self::is_member(&community_id, &who), Error::<T>::NotAMember);
+                let decision_method = CommunityDecisionMethod::<T>::get(community_id);
+                let multiplier = match decision_method {
+                    DecisionMethod::Rank => Self::member_rank(&community_id, &who).into(),
+                    _ => 1u32,
+                };
+                let key = T::Hasher::hash_of(&who);
+                (community_id, key, multiplier, Some(who))
+            } else {
+                // Anonymous vote path - try community origin
+                let community_origin = Self::extract_community_origin(origin)?;
+                match community_origin.subset() {
+                    Some(origin::Subset::AnonymousMember { rank, nullifier }) => {
+                        let community_id = community_origin.id();
+                        let decision_method = CommunityDecisionMethod::<T>::get(community_id);
+                        // Token-weighted voting not supported anonymously
+                        ensure!(
+                            matches!(decision_method, DecisionMethod::Membership | DecisionMethod::Rank),
+                            Error::<T>::InvalidVoteType
+                        );
+                        let multiplier = match decision_method {
+                            DecisionMethod::Rank => (*rank).into(),
+                            _ => 1u32,
+                        };
+                        let key = T::Hasher::hash_of(nullifier);
+                        (community_id, key, multiplier, None)
+                    },
+                    _ => return Err(DispatchError::BadOrigin),
+                }
+            };
 
             let decision_method = CommunityDecisionMethod::<T>::get(community_id);
-            if CommunityVotes::<T>::contains_key(poll_index, &who) {
-                Self::try_remove_vote(&community_id, &decision_method, &who, poll_index)?;
+
+            // Check for existing vote and remove it (only for named voters)
+            if CommunityVotes::<T>::contains_key(poll_index, &voter_key) {
+                ensure!(maybe_who.is_some(), Error::<T>::AlreadyOngoing);
+                Self::try_remove_vote_by_key(&community_id, &voter_key, poll_index)?;
             }
-            Self::try_vote(
-                &community_id,
-                &decision_method,
-                &who,
-                poll_index,
-                &vote,
-            )?;
+
+            Self::try_vote_by_key(&community_id, &decision_method, vote_multiplier, &voter_key, poll_index, &vote)?;
+
+            // Lock funds only for named voters
+            if let Some(ref who) = maybe_who {
+                Self::update_locks(who, poll_index, &vote, LockUpdateType::Add)?;
+            }
+
             Self::deposit_event(Event::<T>::VoteCasted {
-                who: who.clone(),
+                who: maybe_who,
                 poll_index,
                 vote,
             });
             Ok(())
         }
 
-        /// Remove any previous vote on a given referendum
+        /// Remove any previous vote on a given referendum.
+        /// Only available for named (signed) voters. Anonymous votes cannot be removed.
         #[pallet::call_index(9)]
         pub fn remove_vote(
             origin: OriginFor<T>,
             #[pallet::compact] poll_index: PollIndexOf<T>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            let voter_key = T::Hasher::hash_of(&who);
 
             let community_id = T::Polls::as_ongoing(poll_index)
                 .map(|t| t.1)
@@ -799,10 +842,14 @@ pub mod pallet {
                 Error::<T>::NotAMember
             );
 
-            let decision_method = CommunityDecisionMethod::<T>::get(community_id);
-            Self::try_remove_vote(&community_id, &decision_method, &who, poll_index)?;
+            let (vote, _) = CommunityVotes::<T>::get(poll_index, &voter_key)
+                .ok_or(Error::<T>::NoVoteCasted)?;
+
+            Self::try_remove_vote_by_key(&community_id, &voter_key, poll_index)?;
+            Self::update_locks(&who, poll_index, &vote, LockUpdateType::Remove)?;
+
             Self::deposit_event(Event::<T>::VoteRemoved {
-                who: who.clone(),
+                who,
                 poll_index,
             });
             Ok(())

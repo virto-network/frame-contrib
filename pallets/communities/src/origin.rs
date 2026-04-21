@@ -74,14 +74,12 @@ where
         o: RuntimeOriginFor<T>,
         community_id: &CommunityIdOf<T>,
     ) -> Result<Self::Success, RuntimeOriginFor<T>> {
-        use frame_system::RawOrigin::Signed;
-
-        match o.clone().into() {
-            Ok(Signed(who)) => {
-                if Pallet::<T>::is_member(community_id, &who) {
+        match o.as_system_ref() {
+            Some(frame_system::RawOrigin::Signed(who)) => {
+                if Pallet::<T>::is_member(community_id, who) {
                     Ok(())
                 } else {
-                    Err(o.clone())
+                    Err(o)
                 }
             }
             _ => Err(o),
@@ -118,6 +116,10 @@ impl<T: Config> RawOrigin<T> {
 
     pub fn id(&self) -> CommunityIdOf<T> {
         self.community_id
+    }
+
+    pub fn subset(&self) -> Option<&Subset<T>> {
+        self.subset.as_ref()
     }
 }
 
