@@ -250,6 +250,7 @@ impl Config for Test {
 
     type CommunityId = CommunityId;
     type Hasher = BlakeTwo256;
+    type MembershipVerifier = crate::verifier::MerkleVerifier<BlakeTwo256>;
     type MaxMembers = ConstU32<100>;
 
     type Polls = Referenda;

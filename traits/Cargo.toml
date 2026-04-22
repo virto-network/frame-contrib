@@ -12,6 +12,7 @@ fc-traits-gas-tank.workspace = true
 fc-traits-listings.workspace = true
 fc-traits-memberships.workspace = true
 fc-traits-payments.workspace = true
+fc-traits-proof-verifier.workspace = true
 
 [features]
 default = ["std"]
@@ -21,6 +22,7 @@ std = [
 	"fc-traits-listings/std",
 	"fc-traits-memberships/std",
 	"fc-traits-payments/std",
+	"fc-traits-proof-verifier/std",
 ]
 runtime-benchmarks = [
 	"fc-traits-gas-tank/runtime-benchmarks",

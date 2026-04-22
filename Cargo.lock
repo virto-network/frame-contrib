@@ -1144,6 +1144,7 @@ version = "1.0.0"
 dependencies = [
  "binary-merkle-tree",
  "fc-pallet-referenda-tracks",
+ "fc-traits-proof-verifier",
  "frame-benchmarking",
  "frame-contrib-traits",
  "frame-support",
@@ -1377,6 +1378,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-traits-proof-verifier"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-runtime",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1482,6 +1493,7 @@ dependencies = [
  "fc-traits-listings",
  "fc-traits-memberships",
  "fc-traits-payments",
+ "fc-traits-proof-verifier",
 ]
 
 [[package]]

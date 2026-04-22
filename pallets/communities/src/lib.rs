@@ -150,6 +150,7 @@ pub use weights::*;
 pub mod origin;
 
 pub mod extensions;
+pub mod verifier;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -199,6 +200,13 @@ pub mod pallet {
 
         /// The hashing algorithm used for merkle trees
         type Hasher: sp_runtime::traits::Hash;
+
+        /// Verifier for membership proofs. Use `verifier::MerkleVerifier<Self::Hasher>`
+        /// for simple merkle proofs, or a ZK verifier for privacy.
+        type MembershipVerifier: fc_traits_proof_verifier::ProofVerifier<
+            ProgramId = (),
+            PublicInputs = verifier::MembershipInputs<Self::Hasher>,
+        >;
 
         /// Maximum number of members a community can have
         type MaxMembers: Get<u32>;

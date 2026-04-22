@@ -1,8 +1,10 @@
 extern crate alloc;
 
 use crate::{
-    origin::RawOrigin as CommunityOrigin, Config, MerkleRoot, SubRoots, UsedNullifiers,
+    origin::RawOrigin as CommunityOrigin, verifier::MembershipInputs, Config, MerkleRoot, SubRoots,
+    UsedNullifiers,
 };
+use fc_traits_proof_verifier::ProofVerifier;
 use codec::{Decode, DecodeWithMemTracking, Encode};
 use frame_contrib_traits::memberships::GenericRank;
 use frame_support::{
@@ -55,14 +57,8 @@ pub struct AnonymousMembership<T: Config>(pub Option<MembershipProofParams<T>>);
 #[scale_info(skip_type_params(T))]
 pub struct MembershipProofParams<T: Config> {
     pub community_id: T::CommunityId,
-    /// The leaf hash that the prover claims is in the tree
-    pub leaf: <T::Hasher as sp_runtime::traits::Hash>::Output,
-    /// Merkle proof siblings
-    pub proof: alloc::vec::Vec<<T::Hasher as sp_runtime::traits::Hash>::Output>,
-    /// Index of the leaf in the tree
-    pub leaf_index: u32,
-    /// Total number of leaves
-    pub leaf_count: u32,
+    /// The proof in whatever format the verifier expects
+    pub proof: <T::MembershipVerifier as ProofVerifier>::Proof,
     /// Rank exposed as public input (for vote weight)
     pub rank: GenericRank,
     /// Nullifier: hash(identity_secret, action_scope) -- prevents double-action
@@ -78,6 +74,7 @@ where
     T::RuntimeOrigin: From<CommunityOrigin<T>>,
     T::CommunityId: Send + Sync,
     <T::Hasher as sp_runtime::traits::Hash>::Output: Send + Sync,
+    <T::MembershipVerifier as ProofVerifier>::Proof: Send + Sync,
 {
     const IDENTIFIER: &'static str = "AnonymousMembership";
     type Implicit = ();
@@ -113,21 +110,10 @@ where
                 1,
             )))?; // no root set
 
-            // Verify merkle proof.
-            // The tree was built with `binary_merkle_tree::merkle_root` which
-            // hashes each item via `Hasher::hash(item.as_ref())`, so we pass
-            // the leaf as a byte-slice reference so verify_proof hashes it the
-            // same way.
-            let valid = binary_merkle_tree::verify_proof::<T::Hasher, _, _>(
-                &root,
-                params.proof.clone(),
-                params.leaf_count,
-                params.leaf_index,
-                &params.leaf,
-            );
-            if !valid {
-                return Err(InvalidTransaction::BadSigner.into());
-            }
+            // Verify proof via the configured verifier
+            let public_inputs = MembershipInputs { root };
+            T::MembershipVerifier::verify(&(), &params.proof, &public_inputs)
+                .map_err(|_| TransactionValidityError::from(InvalidTransaction::BadSigner))?;
 
             // Check nullifier hasn't been used
             if UsedNullifiers::<T>::contains_key((
