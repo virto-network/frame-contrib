@@ -43,14 +43,12 @@
 //! ## Lifecycle
 //!
 //! ```ignore
-//! [       ] --> [Pending]               --> [Active]            --> [Blocked]
-//! create        set_metadata                set_metadata            unblock
-//!                                           block                   
-//!                                           add_member              
-//!                                           remove_member
-//!                                           promote
-//!                                           demote
-//!                                           set_voting_mechanism
+//! [       ] --> [Active] <-----> [Blocked]
+//! create        add_member       block/unblock
+//!               remove_member
+//!               promote
+//!               demote
+//!               set_decision_method
 //! ```
 //!
 //! ## Implementations
@@ -114,20 +112,22 @@
 
 extern crate alloc;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::boxed::Box;
 use core::num::NonZeroU8;
-use frame_contrib_traits::memberships::{self as membership, Inspect, Manager, Rank};
+use frame_contrib_traits::memberships::GenericRank;
 use frame_support::{
     pallet_prelude::*,
     traits::{fungible, fungibles, EnsureOrigin, OriginTrait, Polling},
     Blake2_128Concat, Parameter,
 };
 use frame_system::pallet_prelude::{ensure_signed, OriginFor};
+use sp_core::H256;
 use sp_runtime::traits::AccountIdConversion;
-use sp_runtime::traits::{BlockNumberProvider, StaticLookup};
+use sp_runtime::traits::{BlockNumberProvider, Hash as _, StaticLookup};
 
-#[cfg(feature = "runtime-benchmarks")]
-mod benchmarking;
+// TODO: Re-enable after storage model rework
+// #[cfg(feature = "runtime-benchmarks")]
+// mod benchmarking;
 
 #[cfg(test)]
 mod mock;
@@ -147,6 +147,9 @@ pub use weights::*;
 
 pub mod origin;
 
+pub mod extensions;
+pub mod verifier;
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
@@ -163,7 +166,8 @@ pub mod pallet {
         frame_system::Config<
         RuntimeEvent: From<Event<Self>>,
         RuntimeCall: From<Call<Self>>,
-        RuntimeOrigin: From<Origin<Self>>,
+        RuntimeOrigin: From<Origin<Self>>
+            + Into<Result<Origin<Self>, <Self as frame_system::Config>::RuntimeOrigin>>,
     >
     where
         AssetIdOf<Self>: MaybeSerializeDeserialize,
@@ -191,16 +195,22 @@ pub mod pallet {
 
         /// This type represents an unique ID for the community
         type CommunityId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
-        /// This type represents an unique ID to identify a membership within a
-        /// community
-        type MembershipId: Parameter + MaxEncodedLen + Copy + MaybeSerializeDeserialize;
+
+        /// The hashing algorithm used for merkle trees
+        type Hasher: sp_runtime::traits::Hash;
+
+        /// Verifier for membership proofs. Use `verifier::MerkleVerifier<Self::Hasher>`
+        /// for simple merkle proofs, or a ZK verifier for privacy.
+        type MembershipVerifier: fc_traits_proof_verifier::ProofVerifier<
+            ProgramId = (),
+            PublicInputs = verifier::MembershipInputs<Self::Hasher>,
+        >;
+
+        /// Maximum number of members a community can have
+        type MaxMembers: Get<u32>;
 
         // Dependencies: The external components this pallet depends on.
 
-        /// Means to manage memberships of a community
-        type MemberMgmt: Inspect<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>
-            + Manager<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>
-            + Rank<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>;
         /// Means to read and mutate the state of a poll.
         type Polls: Polling<
             Tally<Self>,
@@ -275,14 +285,16 @@ pub mod pallet {
         StorageMap<_, Blake2_128Concat, CommunityIdOf<T>, DecisionMethodFor<T>, ValueQuery>;
 
     /// Stores the list of votes for a community.
+    /// Key: (poll_index, voter_key) where voter_key is hash of account (named) or hash of nullifier (anonymous)
+    /// Value: (vote, multiplied_weight) for correct removal
     #[pallet::storage]
-    pub(super) type CommunityVotes<T> = StorageDoubleMap<
+    pub(super) type CommunityVotes<T: Config> = StorageDoubleMap<
         _,
         Blake2_128Concat,
         PollIndexOf<T>,
         Blake2_128Concat,
-        MembershipIdOf<T>,
-        (VoteOf<T>, AccountIdOf<T>),
+        <T::Hasher as sp_runtime::traits::Hash>::Output,
+        (VoteOf<T>, VoteWeight),
     >;
 
     /// Stores the list of votes for a community.
@@ -295,6 +307,75 @@ pub mod pallet {
         PollIndexOf<T>,
         VoteOf<T>,
     >;
+
+    /// Merkle root for private community membership proofs
+    #[pallet::storage]
+    pub type MerkleRoot<T: Config> =
+        StorageMap<_, Blake2_128Concat, CommunityIdOf<T>, <T::Hasher as sp_runtime::traits::Hash>::Output>;
+
+    /// Sub-roots for sharded membership trees
+    #[pallet::storage]
+    pub type SubRoots<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        CommunityIdOf<T>,
+        Blake2_128Concat,
+        u16,
+        <T::Hasher as sp_runtime::traits::Hash>::Output,
+    >;
+
+    /// Tracks used nullifiers to prevent double-actions per scope
+    #[pallet::storage]
+    pub type UsedNullifiers<T: Config> = StorageNMap<
+        _,
+        (
+            NMapKey<Blake2_128Concat, CommunityIdOf<T>>,
+            NMapKey<Blake2_128Concat, H256>,
+            NMapKey<Blake2_128Concat, H256>,
+        ),
+        (),
+    >;
+
+    /// Number of members in a community. For Public communities this is maintained
+    /// automatically by add/remove/suspend. For Private/Hybrid communities this counts
+    /// on-chain members only (may be 0); the tally denominator is taken from
+    /// [`ClaimedSupport`] instead.
+    #[pallet::storage]
+    pub type MemberCount<T: Config> =
+        StorageMap<_, Blake2_128Concat, CommunityIdOf<T>, u32, ValueQuery>;
+
+    /// Declared tally support for Private/Hybrid communities where membership is off-chain.
+    /// Used only as the denominator for `Polling::support()` when the community isn't
+    /// Public. Separate from [`MemberCount`] so that updating the merkle root does not
+    /// let the admin manipulate `MemberCount`-driven invariants.
+    ///
+    /// Safety note: the admin can still manipulate referendum thresholds by changing
+    /// this value — that's inherent to off-chain membership. Runtimes that want harder
+    /// guarantees should gate updates behind governance.
+    #[pallet::storage]
+    pub type ClaimedSupport<T: Config> =
+        StorageMap<_, Blake2_128Concat, CommunityIdOf<T>, u32, ValueQuery>;
+
+    /// Total of all member ranks in a community (for rank-weighted voting)
+    #[pallet::storage]
+    pub type RanksTotal<T: Config> =
+        StorageMap<_, Blake2_128Concat, CommunityIdOf<T>, u32, ValueQuery>;
+
+    /// On-chain member records
+    #[pallet::storage]
+    pub type Members<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        CommunityIdOf<T>,
+        Blake2_128Concat,
+        AccountIdOf<T>,
+        MemberRecord,
+    >;
+
+    /// Gas/transaction budget for a community
+    #[pallet::storage]
+    pub type Budget<T: Config> =
+        StorageMap<_, Blake2_128Concat, CommunityIdOf<T>, CommunityBudget<BlockNumberFor<T>>>;
 
     // Pallets use events to inform users when important changes are made.
     // https://docs.substrate.io/main-docs/build/events-errors/
@@ -315,24 +396,35 @@ pub mod pallet {
         },
         MemberAdded {
             who: AccountIdOf<T>,
-            membership_id: MembershipIdOf<T>,
         },
         MemberRemoved {
             who: AccountIdOf<T>,
-            membership_id: MembershipIdOf<T>,
         },
-        MembershipRankUpdated {
-            membership_id: MembershipIdOf<T>,
-            rank: membership::GenericRank,
+        MemberSuspended {
+            who: AccountIdOf<T>,
+        },
+        MemberRankUpdated {
+            who: AccountIdOf<T>,
+            rank: GenericRank,
+        },
+        MembershipRootUpdated {
+            community_id: CommunityIdOf<T>,
+        },
+        SubRootUpdated {
+            community_id: CommunityIdOf<T>,
+            sub_track_id: u16,
         },
         VoteCasted {
-            who: AccountIdOf<T>,
+            who: Option<AccountIdOf<T>>,
             poll_index: PollIndexOf<T>,
             vote: VoteOf<T>,
         },
         VoteRemoved {
             who: AccountIdOf<T>,
             poll_index: PollIndexOf<T>,
+        },
+        BudgetSet {
+            community_id: CommunityIdOf<T>,
         },
     }
 
@@ -349,6 +441,8 @@ pub mod pallet {
         /// The specified [`AccountId`][`frame_system::Config::AccountId`] is
         /// not a member of the community
         NotAMember,
+        /// The account is already a member of this community
+        AlreadyMember,
         /// The indicated index corresponds to a poll that is already ongoing
         AlreadyOngoing,
         /// The indicated index corresponds to a poll that is not ongoing
@@ -368,6 +462,22 @@ pub mod pallet {
         AlreadyAdmin,
         /// The vote is below the minimum requried
         VoteBelowMinimum,
+        /// Cannot add members directly to a private community
+        CommunityIsPrivate,
+        /// Cannot update membership root for a public community
+        CommunityIsPublic,
+        /// The member is suspended
+        MemberIsSuspended,
+        /// The community's gas budget has been exhausted
+        BudgetExhausted,
+        /// The budget parameters are invalid (e.g. zero-length session).
+        InvalidBudget,
+        /// An anonymous vote has already been cast for this voter on this poll.
+        /// Anonymous votes are immutable: they cannot be changed or removed.
+        AnonymousVoteAlreadyCast,
+        /// The caller is authorized by origin but not by role (e.g. a rank-0 member
+        /// trying to suspend another member).
+        NotAuthorized,
     }
 
     // Dispatchable functions allows users to interact with the pallet and invoke
@@ -419,81 +529,235 @@ pub mod pallet {
 
         // === Memberships management ===
 
-        /// Enroll an account as a community member that receives a membership
-        /// from the available pool of memberships of the community.
+        /// Enroll an account as a community member.
         #[pallet::call_index(3)]
-        pub fn add_member(origin: OriginFor<T>, who: AccountIdLookupOf<T>) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+        pub fn add_member(
+            origin: OriginFor<T>,
+            who: AccountIdLookupOf<T>,
+            rank: Option<GenericRank>,
+            role: Option<Role>,
+        ) -> DispatchResult {
+            let community_id = Self::ensure_member_mgmt(origin)?;
             let who = T::Lookup::lookup(who)?;
 
-            let account = Self::community_account(&community_id);
-            // assume the community has memberships to give out to the new member
-            let (_, membership_id) = T::MemberMgmt::user_memberships(&account, None)
-                .next()
-                .ok_or(Error::<T>::CommunityAtCapacity)?;
+            let info = Info::<T>::get(&community_id).ok_or(Error::<T>::CommunityDoesNotExist)?;
+            ensure!(
+                info.state == CommunityState::Active,
+                Error::<T>::CommunityDoesNotExist
+            );
+            ensure!(
+                info.privacy != PrivacyLevel::Private,
+                Error::<T>::CommunityIsPrivate
+            );
+            ensure!(
+                !Members::<T>::contains_key(&community_id, &who),
+                Error::<T>::AlreadyMember
+            );
 
-            T::MemberMgmt::assign(&community_id, &membership_id, &who)?;
+            // `capacity == 0` is interpreted as "explicit zero" (no members allowed) —
+            // avoid the previous silent fallback to T::MaxMembers which made capacity=0
+            // mean "unlimited-ish". A runtime that wants the default should read
+            // T::MaxMembers directly when creating the community.
+            let count = MemberCount::<T>::get(&community_id);
+            ensure!(count < info.capacity, Error::<T>::CommunityAtCapacity);
+            ensure!(
+                count < T::MaxMembers::get(),
+                Error::<T>::CommunityAtCapacity,
+            );
 
-            Self::deposit_event(Event::MemberAdded { who, membership_id });
+            let member_rank = rank.unwrap_or_default();
+            let member_role = role.unwrap_or_default();
+            let rank_val: u32 = member_rank.into();
+
+            Members::<T>::insert(
+                &community_id,
+                &who,
+                MemberRecord {
+                    rank: member_rank,
+                    role: member_role,
+                    ..Default::default()
+                },
+            );
+            MemberCount::<T>::mutate(&community_id, |c| *c = c.saturating_add(1));
+            if rank_val > 0 {
+                RanksTotal::<T>::mutate(&community_id, |t| *t = t.saturating_add(rank_val));
+            }
+
+            Self::recompute_merkle_root(&community_id);
+            Self::deposit_event(Event::MemberAdded { who });
             Ok(())
         }
 
-        /// Removes an account as a community member. While
-        /// enrolling a member into the community can be an action taken by any
-        /// member, the decision to remove a member should not be taken
-        /// arbitrarily by any community member. Also, it shouldn't be possible
-        /// to arbitrarily remove the community admin, as some privileged calls
-        /// would be impossible to execute thereafter.
+        /// Removes an account as a community member.
         #[pallet::call_index(4)]
         pub fn remove_member(
             origin: OriginFor<T>,
             who: AccountIdLookupOf<T>,
-            membership_id: MembershipIdOf<T>,
         ) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+            let community_id = Self::ensure_member_mgmt(origin)?;
             let who = T::Lookup::lookup(who)?;
 
-            ensure!(
-                T::MemberMgmt::is_member_of(&community_id, &who),
-                Error::<T>::NotAMember
-            );
+            let record =
+                Members::<T>::get(&community_id, &who).ok_or(Error::<T>::NotAMember)?;
 
-            T::MemberMgmt::release(&community_id, &membership_id)?;
+            Members::<T>::remove(&community_id, &who);
+            MemberCount::<T>::mutate(&community_id, |c| *c = c.saturating_sub(1));
+            let rank_val: u32 = record.rank.into();
+            if rank_val > 0 {
+                RanksTotal::<T>::mutate(&community_id, |t| *t = t.saturating_sub(rank_val));
+            }
 
-            Self::deposit_event(Event::MemberRemoved { who, membership_id });
+            Self::recompute_merkle_root(&community_id);
+            Self::deposit_event(Event::MemberRemoved { who });
             Ok(())
         }
 
         /// Increases the rank of a member in the community
         #[pallet::call_index(5)]
-        pub fn promote(origin: OriginFor<T>, membership_id: MembershipIdOf<T>) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+        pub fn promote(origin: OriginFor<T>, who: AccountIdLookupOf<T>) -> DispatchResult {
+            let community_id = Self::ensure_member_mgmt(origin)?;
+            let who = T::Lookup::lookup(who)?;
 
-            let rank = T::MemberMgmt::rank_of(&community_id, &membership_id)
-                .ok_or(Error::<T>::NotAMember)?
-                .promote_by(ONE);
-            T::MemberMgmt::set_rank(&community_id, &membership_id, rank)?;
+            let mut record =
+                Members::<T>::get(&community_id, &who).ok_or(Error::<T>::NotAMember)?;
 
-            Self::deposit_event(Event::MembershipRankUpdated {
-                membership_id,
-                rank,
+            let new_rank = record.rank.promote_by(ONE);
+            let old_rank_val: u32 = record.rank.into();
+            let new_rank_val: u32 = new_rank.into();
+            record.rank = new_rank;
+
+            Members::<T>::insert(&community_id, &who, &record);
+            RanksTotal::<T>::mutate(&community_id, |t| {
+                *t = t.saturating_sub(old_rank_val).saturating_add(new_rank_val);
+            });
+
+            Self::recompute_merkle_root(&community_id);
+            Self::deposit_event(Event::MemberRankUpdated {
+                who,
+                rank: new_rank,
             });
             Ok(())
         }
 
         /// Decreases the rank of a member in the community
         #[pallet::call_index(6)]
-        pub fn demote(origin: OriginFor<T>, membership_id: MembershipIdOf<T>) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+        pub fn demote(origin: OriginFor<T>, who: AccountIdLookupOf<T>) -> DispatchResult {
+            let community_id = Self::ensure_member_mgmt(origin)?;
+            let who = T::Lookup::lookup(who)?;
 
-            let rank = T::MemberMgmt::rank_of(&community_id, &membership_id)
-                .ok_or(Error::<T>::NotAMember)?;
-            T::MemberMgmt::set_rank(&community_id, &membership_id, rank.demote_by(ONE))?;
+            let mut record =
+                Members::<T>::get(&community_id, &who).ok_or(Error::<T>::NotAMember)?;
 
-            Self::deposit_event(Event::MembershipRankUpdated {
-                membership_id,
-                rank,
+            let new_rank = record.rank.demote_by(ONE);
+            let old_rank_val: u32 = record.rank.into();
+            let new_rank_val: u32 = new_rank.into();
+            record.rank = new_rank;
+
+            Members::<T>::insert(&community_id, &who, &record);
+            RanksTotal::<T>::mutate(&community_id, |t| {
+                *t = t.saturating_sub(old_rank_val).saturating_add(new_rank_val);
             });
+
+            Self::recompute_merkle_root(&community_id);
+            Self::deposit_event(Event::MemberRankUpdated {
+                who,
+                rank: new_rank,
+            });
+            Ok(())
+        }
+
+        /// Suspend a community member
+        #[pallet::call_index(12)]
+        pub fn suspend_member(
+            origin: OriginFor<T>,
+            who: AccountIdLookupOf<T>,
+        ) -> DispatchResult {
+            let community_id = Self::ensure_member_mgmt(origin)?;
+            let who = T::Lookup::lookup(who)?;
+
+            let mut record =
+                Members::<T>::get(&community_id, &who).ok_or(Error::<T>::NotAMember)?;
+            ensure!(
+                record.status == MemberStatus::Active,
+                Error::<T>::MemberIsSuspended
+            );
+
+            record.status = MemberStatus::Suspended;
+            record.nonce = record.nonce.saturating_add(1);
+            Members::<T>::insert(&community_id, &who, &record);
+            MemberCount::<T>::mutate(&community_id, |c| *c = c.saturating_sub(1));
+
+            Self::recompute_merkle_root(&community_id);
+            Self::deposit_event(Event::MemberSuspended { who });
+            Ok(())
+        }
+
+        /// Manually update the membership merkle root and claimed support for
+        /// private/hybrid communities. `claimed_support` is written to
+        /// [`ClaimedSupport`] and is used only as the denominator for the poll-support
+        /// calculation; it does not affect [`MemberCount`] or any other on-chain invariant.
+        #[pallet::call_index(13)]
+        pub fn update_membership_root(
+            origin: OriginFor<T>,
+            new_root: <T::Hasher as sp_runtime::traits::Hash>::Output,
+            claimed_support: u32,
+        ) -> DispatchResult {
+            let community_id = T::AdminOrigin::ensure_origin(origin)?;
+
+            let info = Info::<T>::get(&community_id).ok_or(Error::<T>::CommunityDoesNotExist)?;
+            ensure!(
+                info.privacy != PrivacyLevel::Public,
+                Error::<T>::CommunityIsPublic
+            );
+
+            MerkleRoot::<T>::insert(&community_id, new_root);
+            ClaimedSupport::<T>::insert(&community_id, claimed_support);
+
+            Self::deposit_event(Event::MembershipRootUpdated { community_id });
+            Ok(())
+        }
+
+        /// Update a sub-root for sharded membership trees
+        #[pallet::call_index(14)]
+        pub fn update_sub_root(
+            origin: OriginFor<T>,
+            sub_track_id: u16,
+            new_root: <T::Hasher as sp_runtime::traits::Hash>::Output,
+        ) -> DispatchResult {
+            let community_id = T::AdminOrigin::ensure_origin(origin)?;
+
+            SubRoots::<T>::insert(&community_id, sub_track_id, new_root);
+
+            Self::deposit_event(Event::SubRootUpdated {
+                community_id,
+                sub_track_id,
+            });
+            Ok(())
+        }
+
+        // === Budget ===
+
+        /// Set the gas budget for a community
+        #[pallet::call_index(15)]
+        pub fn set_budget(
+            origin: OriginFor<T>,
+            capacity: u64,
+            session_length: BlockNumberFor<T>,
+        ) -> DispatchResult {
+            use sp_runtime::traits::Zero;
+            let community_id = T::AdminOrigin::ensure_origin(origin)?;
+            ensure!(Self::community_exists(&community_id), Error::<T>::CommunityDoesNotExist);
+            // A zero-length session would reset the budget on every check, making the
+            // capacity cap meaningless.
+            ensure!(!session_length.is_zero(), Error::<T>::InvalidBudget);
+            let now = T::BlockNumberProvider::current_block_number();
+            Budget::<T>::insert(&community_id, CommunityBudget {
+                capacity,
+                used: 0,
+                session_start: now,
+                session_length,
+            });
+            Self::deposit_event(Event::BudgetSet { community_id });
             Ok(())
         }
 
@@ -521,52 +785,111 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Cast a vote on an on-going referendum
+        /// Cast a vote on an on-going referendum.
+        /// Supports both named (signed) and anonymous (community origin) voting paths.
         #[pallet::call_index(8)]
         pub fn vote(
             origin: OriginFor<T>,
-            membership_id: MembershipIdOf<T>,
             #[pallet::compact] poll_index: PollIndexOf<T>,
             vote: VoteOf<T>,
         ) -> DispatchResult {
             ensure!(VoteWeight::from(&vote).gt(&0), Error::<T>::VoteBelowMinimum);
-            let who = ensure_signed(origin)?;
-            let community_id = T::MemberMgmt::check_membership(&who, &membership_id)
-                .ok_or(Error::<T>::NotAMember)?;
+
+            // Determine voting path: signed (named) or community origin (anonymous).
+            // The anonymous branch goes through `EnsureAnonymousVoter`, which rejects every
+            // community-origin variant *except* `Subset::AnonymousMember`. That keeps the
+            // anonymous privilege scoped to voting only — a membership proof cannot dispatch
+            // admin or member-management calls that check `MemberMgmtOrigin`/`AdminOrigin`.
+            let (community_id, voter_key, vote_multiplier, maybe_who): (
+                CommunityIdOf<T>,
+                <T::Hasher as sp_runtime::traits::Hash>::Output,
+                u32,
+                Option<AccountIdOf<T>>,
+            ) = if let Some(who) = origin.as_system_ref()
+                .and_then(|s| if let frame_system::RawOrigin::Signed(who) = s { Some(who.clone()) } else { None })
+            {
+                // Named vote path - signed origin
+                let community_id = T::Polls::as_ongoing(poll_index)
+                    .map(|t| t.1)
+                    .ok_or(Error::<T>::NotOngoing)?;
+                ensure!(Self::is_member(&community_id, &who), Error::<T>::NotAMember);
+                let decision_method = CommunityDecisionMethod::<T>::get(community_id);
+                let multiplier = match decision_method {
+                    DecisionMethod::Rank => Self::member_rank(&community_id, &who).into(),
+                    _ => 1u32,
+                };
+                let key = T::Hasher::hash_of(&who);
+                (community_id, key, multiplier, Some(who))
+            } else {
+                // Anonymous vote path. `EnsureAnonymousVoter` both checks we have an
+                // AnonymousMember origin *and* returns the (community_id, nullifier).
+                let (community_id, nullifier) = origin::EnsureAnonymousVoter::<T>::try_origin(origin)
+                    .map_err(|_| DispatchError::BadOrigin)?;
+                let decision_method = CommunityDecisionMethod::<T>::get(community_id);
+                // Token-weighted voting cannot be authorized anonymously (no account to lock
+                // funds against), and the leaf contents — including rank — are not verified,
+                // so rank-weighted voting is also rejected. Only flat 1-per-member voting is
+                // allowed via the anonymous path until a ZK backend binds rank to the proof.
+                ensure!(
+                    matches!(decision_method, DecisionMethod::Membership),
+                    Error::<T>::InvalidVoteType
+                );
+                let key = T::Hasher::hash_of(&nullifier);
+                (community_id, key, 1u32, None)
+            };
+
             let decision_method = CommunityDecisionMethod::<T>::get(community_id);
-            if CommunityVotes::<T>::contains_key(poll_index, membership_id) {
-                Self::try_remove_vote(&community_id, &decision_method, &membership_id, poll_index)?;
+
+            // Named voters may replace their vote; anonymous voters cannot, because the
+            // nullifier scheme in the extension also prevents it at the tx layer and there
+            // is no signed authority to authorize a replacement.
+            if CommunityVotes::<T>::contains_key(poll_index, &voter_key) {
+                ensure!(maybe_who.is_some(), Error::<T>::AnonymousVoteAlreadyCast);
+                Self::try_remove_vote_by_key(&community_id, &voter_key, poll_index)?;
             }
-            Self::try_vote(
-                &community_id,
-                &decision_method,
-                &who,
-                &membership_id,
-                poll_index,
-                &vote,
-            )?;
+
+            Self::try_vote_by_key(&community_id, &decision_method, vote_multiplier, &voter_key, poll_index, &vote)?;
+
+            // Lock funds only for named voters
+            if let Some(ref who) = maybe_who {
+                Self::update_locks(who, poll_index, &vote, LockUpdateType::Add)?;
+            }
+
             Self::deposit_event(Event::<T>::VoteCasted {
-                who: who.clone(),
+                who: maybe_who,
                 poll_index,
                 vote,
             });
             Ok(())
         }
 
-        /// Remove any previous vote on a given referendum
+        /// Remove any previous vote on a given referendum.
+        /// Only available for named (signed) voters. Anonymous votes cannot be removed.
         #[pallet::call_index(9)]
         pub fn remove_vote(
             origin: OriginFor<T>,
-            membership_id: MembershipIdOf<T>,
             #[pallet::compact] poll_index: PollIndexOf<T>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            let community_id = T::MemberMgmt::check_membership(&who, &membership_id)
-                .ok_or(Error::<T>::NotAMember)?;
-            let decision_method = CommunityDecisionMethod::<T>::get(community_id);
-            Self::try_remove_vote(&community_id, &decision_method, &membership_id, poll_index)?;
+            let voter_key = T::Hasher::hash_of(&who);
+
+            let community_id = T::Polls::as_ongoing(poll_index)
+                .map(|t| t.1)
+                .ok_or(Error::<T>::NotOngoing)?;
+
+            ensure!(
+                Self::is_member(&community_id, &who),
+                Error::<T>::NotAMember
+            );
+
+            let (vote, _) = CommunityVotes::<T>::get(poll_index, &voter_key)
+                .ok_or(Error::<T>::NoVoteCasted)?;
+
+            Self::try_remove_vote_by_key(&community_id, &voter_key, poll_index)?;
+            Self::update_locks(&who, poll_index, &vote, LockUpdateType::Remove)?;
+
             Self::deposit_event(Event::<T>::VoteRemoved {
-                who: who.clone(),
+                who,
                 poll_index,
             });
             Ok(())
@@ -602,8 +925,48 @@ pub mod pallet {
             origin: OriginFor<T>,
             call: Box<RuntimeCallFor<T>>,
         ) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+            let community_id = Self::ensure_member_mgmt(origin)?;
             Self::do_dispatch_as_community_account(&community_id, *call)
+        }
+
+        /// Remove a stored vote entry for a poll that has ended. Permissionless: any
+        /// account can call this for any `(poll_index, voter_key)` once the poll is no
+        /// longer ongoing. Addresses storage bloat, including for anonymous votes whose
+        /// voter has no on-chain identity to clean up after themselves.
+        #[pallet::call_index(16)]
+        #[pallet::weight((T::DbWeight::get().reads_writes(1, 1), DispatchClass::Normal))]
+        pub fn prune_vote(
+            origin: OriginFor<T>,
+            #[pallet::compact] poll_index: PollIndexOf<T>,
+            voter_key: <T::Hasher as sp_runtime::traits::Hash>::Output,
+        ) -> DispatchResult {
+            let _ = ensure_signed(origin)?;
+            ensure!(
+                T::Polls::as_ongoing(poll_index).is_none(),
+                Error::<T>::AlreadyOngoing,
+            );
+            ensure!(
+                CommunityVotes::<T>::contains_key(poll_index, &voter_key),
+                Error::<T>::NoVoteCasted,
+            );
+            CommunityVotes::<T>::remove(poll_index, &voter_key);
+            Ok(())
+        }
+
+        /// Remove a stored sub-root. Admin-only.
+        #[pallet::call_index(17)]
+        #[pallet::weight((T::DbWeight::get().reads_writes(0, 1), DispatchClass::Normal))]
+        pub fn remove_sub_root(
+            origin: OriginFor<T>,
+            sub_track_id: u16,
+        ) -> DispatchResult {
+            let community_id = T::AdminOrigin::ensure_origin(origin)?;
+            SubRoots::<T>::remove(&community_id, sub_track_id);
+            Self::deposit_event(Event::SubRootUpdated {
+                community_id,
+                sub_track_id,
+            });
+            Ok(())
         }
     }
 }

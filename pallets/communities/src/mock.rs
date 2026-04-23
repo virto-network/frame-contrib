@@ -1,62 +1,40 @@
-use frame_contrib_traits::memberships::NonFungiblesMemberships;
 use frame_support::{
-    derive_impl,
-    dispatch::DispatchResult,
-    parameter_types,
+    derive_impl, parameter_types,
     traits::{
-        fungible::HoldConsideration, tokens::nonfungible_v2::ItemOf, AsEnsureOriginWithArg,
-        ConstU32, ConstU64, EitherOf, EnsureOriginWithArg, EqualPrivilegeOnly, Footprint,
-        VariantCountOf,
+        fungible::HoldConsideration, AsEnsureOriginWithArg, ConstU32, ConstU64,
+        EitherOf, EnsureOriginWithArg, EqualPrivilegeOnly, Footprint,
+        OriginTrait, VariantCountOf,
     },
-    weights::{
-        constants::{WEIGHT_REF_TIME_PER_NANOS, WEIGHT_REF_TIME_PER_SECOND},
-        Weight,
-    },
+    weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
     PalletId,
 };
 use frame_system::{EnsureRoot, EnsureRootWithSuccess, EnsureSigned};
-use pallet_referenda::{TrackIdOf, TrackInfoOf, TracksInfo};
+use pallet_referenda::{TrackIdOf, TracksInfo};
 use sp_io::TestExternalities;
 use sp_runtime::{
-    traits::{Convert, IdentifyAccount, IdentityLookup, Verify},
-    BuildStorage, MultiSignature, Perbill,
+    traits::{BlakeTwo256, Convert, IdentifyAccount, IdentityLookup, Verify},
+    BuildStorage, MultiSignature,
 };
 
-pub type CommunityId = u16;
-pub type MembershipId = u64;
+pub type CommunityId = u32;
 
 use crate::{
     self as pallet_communities,
     origin::{EnsureCommunity, EnsureSignedPays},
     types::{Tally, VoteWeight},
-    Config, DecisionMethod,
+    Config, PrivacyLevel,
 };
 
 // Weights constants
-
-// max block: 0.5s compute with 12s average block time
-pub const MAX_BLOCK_REF_TIME: u64 = WEIGHT_REF_TIME_PER_SECOND.saturating_div(2); // https://github.com/paritytech/cumulus/blob/98e68bd54257b4039a5d5b734816f4a1b7c83a9d/parachain-template/runtime/src/lib.rs#L221
-pub const MAX_BLOCK_POV_SIZE: u64 = 5 * 1024 * 1024; // https://github.com/paritytech/polkadot/blob/ba1f65493d91d4ab1787af2fd6fe880f1da90586/primitives/src/v4/mod.rs#L384
-pub const MAX_BLOCK_WEIGHT: Weight = Weight::from_parts(MAX_BLOCK_REF_TIME, MAX_BLOCK_POV_SIZE);
-
-// max extrinsics: 75% of block
-pub const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75); // https://github.com/paritytech/cumulus/blob/d20c4283fe85df0c1ef8cb7c9eb7c09abbcbfa31/parachain-template/runtime/src/lib.rs#L218
-
-// max extrinsic: max total extrinsics less average on_initialize ratio and less
-// base extrinsic weight
-pub const AVERAGE_ON_INITIALIZE_RATIO: Perbill = Perbill::from_percent(5); // https://github.com/paritytech/cumulus/blob/d20c4283fe85df0c1ef8cb7c9eb7c09abbcbfa31/parachain-template/runtime/src/lib.rs#L214
-pub const BASE_EXTRINSIC: Weight =
-    Weight::from_parts(WEIGHT_REF_TIME_PER_NANOS.saturating_mul(125_000), 0); // https://github.com/paritytech/cumulus/blob/d20c4283fe85df0c1ef8cb7c9eb7c09abbcbfa31/parachain-template/runtime/src/weights/extrinsic_weights.rs#L26
-
+pub const MAX_BLOCK_REF_TIME: u64 = WEIGHT_REF_TIME_PER_SECOND.saturating_div(2);
+pub const MAX_BLOCK_POV_SIZE: u64 = 5 * 1024 * 1024;
 type Block = frame_system::mocking::MockBlock<Test>;
 type WeightInfo = ();
 
 pub type AccountPublic = <MultiSignature as Verify>::Signer;
 pub type AccountId = <AccountPublic as IdentifyAccount>::AccountId;
 pub type Balance = <Test as pallet_balances::Config>::Balance;
-pub type AssetId = <Test as pallet_assets::Config>::AssetId;
 
-// Configure a mock runtime to test the pallet.
 #[frame_support::runtime]
 mod runtime {
     #[runtime::runtime]
@@ -91,8 +69,6 @@ mod runtime {
     pub type Communities = pallet_communities;
     #[runtime::pallet_index(32)]
     pub type Tracks = fc_pallet_referenda_tracks;
-    #[runtime::pallet_index(33)]
-    pub type Nfts = pallet_nfts;
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig as frame_system::DefaultConfig)]
@@ -103,9 +79,7 @@ impl frame_system::Config for Test {
     type AccountData = pallet_balances::AccountData<Balance>;
 }
 
-// Monetary operations
-#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig
-)]
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
 impl pallet_balances::Config for Test {
     type AccountStore = System;
     type FreezeIdentifier = RuntimeFreezeReason;
@@ -127,79 +101,12 @@ impl pallet_assets_freezer::Config for Test {
     type RuntimeEvent = RuntimeEvent;
 }
 
-// Memberships
-#[cfg(feature = "runtime-benchmarks")]
-pub struct NftsBenchmarksHelper;
-#[cfg(feature = "runtime-benchmarks")]
-impl
-    pallet_nfts::BenchmarkHelper<
-        CommunityId,
-        MembershipId,
-        AccountPublic,
-        AccountId,
-        MultiSignature,
-    > for NftsBenchmarksHelper
-{
-    fn collection(_i: u16) -> CommunityId {
-        COMMUNITY
-    }
-    fn item(i: u16) -> MembershipId {
-        i as MembershipId
-    }
-    fn signer() -> (AccountPublic, AccountId) {
-        let public = sp_io::crypto::sr25519_generate(0.into(), None);
-        let account = sp_runtime::MultiSigner::Sr25519(public).into_account();
-        (public.into(), account)
-    }
-    fn sign(signer: &AccountPublic, message: &[u8]) -> MultiSignature {
-        MultiSignature::Sr25519(
-            sp_io::crypto::sr25519_sign(0.into(), &signer.clone().try_into().unwrap(), message)
-                .unwrap(),
-        )
-    }
-}
-
-parameter_types! {
-    pub const RootAccount: AccountId = AccountId::new([0xff; 32]);
-}
-impl pallet_nfts::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type CollectionId = CommunityId;
-    type ItemId = MembershipId;
-    type Currency = ();
-    type ForceOrigin = EnsureRoot<AccountId>;
-    type CreateOrigin = AsEnsureOriginWithArg<
-        EitherOf<EnsureRootWithSuccess<AccountId, RootAccount>, EnsureSigned<AccountId>>,
-    >;
-    type Locker = ();
-    type CollectionDeposit = ();
-    type ItemDeposit = ();
-    type MetadataDepositBase = ();
-    type AttributeDepositBase = ();
-    type DepositPerByte = ();
-    type StringLimit = ();
-    type KeyLimit = ConstU32<64>;
-    type ValueLimit = ConstU32<10>;
-    type ApprovalsLimit = ();
-    type ItemAttributesApprovalsLimit = ();
-    type MaxTips = ();
-    type MaxDeadlineDuration = ();
-    type MaxAttributesPerCall = ();
-    type Features = ();
-    type OffchainSignature = MultiSignature;
-    type OffchainPublic = AccountPublic;
-    #[cfg(feature = "runtime-benchmarks")]
-    type Helper = NftsBenchmarksHelper;
-
-    type WeightInfo = ();
-    type BlockNumberProvider = System;
-}
-
-// Governance at Communities
+// Governance
 parameter_types! {
     pub MaximumSchedulerWeight: Weight = Weight::from_parts(MAX_BLOCK_REF_TIME, MAX_BLOCK_POV_SIZE);
     pub const MaxScheduledPerBlock: u32 = 512;
 }
+
 pub struct ConvertDeposit;
 impl Convert<Footprint, u64> for ConvertDeposit {
     fn convert(a: Footprint) -> u64 {
@@ -244,7 +151,6 @@ impl EnsureOriginWithArg<RuntimeOrigin, TrackIdOf<Test, ()>> for EnsureOriginToT
         let track_id_for_origin: TrackIdOf<Test, ()> =
             Tracks::track_for(&o.clone().caller).map_err(|_| o.clone())?;
         frame_support::ensure!(&track_id_for_origin == id, o);
-
         Ok(())
     }
 
@@ -254,23 +160,10 @@ impl EnsureOriginWithArg<RuntimeOrigin, TrackIdOf<Test, ()>> for EnsureOriginToT
     }
 }
 
-#[cfg(feature = "runtime-benchmarks")]
-use sp_runtime::SaturatedConversion;
-
-#[cfg(feature = "runtime-benchmarks")]
-pub struct TracksBenchmarkHelper;
-
-#[cfg(feature = "runtime-benchmarks")]
-impl fc_pallet_referenda_tracks::BenchmarkHelper<Test> for TracksBenchmarkHelper {
-    fn track_id(id: u32) -> TrackIdOf<Test, ()> {
-        id.saturated_into()
-    }
-}
-
 parameter_types! {
     pub const MaxTracks: u32 = u32::MAX;
 }
-/// Returns a default group ID (0) when root creates a sub-track.
+
 pub struct EnsureRootReturnGroupId;
 impl EnsureOriginWithArg<RuntimeOrigin, pallet_referenda::PalletsOriginOf<Test>>
     for EnsureRootReturnGroupId
@@ -286,7 +179,7 @@ impl EnsureOriginWithArg<RuntimeOrigin, pallet_referenda::PalletsOriginOf<Test>>
     }
 
     #[cfg(feature = "runtime-benchmarks")]
-    fn try_successful_origin(_arg: &PalletsOriginOf<Test>) -> Result<RuntimeOrigin, ()> {
+    fn try_successful_origin(_arg: &pallet_referenda::PalletsOriginOf<Test>) -> Result<RuntimeOrigin, ()> {
         Ok(RuntimeOrigin::root())
     }
 }
@@ -305,8 +198,9 @@ impl fc_pallet_referenda_tracks::Config for Test {
 }
 
 parameter_types! {
-        pub static AlarmInterval: u64 = 1;
+    pub static AlarmInterval: u64 = 1;
 }
+
 impl pallet_referenda::Config for Test {
     type RuntimeCall = RuntimeCall;
     type RuntimeEvent = RuntimeEvent;
@@ -332,142 +226,15 @@ impl pallet_referenda::Config for Test {
 
 parameter_types! {
     pub const CommunitiesPalletId: PalletId = PalletId(*b"kv/comms");
-    pub const MembershipsManagerCollectionId: CommunityId = 0;
-    pub const MembershipNftAttr: &'static [u8; 10] = b"membership";
-    pub const TestCommunity: CommunityId = COMMUNITY;
-}
-
-type MembershipCollection = ItemOf<Nfts, MembershipsManagerCollectionId, AccountId>;
-
-#[cfg(feature = "runtime-benchmarks")]
-use crate::{
-    types::{AssetIdOf, CommunityIdOf, MembershipIdOf, PollIndexOf},
-    BenchmarkHelper,
-};
-
-#[cfg(feature = "runtime-benchmarks")]
-use {
-    codec::Encode,
-    frame_benchmarking::BenchmarkError,
-    frame_support::BoundedVec,
-    frame_system::pallet_prelude::{OriginFor, RuntimeCallFor},
-    pallet_referenda::{BoundedCallOf, Curve, PalletsOriginOf, TrackInfo},
-};
-
-#[cfg(feature = "runtime-benchmarks")]
-pub struct CommunityBenchmarkHelper;
-
-#[cfg(feature = "runtime-benchmarks")]
-impl BenchmarkHelper<Test> for CommunityBenchmarkHelper {
-    fn community_id() -> CommunityIdOf<Test> {
-        COMMUNITY
-    }
-
-    fn community_asset_id() -> AssetIdOf<Test> {
-        1u32
-    }
-
-    fn community_desired_size() -> u32 {
-        u8::MAX as u32
-    }
-
-    fn initialize_memberships_collection() -> Result<(), frame_benchmarking::BenchmarkError> {
-        TestEnvBuilder::initialize_memberships_manager_collection()?;
-        TestEnvBuilder::initialize_community_memberships_collection(&Self::community_id())?;
-        Ok(())
-    }
-
-    fn issue_membership(
-        community_id: CommunityIdOf<Test>,
-        membership_id: MembershipIdOf<Test>,
-    ) -> Result<(), frame_benchmarking::BenchmarkError> {
-        use frame_support::traits::tokens::nonfungible_v2::Mutate;
-
-        let community_account = Communities::community_account(&community_id);
-        MembershipCollection::mint_into(
-            &membership_id,
-            &community_account,
-            &Default::default(),
-            true,
-        )?;
-
-        Ok(())
-    }
-
-    fn prepare_track(track_origin: PalletsOriginOf<Test>) -> Result<(), BenchmarkError> {
-        let id = Self::community_id();
-        let info = TrackInfo {
-            name: sp_runtime::str_array("Community"),
-            max_deciding: 1,
-            decision_deposit: 5,
-            prepare_period: 1,
-            decision_period: 5,
-            confirm_period: 1,
-            min_enactment_period: 1,
-            min_approval: Curve::LinearDecreasing {
-                length: Perbill::from_percent(100),
-                floor: Perbill::from_percent(50),
-                ceil: Perbill::from_percent(100),
-            },
-            min_support: Curve::LinearDecreasing {
-                length: Perbill::from_percent(100),
-                floor: Perbill::from_percent(0),
-                ceil: Perbill::from_percent(100),
-            },
-        };
-
-        Tracks::do_insert(id, info, track_origin.clone())?;
-
-        Ok(())
-    }
-
-    fn prepare_poll(
-        origin: OriginFor<Test>,
-        proposal_origin: PalletsOriginOf<Test>,
-        proposal_call: RuntimeCallFor<Test>,
-    ) -> Result<PollIndexOf<Test>, BenchmarkError> {
-        let proposal =
-            BoundedCallOf::<Test, ()>::Inline(BoundedVec::truncate_from(proposal_call.encode()));
-        let enactment_moment = frame_support::traits::schedule::DispatchTime::After(1);
-        Referenda::submit(
-            origin.clone(),
-            Box::new(proposal_origin),
-            proposal,
-            enactment_moment,
-        )?;
-        Referenda::place_decision_deposit(origin, 0)?;
-
-        System::set_block_number(2);
-        Referenda::nudge_referendum(RuntimeOrigin::root(), 0)?;
-
-        Ok(0)
-    }
-
-    fn finish_poll(index: PollIndexOf<Test>) -> Result<(), BenchmarkError> {
-        System::set_block_number(8);
-        Referenda::nudge_referendum(RuntimeOrigin::root(), index)?;
-
-        frame_support::assert_ok!(Referenda::ensure_ongoing(index));
-
-        System::set_block_number(9);
-        Referenda::nudge_referendum(RuntimeOrigin::root(), index)?;
-
-        frame_support::assert_err!(
-            Referenda::ensure_ongoing(index),
-            pallet_referenda::Error::<Test, ()>::NotOngoing
-        );
-
-        Ok(())
-    }
-}
-
-parameter_types! {
     pub const NoPay: Option<(Balance, AccountId, AccountId)> = None;
 }
+
 type RootCreatesCommunitiesForFree = EnsureRootWithSuccess<AccountId, NoPay>;
 type AnyoneElsePays = EnsureSignedPays<Test, ConstU64<10>, RootAccount>;
 
-pub type MembershipsManager = NonFungiblesMemberships<Nfts, pallet_nfts::ItemConfig>;
+parameter_types! {
+    pub const RootAccount: AccountId = AccountId::new([0xff; 32]);
+}
 
 impl Config for Test {
     type RuntimeFreezeReason = RuntimeFreezeReason;
@@ -478,8 +245,9 @@ impl Config for Test {
     type MemberMgmtOrigin = EnsureCommunity<Self>;
 
     type CommunityId = CommunityId;
-    type MembershipId = MembershipId;
-    type MemberMgmt = MembershipsManager;
+    type Hasher = BlakeTwo256;
+    type MembershipVerifier = crate::verifier::MerkleVerifier<BlakeTwo256>;
+    type MaxMembers = ConstU32<100>;
 
     type Polls = Referenda;
     type Assets = Assets;
@@ -494,111 +262,38 @@ impl Config for Test {
 }
 
 pub const COMMUNITY: CommunityId = 1;
-pub const COMMUNITY_ORIGIN: OriginCaller =
-    OriginCaller::Communities(pallet_communities::Origin::<Test>::new(COMMUNITY));
 
-// Build genesis storage according to the mock runtime.
-pub fn new_test_ext(members: &[AccountId], memberships: &[MembershipId]) -> TestExternalities {
-    TestEnvBuilder::new()
-        .add_community(
-            COMMUNITY,
-            DecisionMethod::Membership,
-            members,
-            memberships,
-            None,
-        )
-        .build()
+pub fn community_origin(id: CommunityId) -> RuntimeOrigin {
+    pallet_communities::Origin::<Test>::new(id).into()
 }
 
-#[derive(Default)]
 pub(crate) struct TestEnvBuilder {
-    assets_config: AssetsConfig,
-    balances: Vec<(AccountId, Balance)>,
-    communities: Vec<CommunityId>,
-    decision_methods:
-        alloc::collections::btree_map::BTreeMap<CommunityId, DecisionMethod<AssetId, Balance>>,
+    communities: Vec<(CommunityId, PrivacyLevel)>,
     members: Vec<(CommunityId, AccountId)>,
-    memberships: Vec<(CommunityId, MembershipId)>,
-    tracks: Vec<(TrackIdOf<Test, ()>, TrackInfoOf<Test>)>,
 }
 
 impl TestEnvBuilder {
     pub(crate) fn new() -> Self {
-        Self::default()
+        Self {
+            communities: Vec::new(),
+            members: Vec::new(),
+        }
     }
 
-    pub(crate) fn add_asset(
-        mut self,
-        id: &AssetId,
-        owner: &AccountId,
-        is_sufficient: bool,
-        min_balance: Balance,
-        // name, symbol, decimals
-        maybe_metadata: Option<(Vec<u8>, Vec<u8>, u8)>,
-        maybe_accounts: Option<Vec<(AccountId, Balance)>>,
-    ) -> Self {
-        self.assets_config
-            .assets
-            .push((*id, owner.clone(), is_sufficient, min_balance));
-
-        if let Some((name, symbol, decimals)) = maybe_metadata {
-            self.assets_config
-                .metadata
-                .push((*id, name, symbol, decimals));
-        }
-
-        self.assets_config.accounts.append(
-            &mut maybe_accounts
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(account_id, balance)| (*id, account_id, balance))
-                .collect(),
-        );
-
+    pub(crate) fn add_community(mut self, id: CommunityId, privacy: PrivacyLevel) -> Self {
+        self.communities.push((id, privacy));
         self
     }
 
-    pub(crate) fn add_community(
-        mut self,
-        community_id: CommunityId,
-        decision_method: DecisionMethod<AssetId, Balance>,
-        members: &[AccountId],
-        memberships: &[MembershipId],
-        maybe_track: Option<TrackInfoOf<Test>>,
-    ) -> Self {
-        self.communities.push(community_id);
-        self.decision_methods.insert(community_id, decision_method);
-        self.members.append(
-            &mut members
-                .iter()
-                .map(|m| (community_id, m.to_owned()))
-                .collect::<Vec<_>>(),
-        );
-        self.memberships.append(
-            &mut memberships
-                .iter()
-                .map(|m| (community_id, m.to_owned()))
-                .collect::<Vec<_>>(),
-        );
-        if let Some(track) = maybe_track {
-            self.tracks.push((community_id, track));
-        }
-
-        self
-    }
-
-    pub(crate) fn with_balances(mut self, balances: &[(AccountId, Balance)]) -> Self {
-        self.balances = balances.to_vec();
+    pub(crate) fn add_member(mut self, community_id: CommunityId, who: AccountId) -> Self {
+        self.members.push((community_id, who));
         self
     }
 
     pub(crate) fn build(self) -> TestExternalities {
         let t = RuntimeGenesisConfig {
-            assets: self.assets_config,
-            balances: pallet_balances::GenesisConfig {
-                balances: self.balances,
-                dev_accounts: None,
-            },
+            assets: Default::default(),
+            balances: Default::default(),
             system: Default::default(),
         }
         .build_storage()
@@ -609,107 +304,41 @@ impl TestEnvBuilder {
         ext.execute_with(|| {
             System::set_block_number(1);
 
-            Self::initialize_memberships_manager_collection().expect("collection is initialized");
-
-            for community_id in &self.communities {
-                Self::initialize_community_memberships_collection(community_id)
-                    .expect("collection is initialized");
-
-                let decision_method = self
-                    .decision_methods
-                    .get(community_id)
-                    .expect("should include decision_method on add_community");
-                let community_origin: RuntimeOrigin = Self::create_community_origin(community_id);
+            for (community_id, privacy) in &self.communities {
+                let origin = community_origin(*community_id);
 
                 Communities::create(
                     RuntimeOrigin::root(),
-                    community_origin.caller.clone(),
+                    origin.caller().clone(),
                     *community_id,
                 )
-                .expect("can add community");
+                .expect("can create community");
 
-                Communities::set_decision_method(
-                    community_origin.clone(),
-                    *community_id,
-                    decision_method.clone(),
-                )
-                .expect("can set decision info");
-
-                let mut members = self.members.iter().filter(|(cid, _)| cid == community_id);
-                let memberships = self
-                    .memberships
-                    .iter()
-                    .filter(|(cid, _)| cid == community_id);
-
-                assert!(
-                    self.memberships.len() >= self.members.len(),
-                    "there should be at least as many memberships as there are members"
-                );
-
-                for (_, membership) in memberships {
-                    use frame_support::traits::tokens::nonfungible_v2::Mutate;
-
-                    let account = Communities::community_account(community_id);
-                    MembershipCollection::mint_into(
-                        membership,
-                        &account,
-                        &Default::default(),
-                        true,
-                    )
-                    .expect("can mint membership");
-
-                    if let Some((_, who)) = members.next() {
-                        Communities::add_member(community_origin.clone(), who.clone())
-                            .expect("can add member");
-                    }
+                // Set the privacy level
+                if *privacy != PrivacyLevel::Public {
+                    crate::Info::<Test>::mutate(community_id, |info| {
+                        if let Some(ref mut info) = info {
+                            info.privacy = privacy.clone();
+                        }
+                    });
                 }
 
-                for (_, track_info) in self.tracks.iter().filter(|(cid, _)| cid == community_id) {
-                    Tracks::do_insert(
-                        *community_id,
-                        track_info.clone(),
-                        community_origin.caller.clone(),
+                for (cid, who) in self.members.iter().filter(|(cid, _)| cid == community_id) {
+                    Communities::add_member(
+                        community_origin(*cid),
+                        who.clone(),
+                        None,
+                        None,
                     )
-                    .expect("can add track");
+                    .expect("can add member");
                 }
             }
         });
 
         ext
     }
+}
 
-    pub(crate) fn initialize_memberships_manager_collection() -> DispatchResult {
-        Nfts::do_create_collection(
-            MembershipsManagerCollectionId::get(),
-            RootAccount::get(),
-            RootAccount::get(),
-            Default::default(),
-            0,
-            pallet_nfts::Event::ForceCreated {
-                collection: MembershipsManagerCollectionId::get(),
-                owner: RootAccount::get(),
-            },
-        )
-    }
-
-    pub(crate) fn initialize_community_memberships_collection(
-        community_id: &CommunityId,
-    ) -> DispatchResult {
-        let account = Communities::community_account(community_id);
-        Nfts::do_create_collection(
-            *community_id,
-            account.clone(),
-            account.clone(),
-            Default::default(),
-            0,
-            pallet_nfts::Event::ForceCreated {
-                collection: *community_id,
-                owner: account,
-            },
-        )
-    }
-
-    pub fn create_community_origin(community_id: &CommunityId) -> RuntimeOrigin {
-        pallet_communities::Origin::<Test>::new(*community_id).into()
-    }
+pub fn account(n: u8) -> AccountId {
+    AccountId::new([n; 32])
 }

@@ -1,9 +1,9 @@
 use crate::{
-    types::{CommunityIdOf, CommunityState::Active, MembershipIdOf, RuntimeOriginFor},
+    types::{CommunityIdOf, CommunityState::Active, RuntimeOriginFor},
     AccountIdOf, CommunityIdFor, Config, Info, Pallet,
 };
 use core::marker::PhantomData;
-use frame_contrib_traits::memberships::{GenericRank, Inspect};
+use frame_contrib_traits::memberships::GenericRank;
 use frame_support::{
     pallet_prelude::*,
     traits::{EnsureOriginWithArg, MapSuccess, OriginTrait},
@@ -11,7 +11,15 @@ use frame_support::{
 use frame_system::EnsureSigned;
 #[cfg(feature = "xcm")]
 use sp_runtime::traits::TryConvert;
+use sp_core::H256;
 use sp_runtime::{morph_types, Permill};
+
+/// True when the subset variant represents an anonymous, unverified identity that must
+/// never authorize privileged actions. Used by admin/member-mgmt guards to reject
+/// anonymous origins.
+fn is_anonymous_subset<T: Config>(s: &Option<Subset<T>>) -> bool {
+    matches!(s, Some(Subset::AnonymousMember { .. }))
+}
 
 pub struct EnsureCommunity<T>(PhantomData<T>);
 
@@ -29,7 +37,12 @@ where
             return Err(o);
         }
         let id = match o.clone().into() {
-            Ok(RawOrigin { community_id, .. }) => community_id,
+            Ok(raw) => {
+                if is_anonymous_subset::<T>(&raw.subset) {
+                    return Err(o);
+                }
+                raw.community_id
+            }
             Err(_) => {
                 let origin = o.clone().into_caller();
                 CommunityIdFor::<T>::get(origin).ok_or_else(|| o.clone())?
@@ -73,14 +86,12 @@ where
         o: RuntimeOriginFor<T>,
         community_id: &CommunityIdOf<T>,
     ) -> Result<Self::Success, RuntimeOriginFor<T>> {
-        use frame_system::RawOrigin::Signed;
-
-        match o.clone().into() {
-            Ok(Signed(who)) => {
-                if T::MemberMgmt::is_member_of(community_id, &who) {
+        match o.as_system_ref() {
+            Some(frame_system::RawOrigin::Signed(who)) => {
+                if Pallet::<T>::is_member(community_id, who) {
                     Ok(())
                 } else {
-                    Err(o.clone())
+                    Err(o)
                 }
             }
             _ => Err(o),
@@ -118,6 +129,10 @@ impl<T: Config> RawOrigin<T> {
     pub fn id(&self) -> CommunityIdOf<T> {
         self.community_id
     }
+
+    pub fn subset(&self) -> Option<&Subset<T>> {
+        self.subset.as_ref()
+    }
 }
 
 /// Subsets of the community can also have a voice
@@ -125,7 +140,11 @@ impl<T: Config> RawOrigin<T> {
     Clone, Debug, Decode, DecodeWithMemTracking, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo,
 )]
 pub enum Subset<T: Config> {
-    Member(MembershipIdOf<T>),
+    Member(AccountIdOf<T>),
+    AnonymousMember {
+        rank: GenericRank,
+        nullifier: H256,
+    },
     Members { count: u32 },
     Fraction(Permill),
     AtLeastRank(GenericRank),
@@ -160,6 +179,7 @@ where
         let part = match o.subset {
             None => BodyPart::Voice,
             Some(Subset::Member(_)) => BodyPart::Members { count: 1 },
+            Some(Subset::AnonymousMember { .. }) => return Err(()),
             Some(Subset::Members { count }) => BodyPart::Members { count },
             Some(Subset::Fraction(per)) => BodyPart::Fraction {
                 nom: per.deconstruct(),
@@ -205,7 +225,7 @@ where
     }
 }
 
-/// Ensure the origin is any `Signed` origin.
+/// Authorize a call as the community's keyless account. Rejects anonymous subsets.
 pub struct AsSignedByCommunity<T>(PhantomData<T>);
 impl<T, OuterOrigin> EnsureOrigin<OuterOrigin> for AsSignedByCommunity<T>
 where
@@ -220,9 +240,12 @@ where
     type Success = T::AccountId;
 
     fn try_origin(o: OuterOrigin) -> Result<Self::Success, OuterOrigin> {
-        match o.clone().into() {
-            Ok(RawOrigin { community_id, .. }) => Ok(Pallet::<T>::community_account(&community_id)),
-            _ => Err(o.clone()),
+        let converted: Result<RawOrigin<T>, OuterOrigin> = o.clone().into();
+        match converted {
+            Ok(raw) if !is_anonymous_subset::<T>(&raw.subset) => {
+                Ok(Pallet::<T>::community_account(&raw.community_id))
+            }
+            _ => Err(o),
         }
     }
 
@@ -234,7 +257,8 @@ where
     }
 }
 
-/// Ensure the origin is any `Signed` origin.
+/// Authorize a call as the community's keyless account for a fixed community id.
+/// Rejects anonymous subsets.
 pub struct AsSignedByStaticCommunity<T, C>(PhantomData<(T, C)>);
 impl<T, C, OuterOrigin> EnsureOrigin<OuterOrigin> for AsSignedByStaticCommunity<T, C>
 where
@@ -250,11 +274,15 @@ where
     type Success = T::AccountId;
 
     fn try_origin(o: OuterOrigin) -> Result<Self::Success, OuterOrigin> {
-        match o.clone().into() {
+        let converted: Result<RawOrigin<T>, OuterOrigin> = o.clone().into();
+        match converted {
             Ok(RawOrigin {
-                ref community_id, ..
-            }) if community_id == &C::get() => Ok(Pallet::<T>::community_account(community_id)),
-            _ => Err(o.clone()),
+                ref community_id,
+                ref subset,
+            }) if community_id == &C::get() && !is_anonymous_subset::<T>(subset) => {
+                Ok(Pallet::<T>::community_account(community_id))
+            }
+            _ => Err(o),
         }
     }
 
@@ -263,5 +291,40 @@ where
         use crate::BenchmarkHelper;
         let community_id = T::BenchmarkHelper::community_id();
         Ok(frame_system::RawOrigin::Signed(Pallet::<T>::community_account(&community_id)).into())
+    }
+}
+
+/// Extracts a community id from an AnonymousMember origin — the only privilege granted to
+/// anonymous callers. Rejects every other origin variant. Voting extrinsics use this
+/// (instead of `EnsureCommunity`) to accept anonymous origins, so a proof of membership
+/// cannot be used to dispatch admin or member-management actions.
+pub struct EnsureAnonymousVoter<T>(PhantomData<T>);
+impl<T> EnsureOrigin<RuntimeOriginFor<T>> for EnsureAnonymousVoter<T>
+where
+    RuntimeOriginFor<T>:
+        OriginTrait + Into<Result<RawOrigin<T>, RuntimeOriginFor<T>>> + From<RawOrigin<T>>,
+    T: Config,
+{
+    type Success = (CommunityIdOf<T>, H256);
+
+    fn try_origin(o: RuntimeOriginFor<T>) -> Result<Self::Success, RuntimeOriginFor<T>> {
+        match o.clone().into() {
+            Ok(raw) => match raw.subset {
+                Some(Subset::AnonymousMember { nullifier, .. }) => Ok((raw.community_id, nullifier)),
+                _ => Err(o),
+            },
+            Err(_) => Err(o),
+        }
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin() -> Result<RuntimeOriginFor<T>, ()> {
+        use crate::BenchmarkHelper;
+        let mut raw = RawOrigin::<T>::new(T::BenchmarkHelper::community_id());
+        raw.with_subset(Subset::AnonymousMember {
+            rank: GenericRank::default(),
+            nullifier: H256::zero(),
+        });
+        Ok(raw.into())
     }
 }

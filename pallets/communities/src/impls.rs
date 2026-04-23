@@ -16,11 +16,14 @@ impl<T: Config> VoteTally<VoteWeight, CommunityIdOf<T>> for Tally<T> {
     }
 
     fn support(&self, community_id: CommunityIdOf<T>) -> sp_runtime::Perbill {
-        Perbill::from_rational(self.bare_ayes, Self::max_support(community_id))
+        // `1.max(..)` guards against empty/uninitialized communities: without it
+        // `Perbill::from_rational(any_votes, 0)` clamps to 100% and any poll trivially
+        // passes the support threshold.
+        Perbill::from_rational(self.bare_ayes, 1.max(Self::max_support(community_id)))
     }
 
     fn approval(&self, _cid: CommunityIdOf<T>) -> sp_runtime::Perbill {
-        Perbill::from_rational(self.ayes, 1.max(self.ayes + self.nays))
+        Perbill::from_rational(self.ayes, 1.max(self.ayes.saturating_add(self.nays)))
     }
 
     #[cfg(feature = "runtime-benchmarks")]
