@@ -35,6 +35,48 @@ impl<T: Config> Pallet<T> {
             .unwrap_or_default()
     }
 
+    /// Whether `who` can act as a manager of the community: Admin and Manager roles,
+    /// active status only. Used to gate member-management extrinsics when invoked by
+    /// a signed origin that's also a community member.
+    pub fn is_member_manager(community_id: &T::CommunityId, who: &AccountIdOf<T>) -> bool {
+        match Members::<T>::get(community_id, who) {
+            Some(rec) => {
+                rec.status == MemberStatus::Active
+                    && matches!(rec.role, Role::Admin | Role::Manager)
+            }
+            None => false,
+        }
+    }
+
+    /// Resolve the community id for a member-mgmt action, and enforce that if the
+    /// caller is a *signed* account (rather than a community/root/governance origin),
+    /// that account holds the Admin or Manager role in the target community.
+    ///
+    /// This is the authorization layer that makes `Role` meaningful. Without it,
+    /// anyone who satisfies `MemberMgmtOrigin` (often `EnsureCommunity`, which accepts
+    /// the community origin or accounts registered via `CommunityIdFor`) could take
+    /// member-management actions regardless of role.
+    pub(crate) fn ensure_member_mgmt(
+        origin: OriginFor<T>,
+    ) -> Result<CommunityIdOf<T>, DispatchError> {
+        // Pull out the signed caller (if any) before handing the origin to the
+        // configured guard — the guard consumes it.
+        let maybe_signer = origin
+            .as_system_ref()
+            .and_then(|s| match s {
+                frame_system::RawOrigin::Signed(who) => Some(who.clone()),
+                _ => None,
+            });
+        let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+        if let Some(signer) = maybe_signer {
+            ensure!(
+                Self::is_member_manager(&community_id, &signer),
+                Error::<T>::NotAuthorized,
+            );
+        }
+        Ok(community_id)
+    }
+
     pub fn force_state(community_id: &CommunityIdOf<T>, state: CommunityState) {
         Info::<T>::mutate(community_id, |c| c.as_mut().map(|c| c.state = state));
     }

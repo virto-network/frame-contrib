@@ -43,14 +43,12 @@
 //! ## Lifecycle
 //!
 //! ```ignore
-//! [       ] --> [Pending]               --> [Active]            --> [Blocked]
-//! create        set_metadata                set_metadata            unblock
-//!                                           block
-//!                                           add_member
-//!                                           remove_member
-//!                                           promote
-//!                                           demote
-//!                                           set_voting_mechanism
+//! [       ] --> [Active] <-----> [Blocked]
+//! create        add_member       block/unblock
+//!               remove_member
+//!               promote
+//!               demote
+//!               set_decision_method
 //! ```
 //!
 //! ## Implementations
@@ -477,6 +475,9 @@ pub mod pallet {
         /// An anonymous vote has already been cast for this voter on this poll.
         /// Anonymous votes are immutable: they cannot be changed or removed.
         AnonymousVoteAlreadyCast,
+        /// The caller is authorized by origin but not by role (e.g. a rank-0 member
+        /// trying to suspend another member).
+        NotAuthorized,
     }
 
     // Dispatchable functions allows users to interact with the pallet and invoke
@@ -536,7 +537,7 @@ pub mod pallet {
             rank: Option<GenericRank>,
             role: Option<Role>,
         ) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+            let community_id = Self::ensure_member_mgmt(origin)?;
             let who = T::Lookup::lookup(who)?;
 
             let info = Info::<T>::get(&community_id).ok_or(Error::<T>::CommunityDoesNotExist)?;
@@ -553,13 +554,16 @@ pub mod pallet {
                 Error::<T>::AlreadyMember
             );
 
+            // `capacity == 0` is interpreted as "explicit zero" (no members allowed) —
+            // avoid the previous silent fallback to T::MaxMembers which made capacity=0
+            // mean "unlimited-ish". A runtime that wants the default should read
+            // T::MaxMembers directly when creating the community.
             let count = MemberCount::<T>::get(&community_id);
-            let max = if info.capacity > 0 {
-                info.capacity
-            } else {
-                T::MaxMembers::get()
-            };
-            ensure!(count < max, Error::<T>::CommunityAtCapacity);
+            ensure!(count < info.capacity, Error::<T>::CommunityAtCapacity);
+            ensure!(
+                count < T::MaxMembers::get(),
+                Error::<T>::CommunityAtCapacity,
+            );
 
             let member_rank = rank.unwrap_or_default();
             let member_role = role.unwrap_or_default();
@@ -590,7 +594,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             who: AccountIdLookupOf<T>,
         ) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+            let community_id = Self::ensure_member_mgmt(origin)?;
             let who = T::Lookup::lookup(who)?;
 
             let record =
@@ -611,7 +615,7 @@ pub mod pallet {
         /// Increases the rank of a member in the community
         #[pallet::call_index(5)]
         pub fn promote(origin: OriginFor<T>, who: AccountIdLookupOf<T>) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+            let community_id = Self::ensure_member_mgmt(origin)?;
             let who = T::Lookup::lookup(who)?;
 
             let mut record =
@@ -638,7 +642,7 @@ pub mod pallet {
         /// Decreases the rank of a member in the community
         #[pallet::call_index(6)]
         pub fn demote(origin: OriginFor<T>, who: AccountIdLookupOf<T>) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+            let community_id = Self::ensure_member_mgmt(origin)?;
             let who = T::Lookup::lookup(who)?;
 
             let mut record =
@@ -668,7 +672,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             who: AccountIdLookupOf<T>,
         ) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+            let community_id = Self::ensure_member_mgmt(origin)?;
             let who = T::Lookup::lookup(who)?;
 
             let mut record =
@@ -921,8 +925,48 @@ pub mod pallet {
             origin: OriginFor<T>,
             call: Box<RuntimeCallFor<T>>,
         ) -> DispatchResult {
-            let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
+            let community_id = Self::ensure_member_mgmt(origin)?;
             Self::do_dispatch_as_community_account(&community_id, *call)
+        }
+
+        /// Remove a stored vote entry for a poll that has ended. Permissionless: any
+        /// account can call this for any `(poll_index, voter_key)` once the poll is no
+        /// longer ongoing. Addresses storage bloat, including for anonymous votes whose
+        /// voter has no on-chain identity to clean up after themselves.
+        #[pallet::call_index(16)]
+        #[pallet::weight((T::DbWeight::get().reads_writes(1, 1), DispatchClass::Normal))]
+        pub fn prune_vote(
+            origin: OriginFor<T>,
+            #[pallet::compact] poll_index: PollIndexOf<T>,
+            voter_key: <T::Hasher as sp_runtime::traits::Hash>::Output,
+        ) -> DispatchResult {
+            let _ = ensure_signed(origin)?;
+            ensure!(
+                T::Polls::as_ongoing(poll_index).is_none(),
+                Error::<T>::AlreadyOngoing,
+            );
+            ensure!(
+                CommunityVotes::<T>::contains_key(poll_index, &voter_key),
+                Error::<T>::NoVoteCasted,
+            );
+            CommunityVotes::<T>::remove(poll_index, &voter_key);
+            Ok(())
+        }
+
+        /// Remove a stored sub-root. Admin-only.
+        #[pallet::call_index(17)]
+        #[pallet::weight((T::DbWeight::get().reads_writes(0, 1), DispatchClass::Normal))]
+        pub fn remove_sub_root(
+            origin: OriginFor<T>,
+            sub_track_id: u16,
+        ) -> DispatchResult {
+            let community_id = T::AdminOrigin::ensure_origin(origin)?;
+            SubRoots::<T>::remove(&community_id, sub_track_id);
+            Self::deposit_event(Event::SubRootUpdated {
+                community_id,
+                sub_track_id,
+            });
+            Ok(())
         }
     }
 }

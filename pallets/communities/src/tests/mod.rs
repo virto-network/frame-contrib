@@ -936,6 +936,153 @@ fn test_c1_anonymous_origin_cannot_dispatch_as_account() {
 }
 
 #[test]
+fn test_m3_member_role_enforced_on_signed_caller() {
+    // A signed account that is only a plain Member must not be able to use the
+    // member-management extrinsics even if they pass the configured MemberMgmtOrigin.
+    let alice = account(1); // plain Member
+    let bob = account(2);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .build()
+        .execute_with(|| {
+            let cmty = community_origin(COMMUNITY);
+            assert_ok!(Communities::add_member(
+                cmty.clone(),
+                alice.clone(),
+                None,
+                None,
+            ));
+            assert_ok!(Communities::add_member(
+                cmty.clone(),
+                bob.clone(),
+                None,
+                None,
+            ));
+            // Hook alice's signed origin into the mgmt guard by registering her as the
+            // community's admin origin caller in CommunityIdFor.
+            let alice_origin = RuntimeOrigin::signed(alice.clone());
+            use frame_support::traits::OriginTrait;
+            crate::CommunityIdFor::<Test>::insert(alice_origin.caller().clone(), COMMUNITY);
+
+            // The role check must block a plain-Member caller from suspending someone.
+            assert_noop!(
+                Communities::suspend_member(alice_origin, bob.clone()),
+                Error::NotAuthorized,
+            );
+        });
+}
+
+#[test]
+fn test_m3_manager_role_can_manage_members() {
+    let manager = account(1);
+    let bob = account(2);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .build()
+        .execute_with(|| {
+            let cmty = community_origin(COMMUNITY);
+            assert_ok!(Communities::add_member(
+                cmty.clone(),
+                manager.clone(),
+                None,
+                Some(Role::Manager),
+            ));
+            assert_ok!(Communities::add_member(cmty, bob.clone(), None, None));
+
+            let mgr_origin = RuntimeOrigin::signed(manager.clone());
+            use frame_support::traits::OriginTrait;
+            crate::CommunityIdFor::<Test>::insert(mgr_origin.caller().clone(), COMMUNITY);
+
+            assert_ok!(Communities::suspend_member(mgr_origin, bob.clone()));
+            assert_eq!(
+                Members::<Test>::get(COMMUNITY, &bob).unwrap().status,
+                MemberStatus::Suspended,
+            );
+        });
+}
+
+#[test]
+fn test_m8_prune_vote_removes_stale_entry() {
+    let voter_key = BlakeTwo256::hash_of(&account(7));
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .build()
+        .execute_with(|| {
+            // Poll index 999 does not exist (no setup_poll), so Polls::as_ongoing returns
+            // None — mimicking a finished/purged poll.
+            let stored: (VoteOf<Test>, VoteWeight) = (Vote::Standard(true), 1);
+            CommunityVotes::<Test>::insert(999u32, &voter_key, stored);
+
+            // Pruning must be permissionless for ended polls.
+            let random = account(123);
+            assert_ok!(Communities::prune_vote(
+                RuntimeOrigin::signed(random),
+                999,
+                voter_key,
+            ));
+            assert!(CommunityVotes::<Test>::get(999u32, &voter_key).is_none());
+        });
+}
+
+#[test]
+fn test_m8_prune_vote_rejected_while_poll_ongoing() {
+    let alice = account(1);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .build()
+        .execute_with(|| {
+            let poll_index = setup_poll(COMMUNITY);
+            assert_ok!(Communities::vote(
+                RuntimeOrigin::signed(alice.clone()),
+                poll_index,
+                Vote::Standard(true),
+            ));
+            let voter_key = BlakeTwo256::hash_of(&alice);
+            assert_noop!(
+                Communities::prune_vote(
+                    RuntimeOrigin::signed(account(99)),
+                    poll_index,
+                    voter_key,
+                ),
+                Error::AlreadyOngoing,
+            );
+        });
+}
+
+#[test]
+fn test_m9_remove_sub_root() {
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Private)
+        .build()
+        .execute_with(|| {
+            let origin = community_origin(COMMUNITY);
+            let root = BlakeTwo256::hash_of(b"x");
+            assert_ok!(Communities::update_sub_root(origin.clone(), 7, root));
+            assert_eq!(SubRoots::<Test>::get(COMMUNITY, 7), Some(root));
+            assert_ok!(Communities::remove_sub_root(origin, 7));
+            assert!(SubRoots::<Test>::get(COMMUNITY, 7).is_none());
+        });
+}
+
+#[test]
+fn test_set_budget_rejects_zero_session_length() {
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .build()
+        .execute_with(|| {
+            let origin = community_origin(COMMUNITY);
+            assert_noop!(
+                Communities::set_budget(origin, 1000, 0),
+                Error::InvalidBudget,
+            );
+        });
+}
+
+#[test]
 fn test_c4_action_scope_derived_from_call() {
     // The extension must derive the nullifier's action-scope from the dispatched call,
     // not accept it from the caller. Same caller, same leaf, different call should

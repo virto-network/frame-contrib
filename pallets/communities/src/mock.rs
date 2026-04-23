@@ -5,10 +5,7 @@ use frame_support::{
         EitherOf, EnsureOriginWithArg, EqualPrivilegeOnly, Footprint,
         OriginTrait, VariantCountOf,
     },
-    weights::{
-        constants::{WEIGHT_REF_TIME_PER_NANOS, WEIGHT_REF_TIME_PER_SECOND},
-        Weight,
-    },
+    weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
     PalletId,
 };
 use frame_system::{EnsureRoot, EnsureRootWithSuccess, EnsureSigned};
@@ -31,7 +28,6 @@ use crate::{
 // Weights constants
 pub const MAX_BLOCK_REF_TIME: u64 = WEIGHT_REF_TIME_PER_SECOND.saturating_div(2);
 pub const MAX_BLOCK_POV_SIZE: u64 = 5 * 1024 * 1024;
-pub const MAX_BLOCK_WEIGHT: Weight = Weight::from_parts(MAX_BLOCK_REF_TIME, MAX_BLOCK_POV_SIZE);
 type Block = frame_system::mocking::MockBlock<Test>;
 type WeightInfo = ();
 
