@@ -257,33 +257,48 @@ impl<T: Config> Pallet<T> {
         });
     }
 
-    /// Recompute and store the merkle root for public communities.
-    /// For private/hybrid communities this is a no-op (root is set manually).
+    /// Keep the stored merkle root consistent after a membership change.
+    ///
+    /// Behaviour by privacy level:
+    /// - **Public**: rebuild the root from on-chain members (authoritative source).
+    /// - **Hybrid**: clear the root. Hybrid communities mix on-chain and off-chain
+    ///   members, so an on-chain change alone cannot produce a valid tree — the admin
+    ///   must republish via `update_membership_root`. Clearing the root is the safe
+    ///   default: in-flight anonymous proofs would otherwise remain valid against an
+    ///   already-stale tree (e.g. a suspended member could continue to anonymously
+    ///   vote until the admin bothered to update).
+    /// - **Private**: clear the root for the same reason as Hybrid. Since all
+    ///   membership is off-chain, we can't rebuild, but we can *refuse* anonymous
+    ///   actions until the admin republishes.
+    ///
+    /// Clearing `MerkleRoot` causes the extension to reject proofs with
+    /// `NO_MEMBERSHIP_ROOT`, which is the desired fail-closed behaviour.
     pub fn recompute_merkle_root(community_id: &CommunityIdOf<T>) {
-        let info = match Info::<T>::get(community_id) {
-            Some(info) if info.privacy == PrivacyLevel::Public => info,
-            _ => return,
-        };
-        let _ = info; // used only for the privacy check above
-
-        let mut leaves: alloc::vec::Vec<<T::Hasher as sp_runtime::traits::Hash>::Output> =
-            Members::<T>::iter_prefix(community_id)
-                .filter(|(_, record)| record.status == MemberStatus::Active)
-                .map(|(who, record)| {
-                    T::Hasher::hash_of(&(who, community_id, record.rank, record.nonce))
-                })
-                .collect();
-
-        leaves.sort();
-
-        if leaves.is_empty() {
-            MerkleRoot::<T>::remove(community_id);
-        } else {
-            let root = binary_merkle_tree::merkle_root::<T::Hasher, _>(leaves);
-            MerkleRoot::<T>::insert(community_id, root);
+        match Info::<T>::get(community_id).map(|i| i.privacy) {
+            Some(PrivacyLevel::Public) => {
+                let mut leaves: alloc::vec::Vec<<T::Hasher as sp_runtime::traits::Hash>::Output> =
+                    Members::<T>::iter_prefix(community_id)
+                        .filter(|(_, record)| record.status == MemberStatus::Active)
+                        .map(|(who, record)| {
+                            T::Hasher::hash_of(&(who, community_id, record.rank, record.nonce))
+                        })
+                        .collect();
+                leaves.sort();
+                if leaves.is_empty() {
+                    MerkleRoot::<T>::remove(community_id);
+                } else {
+                    let root = binary_merkle_tree::merkle_root::<T::Hasher, _>(leaves);
+                    MerkleRoot::<T>::insert(community_id, root);
+                }
+            }
+            Some(PrivacyLevel::Private) | Some(PrivacyLevel::Hybrid) => {
+                // Fail-closed: an on-chain suspend/remove may have invalidated the tree.
+                // The admin must republish with `update_membership_root`.
+                MerkleRoot::<T>::remove(community_id);
+            }
+            None => {}
         }
     }
-
 }
 
 impl<T: Config> Tally<T> {

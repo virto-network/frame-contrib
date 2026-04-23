@@ -7,7 +7,7 @@ use sp_core::H256;
 use crate::mock::*;
 use crate::types::*;
 use crate::verifier::{MembershipInputs, MerkleProof};
-use crate::{Budget, CommunityDecisionMethod, CommunityVotes, MemberCount, Members, MerkleRoot, SubRoots, RanksTotal, UsedNullifiers};
+use crate::{Budget, ClaimedSupport, CommunityDecisionMethod, CommunityVotes, MemberCount, Members, MerkleRoot, SubRoots, RanksTotal, UsedNullifiers};
 use fc_traits_proof_verifier::ProofVerifier;
 
 type Error = crate::Error<Test>;
@@ -159,7 +159,55 @@ fn test_private_community_root_update() {
             ));
 
             assert_eq!(MerkleRoot::<Test>::get(COMMUNITY), Some(fake_root));
-            assert_eq!(MemberCount::<Test>::get(COMMUNITY), 42);
+            // H3 fix: the admin-supplied number lands in ClaimedSupport, not MemberCount.
+            assert_eq!(ClaimedSupport::<Test>::get(COMMUNITY), 42);
+            assert_eq!(
+                MemberCount::<Test>::get(COMMUNITY),
+                0,
+                "MemberCount must not be writable by update_membership_root"
+            );
+        });
+}
+
+#[test]
+fn test_m2_suspend_clears_root_on_private_community() {
+    // Without this, a suspended member's old merkle proof remains valid against the
+    // stale root until the admin manually republishes. Fail-closed: clear the root on
+    // any on-chain membership change for Private/Hybrid communities so the extension
+    // rejects proofs with NO_MEMBERSHIP_ROOT until the admin republishes.
+    let alice = account(1);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Hybrid)
+        .build()
+        .execute_with(|| {
+            let origin = community_origin(COMMUNITY);
+            // Seed a member on-chain so we have something to suspend.
+            crate::Members::<Test>::insert(
+                COMMUNITY,
+                &alice,
+                MemberRecord {
+                    rank: GenericRank::default(),
+                    role: Role::Member,
+                    ..Default::default()
+                },
+            );
+            MemberCount::<Test>::insert(COMMUNITY, 1);
+
+            let published_root =
+                <BlakeTwo256 as sp_runtime::traits::Hash>::hash_of(b"off-chain tree");
+            assert_ok!(Communities::update_membership_root(
+                origin.clone(),
+                published_root,
+                100,
+            ));
+            assert_eq!(MerkleRoot::<Test>::get(COMMUNITY), Some(published_root));
+
+            assert_ok!(Communities::suspend_member(origin.clone(), alice.clone()));
+            assert!(
+                MerkleRoot::<Test>::get(COMMUNITY).is_none(),
+                "on-chain suspension must invalidate the published root until admin republishes"
+            );
         });
 }
 

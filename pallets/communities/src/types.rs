@@ -256,13 +256,32 @@ impl<T> Default for Tally<T> {
 impl<T: Config> Tally<T> {
     pub(crate) fn max_support(community_id: CommunityIdOf<T>) -> VoteWeight {
         match CommunityDecisionMethod::<T>::get(community_id) {
-            DecisionMethod::Membership => crate::MemberCount::<T>::get(community_id),
+            DecisionMethod::Membership => membership_denominator::<T>(community_id),
             DecisionMethod::Rank => crate::RanksTotal::<T>::get(community_id),
             DecisionMethod::NativeToken => {
                 T::Balances::total_issuance().saturated_into::<VoteWeight>()
             }
             DecisionMethod::CommunityAsset(asset_id, _) => {
                 T::Assets::total_issuance(asset_id).saturated_into::<VoteWeight>()
+            }
+        }
+    }
+}
+
+/// Denominator for `DecisionMethod::Membership` support.
+/// - Public: the on-chain [`crate::MemberCount`], which the admin cannot set arbitrarily.
+/// - Private/Hybrid: the admin-declared [`crate::ClaimedSupport`]. If never set, falls
+///   back to the on-chain member count so freshly-bootstrapped communities don't render
+///   referenda unreachable.
+fn membership_denominator<T: Config>(community_id: CommunityIdOf<T>) -> VoteWeight {
+    match crate::Info::<T>::get(community_id).map(|i| i.privacy) {
+        Some(crate::PrivacyLevel::Public) | None => crate::MemberCount::<T>::get(community_id),
+        Some(_) => {
+            let declared = crate::ClaimedSupport::<T>::get(community_id);
+            if declared > 0 {
+                declared
+            } else {
+                crate::MemberCount::<T>::get(community_id)
             }
         }
     }

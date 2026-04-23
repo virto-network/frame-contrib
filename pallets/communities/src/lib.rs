@@ -338,9 +338,24 @@ pub mod pallet {
         (),
     >;
 
-    /// Number of members in a community
+    /// Number of members in a community. For Public communities this is maintained
+    /// automatically by add/remove/suspend. For Private/Hybrid communities this counts
+    /// on-chain members only (may be 0); the tally denominator is taken from
+    /// [`ClaimedSupport`] instead.
     #[pallet::storage]
     pub type MemberCount<T: Config> =
+        StorageMap<_, Blake2_128Concat, CommunityIdOf<T>, u32, ValueQuery>;
+
+    /// Declared tally support for Private/Hybrid communities where membership is off-chain.
+    /// Used only as the denominator for `Polling::support()` when the community isn't
+    /// Public. Separate from [`MemberCount`] so that updating the merkle root does not
+    /// let the admin manipulate `MemberCount`-driven invariants.
+    ///
+    /// Safety note: the admin can still manipulate referendum thresholds by changing
+    /// this value — that's inherent to off-chain membership. Runtimes that want harder
+    /// guarantees should gate updates behind governance.
+    #[pallet::storage]
+    pub type ClaimedSupport<T: Config> =
         StorageMap<_, Blake2_128Concat, CommunityIdOf<T>, u32, ValueQuery>;
 
     /// Total of all member ranks in a community (for rank-weighted voting)
@@ -673,12 +688,15 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Manually update the membership merkle root for private/hybrid communities
+        /// Manually update the membership merkle root and claimed support for
+        /// private/hybrid communities. `claimed_support` is written to
+        /// [`ClaimedSupport`] and is used only as the denominator for the poll-support
+        /// calculation; it does not affect [`MemberCount`] or any other on-chain invariant.
         #[pallet::call_index(13)]
         pub fn update_membership_root(
             origin: OriginFor<T>,
             new_root: <T::Hasher as sp_runtime::traits::Hash>::Output,
-            member_count: u32,
+            claimed_support: u32,
         ) -> DispatchResult {
             let community_id = T::AdminOrigin::ensure_origin(origin)?;
 
@@ -689,7 +707,7 @@ pub mod pallet {
             );
 
             MerkleRoot::<T>::insert(&community_id, new_root);
-            MemberCount::<T>::insert(&community_id, member_count);
+            ClaimedSupport::<T>::insert(&community_id, claimed_support);
 
             Self::deposit_event(Event::MembershipRootUpdated { community_id });
             Ok(())
