@@ -457,6 +457,11 @@ pub mod pallet {
         MemberIsSuspended,
         /// The community's gas budget has been exhausted
         BudgetExhausted,
+        /// The budget parameters are invalid (e.g. zero-length session).
+        InvalidBudget,
+        /// An anonymous vote has already been cast for this voter on this poll.
+        /// Anonymous votes are immutable: they cannot be changed or removed.
+        AnonymousVoteAlreadyCast,
     }
 
     // Dispatchable functions allows users to interact with the pallet and invoke
@@ -717,8 +722,12 @@ pub mod pallet {
             capacity: u64,
             session_length: BlockNumberFor<T>,
         ) -> DispatchResult {
+            use sp_runtime::traits::Zero;
             let community_id = T::AdminOrigin::ensure_origin(origin)?;
             ensure!(Self::community_exists(&community_id), Error::<T>::CommunityDoesNotExist);
+            // A zero-length session would reset the budget on every check, making the
+            // capacity cap meaningless.
+            ensure!(!session_length.is_zero(), Error::<T>::InvalidBudget);
             let now = T::BlockNumberProvider::current_block_number();
             Budget::<T>::insert(&community_id, CommunityBudget {
                 capacity,
@@ -764,7 +773,11 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure!(VoteWeight::from(&vote).gt(&0), Error::<T>::VoteBelowMinimum);
 
-            // Determine voting path: signed (named) or community origin (anonymous)
+            // Determine voting path: signed (named) or community origin (anonymous).
+            // The anonymous branch goes through `EnsureAnonymousVoter`, which rejects every
+            // community-origin variant *except* `Subset::AnonymousMember`. That keeps the
+            // anonymous privilege scoped to voting only — a membership proof cannot dispatch
+            // admin or member-management calls that check `MemberMgmtOrigin`/`AdminOrigin`.
             let (community_id, voter_key, vote_multiplier, maybe_who): (
                 CommunityIdOf<T>,
                 <T::Hasher as sp_runtime::traits::Hash>::Output,
@@ -786,33 +799,30 @@ pub mod pallet {
                 let key = T::Hasher::hash_of(&who);
                 (community_id, key, multiplier, Some(who))
             } else {
-                // Anonymous vote path - try community origin
-                let community_origin = Self::extract_community_origin(origin)?;
-                match community_origin.subset() {
-                    Some(origin::Subset::AnonymousMember { rank, nullifier }) => {
-                        let community_id = community_origin.id();
-                        let decision_method = CommunityDecisionMethod::<T>::get(community_id);
-                        // Token-weighted voting not supported anonymously
-                        ensure!(
-                            matches!(decision_method, DecisionMethod::Membership | DecisionMethod::Rank),
-                            Error::<T>::InvalidVoteType
-                        );
-                        let multiplier = match decision_method {
-                            DecisionMethod::Rank => (*rank).into(),
-                            _ => 1u32,
-                        };
-                        let key = T::Hasher::hash_of(nullifier);
-                        (community_id, key, multiplier, None)
-                    },
-                    _ => return Err(DispatchError::BadOrigin),
-                }
+                // Anonymous vote path. `EnsureAnonymousVoter` both checks we have an
+                // AnonymousMember origin *and* returns the (community_id, nullifier).
+                let (community_id, nullifier) = origin::EnsureAnonymousVoter::<T>::try_origin(origin)
+                    .map_err(|_| DispatchError::BadOrigin)?;
+                let decision_method = CommunityDecisionMethod::<T>::get(community_id);
+                // Token-weighted voting cannot be authorized anonymously (no account to lock
+                // funds against), and the leaf contents — including rank — are not verified,
+                // so rank-weighted voting is also rejected. Only flat 1-per-member voting is
+                // allowed via the anonymous path until a ZK backend binds rank to the proof.
+                ensure!(
+                    matches!(decision_method, DecisionMethod::Membership),
+                    Error::<T>::InvalidVoteType
+                );
+                let key = T::Hasher::hash_of(&nullifier);
+                (community_id, key, 1u32, None)
             };
 
             let decision_method = CommunityDecisionMethod::<T>::get(community_id);
 
-            // Check for existing vote and remove it (only for named voters)
+            // Named voters may replace their vote; anonymous voters cannot, because the
+            // nullifier scheme in the extension also prevents it at the tx layer and there
+            // is no signed authority to authorize a replacement.
             if CommunityVotes::<T>::contains_key(poll_index, &voter_key) {
-                ensure!(maybe_who.is_some(), Error::<T>::AlreadyOngoing);
+                ensure!(maybe_who.is_some(), Error::<T>::AnonymousVoteAlreadyCast);
                 Self::try_remove_vote_by_key(&community_id, &voter_key, poll_index)?;
             }
 

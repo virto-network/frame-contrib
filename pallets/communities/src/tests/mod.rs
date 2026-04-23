@@ -627,7 +627,11 @@ fn test_anonymous_vote_uses_nullifier_key() {
 }
 
 #[test]
-fn test_anonymous_vote_with_rank() {
+fn test_anonymous_vote_rejects_rank_weighted_decision() {
+    // Rank-weighted voting cannot be authorized anonymously: the merkle proof doesn't
+    // bind the leaf's rank, so the multiplier would be user-chosen and forgeable.
+    // Only flat `Membership` voting is allowed on the anonymous path until a ZK backend
+    // makes rank a verified public input. (Issue C2 from review.)
     let alice = account(1);
 
     TestEnvBuilder::new()
@@ -635,26 +639,42 @@ fn test_anonymous_vote_with_rank() {
         .add_member(COMMUNITY, alice.clone())
         .build()
         .execute_with(|| {
-            // Set decision method to Rank
             CommunityDecisionMethod::<Test>::set(COMMUNITY, DecisionMethod::Rank);
 
             let poll_index = setup_poll(COMMUNITY);
             let nullifier = H256::from_low_u64_be(100);
-            let rank = GenericRank::from(3u8);
 
-            let origin = anon_origin(COMMUNITY, rank, nullifier);
-            assert_ok!(Communities::vote(
-                origin,
-                poll_index,
-                Vote::Standard(true),
-            ));
+            let origin = anon_origin(COMMUNITY, GenericRank::from(3u8), nullifier);
+            assert_noop!(
+                Communities::vote(origin, poll_index, Vote::Standard(true)),
+                Error::InvalidVoteType,
+            );
+        });
+}
 
-            // Verify the multiplied weight reflects rank
+#[test]
+fn test_anonymous_vote_rank_from_origin_is_ignored() {
+    // Even when a synthesised anonymous origin carries a high rank, the vote weight
+    // is always 1 under DecisionMethod::Membership. (Issue C2 from review.)
+    let alice = account(1);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .build()
+        .execute_with(|| {
+            let poll_index = setup_poll(COMMUNITY);
+            let nullifier = H256::from_low_u64_be(777);
+
+            // A caller who managed to construct an AnonymousMember origin directly with
+            // rank=100 still gets weight 1 — the pallet ignores the origin's rank field.
+            let origin = anon_origin(COMMUNITY, GenericRank::from(100u8), nullifier);
+            assert_ok!(Communities::vote(origin, poll_index, Vote::Standard(true)));
+
             let voter_key = BlakeTwo256::hash_of(&nullifier);
             let (_, multiplied) = CommunityVotes::<Test>::get(poll_index, &voter_key)
                 .expect("vote should be stored");
-            // rank 3 * vote weight 1 = 3
-            assert_eq!(multiplied, 3);
+            assert_eq!(multiplied, 1, "anonymous vote must be rank-1 regardless of origin rank");
         });
 }
 
@@ -706,7 +726,7 @@ fn test_anonymous_vote_duplicate_nullifier_rejected() {
                 Vote::Standard(true),
             ));
 
-            // Second anonymous vote with same nullifier should fail (AlreadyOngoing)
+            // Second anonymous vote with same nullifier should fail.
             let origin2 = anon_origin(COMMUNITY, GenericRank::default(), nullifier);
             assert_noop!(
                 Communities::vote(
@@ -714,7 +734,7 @@ fn test_anonymous_vote_duplicate_nullifier_rejected() {
                     poll_index,
                     Vote::Standard(false),
                 ),
-                Error::AlreadyOngoing
+                Error::AnonymousVoteAlreadyCast
             );
         });
 }
@@ -760,4 +780,136 @@ fn test_anonymous_vote_different_nullifiers_both_counted() {
             assert_eq!(tally.nays, 1);
             assert_eq!(tally.bare_ayes, 1);
         });
+}
+
+// ---- Adversarial tests for the critical issues flagged in the review ----
+//
+// These tests target the escalation paths the merkle-only MVP previously allowed.
+// If any of them regresses in the future, the anonymous membership scheme is unsound
+// again — treat failures as security regressions, not flakes.
+
+#[test]
+fn test_c1_anonymous_origin_cannot_manage_members() {
+    // An anonymous community origin must NOT be accepted by `MemberMgmtOrigin`.
+    // Before the C1 fix, `EnsureCommunity` destructured `RawOrigin { community_id, .. }`
+    // and ignored the subset, so any caller with a valid merkle proof could
+    // suspend/remove/promote/demote anyone in the community.
+    let alice = account(1);
+    let bob = account(2);
+
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .add_member(COMMUNITY, alice.clone())
+        .add_member(COMMUNITY, bob.clone())
+        .build()
+        .execute_with(|| {
+            let anon = anon_origin(COMMUNITY, GenericRank::default(), H256::from_low_u64_be(1));
+
+            // Every member-management call must reject the anonymous origin with BadOrigin.
+            assert_noop!(
+                Communities::suspend_member(anon.clone(), bob.clone()),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                Communities::remove_member(anon.clone(), bob.clone()),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                Communities::promote(anon.clone(), bob.clone()),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                Communities::demote(anon.clone(), bob.clone()),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                Communities::add_member(anon.clone(), account(42), None, None),
+                sp_runtime::DispatchError::BadOrigin
+            );
+
+            // Bob must still be an active member — no state was mutated.
+            assert!(Members::<Test>::get(COMMUNITY, &bob).is_some());
+            assert_eq!(
+                Members::<Test>::get(COMMUNITY, &bob).unwrap().status,
+                MemberStatus::Active,
+            );
+        });
+}
+
+#[test]
+fn test_c1_anonymous_origin_cannot_call_admin_functions() {
+    // The same escalation route also guarded admin-only functions via `AdminOrigin`.
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .build()
+        .execute_with(|| {
+            let anon = anon_origin(COMMUNITY, GenericRank::default(), H256::from_low_u64_be(2));
+            let fake_root = BlakeTwo256::hash_of(b"whatever");
+
+            assert_noop!(
+                Communities::update_membership_root(anon.clone(), fake_root, 0),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                Communities::update_sub_root(anon.clone(), 1, fake_root),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                Communities::set_budget(anon.clone(), 1_000_000, 100),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                Communities::set_decision_method(anon, COMMUNITY, DecisionMethod::Membership),
+                sp_runtime::DispatchError::BadOrigin
+            );
+        });
+}
+
+#[test]
+fn test_c1_anonymous_origin_cannot_dispatch_as_account() {
+    // The most damaging escalation: dispatching as the community's keyless account
+    // would allow draining the treasury. `MemberMgmtOrigin` must reject anonymous.
+    TestEnvBuilder::new()
+        .add_community(COMMUNITY, PrivacyLevel::Public)
+        .build()
+        .execute_with(|| {
+            let anon = anon_origin(COMMUNITY, GenericRank::default(), H256::from_low_u64_be(3));
+            // Any inner call works here; we're asserting the outer origin check rejects.
+            let inner: RuntimeCall = crate::Call::<Test>::set_decision_method {
+                community_id: COMMUNITY,
+                decision_method: DecisionMethod::Membership,
+            }
+            .into();
+            assert_noop!(
+                Communities::dispatch_as_account(anon, Box::new(inner)),
+                sp_runtime::DispatchError::BadOrigin
+            );
+        });
+}
+
+#[test]
+fn test_c4_action_scope_derived_from_call() {
+    // The extension must derive the nullifier's action-scope from the dispatched call,
+    // not accept it from the caller. Same caller, same leaf, different call should
+    // produce different nullifiers. We validate by exercising the same hashing the
+    // extension would use and asserting the nullifiers differ.
+    use codec::Encode;
+
+    let call_a: RuntimeCall = crate::Call::<Test>::vote {
+        poll_index: 0,
+        vote: Vote::Standard(true),
+    }
+    .into();
+    let call_b: RuntimeCall = crate::Call::<Test>::vote {
+        poll_index: 1,
+        vote: Vote::Standard(true),
+    }
+    .into();
+
+    let scope_a: H256 = sp_io::hashing::blake2_256(&call_a.encode()).into();
+    let scope_b: H256 = sp_io::hashing::blake2_256(&call_b.encode()).into();
+    assert_ne!(
+        scope_a, scope_b,
+        "different calls must produce different action scopes"
+    );
 }

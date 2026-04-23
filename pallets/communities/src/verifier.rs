@@ -43,9 +43,11 @@ where
         proof: &Self::Proof,
         public_inputs: &Self::PublicInputs,
     ) -> Result<(), VerifyError> {
+        // `H::Output: Copy` for all substrate hashers we care about, so the iterator-based
+        // form avoids the otherwise-needless clone of the siblings vec.
         let valid = binary_merkle_tree::verify_proof::<H, _, _>(
             &public_inputs.root,
-            proof.siblings.clone(),
+            proof.siblings.iter().copied(),
             proof.leaf_count,
             proof.leaf_index,
             &proof.leaf,

@@ -105,7 +105,7 @@ impl<T: Config> Pallet<T> {
             };
 
             let vote_weight = VoteWeight::from(vote);
-            let multiplied = vote_multiplier * vote_weight;
+            let multiplied = vote_multiplier.saturating_mul(vote_weight);
             tally.add_vote(say, multiplied, vote_weight);
 
             CommunityVotes::<T>::insert(poll_index, voter_key, (vote, multiplied));
@@ -284,14 +284,6 @@ impl<T: Config> Pallet<T> {
         }
     }
 
-    /// Extract a community origin from a runtime origin.
-    /// Returns BadOrigin if the origin is not a community origin.
-    pub(crate) fn extract_community_origin(
-        origin: OriginFor<T>,
-    ) -> Result<origin::RawOrigin<T>, DispatchError> {
-        let raw: Result<origin::RawOrigin<T>, _> = origin.into();
-        raw.map_err(|_| DispatchError::BadOrigin)
-    }
 }
 
 impl<T: Config> Tally<T> {
