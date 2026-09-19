@@ -1,43 +1,39 @@
 # Releasing FRAME Contrib
 
+This is the maintainer side of the process. For PR titles, what counts as a breaking
+change, and how the changelog is written, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+
 All crates in this workspace are released **in lockstep**: they share a single
 version (`[workspace.package].version`), a single `CHANGELOG.md` and a single
 `vX.Y.Z` git tag. A runtime that uses several `fc-*` crates should always depend on
 the same version of all of them.
 
-## Versioning rules
+| Change | Bump |
+| --- | --- |
+| New Polkadot SDK line (`stable2603` → `stable2606`) | **major** |
+| Breaking change: `Config`, calls, storage, events/errors, public API, features | **major** |
+| New feature, backwards compatible | minor |
+| Fix, or SDK patch release (`stable2603` → `stable2603-6`) | patch |
 
-| Change                                                                 | Bump      |
-| ---------------------------------------------------------------------- | --------- |
-| New Polkadot SDK line (`stable2603` → `stable2606`)                    | **major** |
-| Breaking API change: `Config` items, extrinsic signatures, storage layout, public traits | **major** |
-| New feature, backwards compatible                                      | minor     |
-| Fix, or SDK patch release (`stable2603` → `stable2603-6`)              | patch     |
-
-The bump comes from the **conventional commit title** that lands on `main` (PRs are
-squash-merged, and `lint-pr.yml` enforces the format):
-
-- `feat!:`, `fix!:`, `refactor!:`… (note the `!`), or a `BREAKING CHANGE:` footer →
-  major
-- `feat:` → minor
-- anything else → patch
-
-`cargo-semver-checks` also runs during the release, and it raises the bump if it finds
-a Rust API break that the title didn't declare. It **cannot** see storage-layout or
-metadata changes, so mark those `!` yourself. For example, #71 (per-device call
-filters in `fc-pallet-pass`) added `Config` items and storage and should have been
-`feat(pallet-pass)!:`.
+The bump is computed from the PR titles on `main` (`!` → major, `feat` → minor,
+anything else → patch). `cargo-semver-checks` can raise it, but it can't see storage
+or call-encoding changes. See
+[What counts as breaking](./CONTRIBUTING.md#what-counts-as-breaking-).
 
 ## Tags
 
 - `vX.Y.Z`: one per release, created by release-plz. Pin to these.
 - `polkadot-stableYYMM`: a **moving** tag that points to the latest release built on
   that SDK line. The release workflow moves it. Use it when you want "whatever
-  frame-contrib is current for `stable2603`".
+  frame-contrib is current for `stable2603`". The `polkadot-stable2509` and
+  `polkadot-stable2512` tags were added after the fact and mark what Kreivo `0.16.9`
+  and `0.17.0-pre.1` shipped.
 
-Git-based consumers (such as Kreivo, until it moves to crates.io) must pin with
-`tag = "..."`. A bare `git = "..."` dependency floats with `Cargo.lock` and has
-already caused metadata drift once.
+Consumers should use the crates.io versions. A bare `git = "..."` dependency floats
+with `Cargo.lock` and has already caused metadata drift once. If you have to use
+git, check that `Cargo.lock` points at a tagged commit. Adding `tag = "..."` in only
+one place can **duplicate crates**: Cargo treats `?tag=` as a different source from
+the bare URL, and other git dependencies (e.g. pass-authenticators) use the bare URL.
 
 ## Upgrading the Polkadot SDK
 
@@ -68,11 +64,17 @@ cargo check --workspace --all-features --all-targets
 
 1. Merge PRs into `main` as usual.
 2. [release-plz](https://release-plz.dev) keeps a `chore: release vX.Y.Z` PR open
-   with the computed version bump and the changelog. Review it, and edit the
-   changelog if you want to.
-3. Merge the release PR. The `Release` workflow publishes every crate to crates.io
-   in dependency order, pushes `vX.Y.Z` and a GitHub release, and moves
-   `polkadot-stableYYMM`.
+   with the computed version, and the workflow writes that version's
+   `CHANGELOG.md` section onto it with git-cliff.
+3. **Curate the changelog section right before merging.** Add migration notes under
+   the breaking entries, taking them from each PR's *Migration* section. Any new
+   push to `main` rebuilds the release PR and discards manual edits. If you push a
+   hand-written section, the workflow leaves it alone.
+4. Merge the release PR. The `Release` workflow:
+   - publishes every crate to crates.io in dependency order;
+   - pushes `vX.Y.Z` and creates a GitHub release whose notes are the curated
+     section;
+   - moves `polkadot-stableYYMM`.
 
 ### One-time setup (repository settings)
 

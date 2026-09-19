@@ -15,6 +15,15 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check every crate is released in lockstep
+        run: |
+          missing="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name' \
+            | while read -r name; do grep -qx "name = \"$name\"" release-plz.toml || echo "$name"; done)"
+          if [ -n "$missing" ]; then
+            echo "::error file=release-plz.toml::Missing from release-plz.toml (see CONTRIBUTING.md#adding-a-crate): $(echo $missing)"
+            exit 1
+          fi
+
   check:
     needs: lint
     runs-on: ubuntu-latest

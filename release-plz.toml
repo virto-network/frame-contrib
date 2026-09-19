@@ -1,8 +1,12 @@
 # release-plz configuration — see RELEASING.md.
 #
-# All crates are released in lockstep: they share one version (`version_group`),
-# one changelog (./CHANGELOG.md) and one `vX.Y.Z` tag, created on the
-# `frame-contrib-traits` entry below. The version is bumped from the conventional
+# All crates are released in lockstep: they share one version (`version_group`)
+# and one `vX.Y.Z` tag, created on the `frame-contrib-traits` entry below.
+#
+# release-plz does not write the changelog. Its per-package commit filtering
+# drops cross-crate changes, so ./CHANGELOG.md is written by git-cliff
+# (cliff.toml) in the release workflow, and the GitHub release is created from
+# that curated section. The version is bumped from the conventional
 # commit titles on `main`, with cargo-semver-checks as a safety net:
 #
 #   feat!: / fix!: / `BREAKING CHANGE:` footer -> major
@@ -63,13 +67,8 @@ version_group = "frame-contrib"
 [[package]]
 name = "frame-contrib-traits"
 version_group = "frame-contrib"
-changelog_update = true
-changelog_path = "./CHANGELOG.md"
-changelog_include = ["fc-mock-helpers", "fc-pallet-black-hole", "fc-pallet-communities", "fc-pallet-fees", "fc-pallet-gas-transaction-payment", "fc-pallet-listings", "fc-pallet-orders", "fc-pallet-pass", "fc-pallet-payments", "fc-pallet-referenda-tracks", "fc-traits-authn", "fc-traits-authn-proc", "fc-traits-gas-tank", "fc-traits-listings", "fc-traits-memberships", "fc-traits-nonfungibles-helpers", "fc-traits-payments"]
 git_tag_enable = true
 git_tag_name = "v{{ version }}"
-git_release_enable = true
-git_release_name = "v{{ version }}"
 
 [[package]]
 name = "fc-traits-authn"
