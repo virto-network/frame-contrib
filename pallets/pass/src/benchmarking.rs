@@ -8,7 +8,7 @@ use frame_support::{
     traits::OriginTrait,
 };
 use frame_system::RawOrigin;
-use sp_core::blake2_256;
+use sp_io::hashing::blake2_256;
 use sp_runtime::traits::{
     transaction_extension::DispatchTransaction, AsTransactionAuthorizedOrigin, DispatchInfoOf,
     Hash, TxBaseImplication,
