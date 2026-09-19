@@ -10,21 +10,14 @@ with one extra rule: every new Polkadot SDK line is a major release.
 
 ## [Unreleased]
 
-## [2.0.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.0.0)
+## [3.0.0-pre.1](https://github.com/virto-network/frame-contrib/releases/tag/v3.0.0-pre.1)
 
-This is the first versioned release and the first to be published to crates.io.
-Before it, the crates were consumed from git without tags, and their versions
-(`0.1.0` / `1.0.0`) never changed. The states that downstream runtimes shipped are
-tagged after the fact: [`polkadot-stable2509`] (Kreivo `0.16.9`) and
-[`polkadot-stable2512`] (Kreivo `0.17.0-pre.1`).
-
-The changes below are relative to [`polkadot-stable2512`].
+Prerelease of the next major version. It carries the breaking pallet changes that
+were held back from `2.0.0`. The changes below are relative to [`2.0.0`](#200). Like
+`2.0.0`, it targets polkadot-sdk `stable2606`.
 
 ### ⚠ Breaking changes
 
-- Update to polkadot-sdk `stable2603` ([#73](https://github.com/virto-network/frame-contrib/pull/73)).
-  SDK crates move from `stable2512` (`frame-support` 45) to `stable2603`
-  (`frame-support` 46).
 - *(fc-pallet-pass)* Per-device call filters ([#71](https://github.com/virto-network/frame-contrib/pull/71)).
   This change alters the pallet's metadata, so clients must regenerate their bindings.
   - **Calls:** `add_device` and `add_session_key` take a new trailing
@@ -67,8 +60,6 @@ The changes below are relative to [`polkadot-stable2512`].
   Crates that depend on `fc-traits-authn` with `default-features = false`
   (e.g. pass-authenticators) must enable `runtime` to keep `Challenger`,
   `Authenticator`, `UserAuthenticator` and the `util` module.
-- The `mock-helpers` package is renamed `fc-mock-helpers`. Keep using it under the
-  `mock-helpers` dependency key with `package = "fc-mock-helpers"`.
 
 ### Added
 
@@ -80,6 +71,20 @@ The changes below are relative to [`polkadot-stable2512`].
 
 - Lockstep versioning, automated Polkadot SDK upgrades and crates.io releases
   ([#77](https://github.com/virto-network/frame-contrib/pull/77)).
+
+## [2.0.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.0.0)
+
+Released from the [`release/v2`](https://github.com/virto-network/frame-contrib/tree/release/v2)
+branch. It is [`polkadot-stable2512`] moved to polkadot-sdk `stable2606`: pallet calls,
+storage, events, errors and `Config` are unchanged from that state.
+
+### ⚠ Breaking changes
+
+- Update to polkadot-sdk `stable2606-2`. SDK crates move from `stable2512`
+  (`frame-support` 45) to `stable2606` (`frame-support` 48).
+- The `mock-helpers` package is renamed `fc-mock-helpers`. Keep using it under the
+  `mock-helpers` dependency key with `package = "fc-mock-helpers"`.
+- All crates now share one version and are released together.
 
 [`polkadot-stable2509`]: https://github.com/virto-network/frame-contrib/tree/polkadot-stable2509
 [`polkadot-stable2512`]: https://github.com/virto-network/frame-contrib/tree/polkadot-stable2512

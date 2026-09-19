@@ -1130,7 +1130,7 @@ dependencies = [
 
 [[package]]
 name = "fc-mock-helpers"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "fc-pallet-listings",
  "frame-support",
@@ -1143,7 +1143,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-black-hole"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "pallet-balances",
  "parity-scale-codec",
@@ -1153,7 +1153,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-communities"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "fc-pallet-referenda-tracks",
  "frame-benchmarking",
@@ -1179,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-fees"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "pallet-assets",
  "pallet-balances",
@@ -1192,7 +1192,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-gas-transaction-payment"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "frame-contrib-traits",
  "pallet-balances",
@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-listings"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "fc-mock-helpers",
  "fc-traits-listings",
@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-orders"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "fc-mock-helpers",
  "fc-pallet-listings",
@@ -1249,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-pass"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "env_logger",
  "fc-traits-authn",
@@ -1271,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-payments"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "fc-traits-payments",
  "frame-benchmarking",
@@ -1294,7 +1294,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-referenda-tracks"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -1314,7 +1314,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-template"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -1330,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-authn"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "fc-traits-authn-proc",
  "frame-support",
@@ -1341,7 +1341,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-authn-proc"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "proc-macro-crate",
  "quote",
@@ -1350,7 +1350,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-gas-tank"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "fc-traits-nonfungibles-helpers",
  "frame-support",
@@ -1365,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-listings"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -1375,7 +1375,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-memberships"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -1389,11 +1389,11 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-nonfungibles-helpers"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 
 [[package]]
 name = "fc-traits-payments"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "frame-support",
  "impl-trait-for-tuples",
@@ -1500,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "frame-contrib-traits"
-version = "2.0.0"
+version = "3.0.0-pre.1"
 dependencies = [
  "fc-traits-authn",
  "fc-traits-gas-tank",
