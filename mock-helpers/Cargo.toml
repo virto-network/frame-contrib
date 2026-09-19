@@ -1,11 +1,11 @@
 [package]
-name = "mock-helpers"
+name = "fc-mock-helpers"
 description = "Some useful helpers to construct mocks"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-version = "0.1.0"
+version.workspace = true
 
 [dependencies]
 fc-pallet-listings = { workspace = true, optional = true }

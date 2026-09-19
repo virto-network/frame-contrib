@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 name = "fc-pallet-orders"
 repository.workspace = true
-version = "1.0.0"
+version.workspace = true
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -25,7 +25,7 @@ sp-runtime.workspace = true
 [dev-dependencies]
 fc-pallet-listings.workspace = true
 fc-pallet-payments.workspace = true
-mock-helpers = { workspace = true, features = ["pallet-assets", "pallet-balances", "fc-pallet-listings"] }
+mock-helpers = { package = "fc-mock-helpers", path = "../../mock-helpers", default-features = false, features = ["pallet-assets", "pallet-balances", "fc-pallet-listings"] }
 pallet-assets.workspace = true
 pallet-assets-holder.workspace = true
 pallet-balances.workspace = true
