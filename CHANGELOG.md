@@ -53,9 +53,12 @@ The changes below are relative to [`polkadot-stable2512`].
     - `remove` now takes only the track id.
     - New `remove_group`, `set_decision_deposit`, `set_periods`, `set_curves` and
       `set_max_deciding`.
-  - **Storage:** v0 → v1. Add
-    `fc_pallet_referenda_tracks::migration::MigrateV0ToV1` to the runtime's
-    migrations. Each old track `n` becomes group `n`, sub-track `0`.
+  - **Storage:** v0 → v1. Check your on-chain layout first:
+    - Runtimes on the v0 layout (`Tracks` keyed by a flat `TrackId`) should add
+      `fc_pallet_referenda_tracks::migration::MigrateV0ToV1` to their migrations.
+      Each old track `n` becomes group `n`, sub-track `0`.
+    - Runtimes whose data already matches v1 only need the storage version set
+      to `1`. Kreivo does this with `SetCommunityTracksStorageVersion`.
 - *(fc-traits-tracks)* The `fc-traits-tracks` crate and the
   `frame_contrib_traits::tracks` re-export are removed
   ([#68](https://github.com/virto-network/frame-contrib/pull/68)).
