@@ -1,0 +1,126 @@
+name: Polkadot SDK upgrade
+
+# Watches paritytech/polkadot-sdk for new `polkadot-stableYYMM[-N]` releases and
+# opens a PR that bumps every SDK crate with psvm (see RELEASING.md).
+#
+# - New `stableYYMM` -> PR titled `feat(deps)!: ...`, so it is released as a major.
+# - Patch `stableYYMM-N` of the current line -> `fix(deps): ...`, released as a patch.
+# - If `cargo check` fails, the PR is opened as a draft with the errors attached:
+#   the version bump is done, the API migration is left to a human.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Target SDK version, e.g. `stable2606` or `stable2606-2`. Defaults to the latest release."
+        required: false
+
+jobs:
+  upgrade:
+    if: github.repository_owner == 'virto-network'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target version
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          current="$(tr -d '[:space:]' < polkadot-sdk-version)"
+          target="${INPUT_VERSION#polkadot-}"
+          if [ -z "$target" ]; then
+            target="$(gh api 'repos/paritytech/polkadot-sdk/releases?per_page=100' \
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+              | grep -E '^polkadot-stable[0-9]{4}(-[0-9]+)?$' \
+              | sed 's/^polkadot-//' | sort -V | tail -n1)"
+          fi
+          if [ -z "$target" ] || [ "$target" = "$current" ] \
+            || [ "$(printf '%s\n%s\n' "$current" "$target" | sort -V | tail -n1)" = "$current" ]; then
+            echo "Already on $current (latest: ${target:-unknown}); nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${current%%-*}" = "${target%%-*}" ]; then kind="patch"; else kind="major"; fi
+          {
+            echo "skip=false"
+            echo "current=$current"
+            echo "target=$target"
+            echo "kind=$kind"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Ubuntu dependencies
+        if: steps.target.outputs.skip == 'false'
+        run: sudo apt update && sudo apt install -y protobuf-compiler
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.target.outputs.skip == 'false'
+
+      - name: Rust Cache
+        if: steps.target.outputs.skip == 'false'
+        uses: Swatinem/rust-cache@v2.7.3
+        with:
+          cache-on-failure: true
+          key: sdk-upgrade
+
+      - name: Bump SDK dependencies
+        if: steps.target.outputs.skip == 'false'
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          cargo install psvm --locked
+          psvm -v "$TARGET" -p Cargo.toml
+          echo "$TARGET" > polkadot-sdk-version
+
+      - name: Check build
+        id: check
+        if: steps.target.outputs.skip == 'false'
+        env:
+          SKIP_WASM_BUILD: 1
+        run: |
+          set +e
+          cargo check --workspace --all-features --all-targets 2> check.log
+          status=$?
+          echo "ok=$([ $status -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          {
+            echo 'errors<<EOF_ERRORS'
+            grep -E '^(error|warning: unused)' -A6 check.log | head -c 50000
+            echo 'EOF_ERRORS'
+          } >> "$GITHUB_OUTPUT"
+          rm check.log
+          exit 0
+
+      - name: Open pull request
+        if: steps.target.outputs.skip == 'false'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          # PRs opened with the default GITHUB_TOKEN don't trigger CI.
+          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          branch: deps/polkadot-sdk-${{ steps.target.outputs.target }}
+          delete-branch: true
+          draft: ${{ steps.check.outputs.ok != 'true' }}
+          labels: dependencies, polkadot-sdk
+          title: >-
+            ${{ steps.target.outputs.kind == 'major' && 'feat(deps)!' || 'fix(deps)' }}:
+            update to polkadot-sdk `${{ steps.target.outputs.target }}`
+          commit-message: |
+            ${{ steps.target.outputs.kind == 'major' && 'feat(deps)!' || 'fix(deps)' }}: update to polkadot-sdk `${{ steps.target.outputs.target }}`
+
+            ${{ steps.target.outputs.kind == 'major' && format('BREAKING CHANGE: requires a runtime built against polkadot-sdk `{0}`.', steps.target.outputs.target) || '' }}
+          body: |
+            Bumps every Polkadot SDK dependency from `${{ steps.target.outputs.current }}` to [`${{ steps.target.outputs.target }}`](https://github.com/paritytech/polkadot-sdk/releases/tag/polkadot-${{ steps.target.outputs.target }}) using [psvm](https://github.com/paritytech/psvm).
+
+            ${{ steps.target.outputs.kind == 'major' && 'This is a new SDK line, so merging it produces a **major** frame-contrib release. Keep the `!` in the title when squashing.' || 'This is a patch release of the current SDK line, so merging it produces a **patch** frame-contrib release.' }}
+
+            ${{ steps.check.outputs.ok == 'true' && '✅ `cargo check --workspace --all-features --all-targets` passes.' || format('❌ `cargo check` fails. This PR is a draft until the API changes are migrated:{0}{0}```{0}{1}{0}```', fromJSON('"\n"'), steps.check.outputs.errors) }}
+
+            Before merging:
+            - [ ] Read the [release notes](https://github.com/paritytech/polkadot-sdk/releases/tag/polkadot-${{ steps.target.outputs.target }}) for changes to traits and pallets we depend on.
+            - [ ] `cargo test --workspace --all-features` passes.
+            - [ ] Storage or `Config` changes that need a migration are marked as breaking.

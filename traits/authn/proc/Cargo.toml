@@ -1,7 +1,8 @@
 [package]
 name = "fc-traits-authn-proc"
-version = "0.1.0"
+version.workspace = true
 authors.workspace = true
+description = "Procedural macros supporting fc-traits-authn."
 edition.workspace = true
 repository.workspace = true
 license.workspace = true

@@ -1129,8 +1129,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-mock-helpers"
+version = "2.0.0"
+dependencies = [
+ "fc-pallet-listings",
+ "frame-support",
+ "frame-system",
+ "pallet-assets",
+ "pallet-balances",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "fc-pallet-black-hole"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "pallet-balances",
  "parity-scale-codec",
@@ -1140,7 +1153,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-communities"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "fc-pallet-referenda-tracks",
  "frame-benchmarking",
@@ -1166,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-fees"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "pallet-assets",
  "pallet-balances",
@@ -1179,7 +1192,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-gas-transaction-payment"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "frame-contrib-traits",
  "pallet-balances",
@@ -1191,13 +1204,13 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-listings"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
+ "fc-mock-helpers",
  "fc-traits-listings",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "mock-helpers",
  "pallet-assets",
  "pallet-balances",
  "pallet-nfts",
@@ -1211,8 +1224,9 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-orders"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
+ "fc-mock-helpers",
  "fc-pallet-listings",
  "fc-pallet-payments",
  "frame-benchmarking",
@@ -1220,7 +1234,6 @@ dependencies = [
  "frame-support",
  "frame-system",
  "log",
- "mock-helpers",
  "pallet-assets",
  "pallet-assets-holder",
  "pallet-balances",
@@ -1236,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-pass"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "env_logger",
  "fc-traits-authn",
@@ -1258,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-payments"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "fc-traits-payments",
  "frame-benchmarking",
@@ -1281,7 +1294,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-referenda-tracks"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -1301,7 +1314,7 @@ dependencies = [
 
 [[package]]
 name = "fc-pallet-template"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -1317,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-authn"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "fc-traits-authn-proc",
  "frame-support",
@@ -1328,7 +1341,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-authn-proc"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "proc-macro-crate",
  "quote",
@@ -1337,7 +1350,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-gas-tank"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "fc-traits-nonfungibles-helpers",
  "frame-support",
@@ -1352,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-listings"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -1362,7 +1375,7 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-memberships"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -1376,11 +1389,11 @@ dependencies = [
 
 [[package]]
 name = "fc-traits-nonfungibles-helpers"
-version = "0.1.0"
+version = "2.0.0"
 
 [[package]]
 name = "fc-traits-payments"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "frame-support",
  "impl-trait-for-tuples",
@@ -1487,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "frame-contrib-traits"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "fc-traits-authn",
  "fc-traits-gas-tank",
@@ -2416,19 +2429,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "mock-helpers"
-version = "0.1.0"
-dependencies = [
- "fc-pallet-listings",
- "frame-support",
- "frame-system",
- "pallet-assets",
- "pallet-balances",
- "sp-io",
- "sp-runtime",
 ]
 
 [[package]]
