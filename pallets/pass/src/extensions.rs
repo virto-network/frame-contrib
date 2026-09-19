@@ -8,7 +8,7 @@ use frame_support::{
 };
 use frame_system::{ensure_signed, pallet_prelude::RuntimeCallFor};
 use scale_info::TypeInfo;
-use sp_core::blake2_256;
+use sp_io::hashing::blake2_256;
 use sp_runtime::{
     traits::{DispatchInfoOf, DispatchOriginOf, Implication, TransactionExtension, ValidateResult},
     transaction_validity::{InvalidTransaction, TransactionSource, ValidTransaction},

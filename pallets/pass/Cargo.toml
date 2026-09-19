@@ -19,6 +19,7 @@ frame-system.workspace = true
 log.workspace = true
 scale-info.workspace = true
 sp-core.workspace = true
+sp-io.workspace = true
 sp-runtime.workspace = true
 
 [dev-dependencies]
@@ -28,7 +29,6 @@ pallet-balances.workspace = true
 pallet-scheduler.workspace = true
 pallet-transaction-payment.workspace = true
 pallet-timestamp.workspace = true
-sp-io.workspace = true
 
 [features]
 default = ["std"]
