@@ -580,7 +580,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
     #[inline]
     fn task_name_from_session_key(session_key: &T::AccountId) -> TaskName {
-        sp_core::blake2_256(&("remove_session_key", session_key).encode())
+        sp_io::hashing::blake2_256(&("remove_session_key", session_key).encode())
     }
 
     fn schedule_next_removal(

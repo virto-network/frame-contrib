@@ -16,7 +16,8 @@ use frame_support::{
 use frame_system::mocking::MockUncheckedExtrinsic;
 use frame_system::{EnsureRoot, EnsureRootWithSuccess, EnsureSigned};
 use scale_info::TypeInfo;
-use sp_core::{blake2_256, H256};
+use sp_core::H256;
+use sp_io::hashing::blake2_256;
 use sp_io::TestExternalities;
 use sp_runtime::{
     traits::{IdentifyAccount, IdentityLookup, Verify},

@@ -14,7 +14,7 @@ use frame_support::{
 use sp_core::Hasher;
 use sp_runtime::{
     generic::ExtrinsicFormat,
-    traits::{Applyable, Convert},
+    traits::{Applyable, Convert, ExtensionVariant},
     ApplyExtrinsicResultWithInfo, DispatchError, TokenError,
 };
 
@@ -708,7 +708,8 @@ mod add_device {
 
 mod add_session_key {
     use super::*;
-    use sp_core::{blake2_256, H256};
+    use sp_core::H256;
+    use sp_io::hashing::blake2_256;
 
     #[test]
     fn fails_if_bad_origin() {
@@ -869,7 +870,7 @@ mod dispatch {
     use super::*;
     use crate::SessionKeys;
     use frame_support::dispatch::GetDispatchInfo;
-    use sp_core::blake2_256;
+    use sp_io::hashing::blake2_256;
     use sp_runtime::transaction_validity::InvalidTransaction;
 
     parameter_types! {
@@ -893,7 +894,7 @@ mod dispatch {
         );
 
         let xt = CheckedExtrinsic {
-            format: ExtrinsicFormat::General(0, extensions),
+            format: ExtrinsicFormat::General(ExtensionVariant::V0(extensions)),
             function: call.clone(),
         };
 
