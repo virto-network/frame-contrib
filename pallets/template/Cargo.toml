@@ -6,7 +6,8 @@ license.workspace = true
 name = "fc-pallet-template"
 repository.workspace = true
 readme = "README.md"
-version = "1.0.0"
+version.workspace = true
+publish = false
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

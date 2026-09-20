@@ -1,7 +1,8 @@
 [package]
 authors.workspace = true
+description = "Helper traits and utilities for working with non-fungible items in FRAME."
 edition.workspace = true
 license.workspace = true
 name = "fc-traits-nonfungibles-helpers"
 repository.workspace = true
-version = "0.1.0"
+version.workspace = true

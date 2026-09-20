@@ -1,0 +1,156 @@
+name: Release
+
+# Lockstep releases driven by release-plz (see RELEASING.md and release-plz.toml).
+#
+# - `release-pr` keeps a "chore: release vX.Y.Z" PR open with the next version,
+#   then writes that version's CHANGELOG.md section onto it with git-cliff
+#   (cliff.toml). Merging the PR is how a release is cut.
+# - `release` runs after that PR lands. It publishes every crate to crates.io,
+#   pushes the `vX.Y.Z` tag, creates the GitHub release from the CHANGELOG.md
+#   section, and moves the `polkadot-stableYYMM` tag to the released commit.
+#
+# Required setup:
+# - secret `CARGO_REGISTRY_TOKEN`: crates.io token with publish-new and publish-update scopes.
+# - variable `CRATES_IO_PUBLISH=true`: enables the `release` job. Until it is set,
+#   only the release PR is maintained.
+# - (recommended) secret `RELEASE_PLZ_TOKEN`: a PAT or GitHub App token. PRs opened
+#   and commits pushed with the default GITHUB_TOKEN don't trigger CI, so the
+#   release PR would never get its checks.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    name: Publish release
+    if: github.repository_owner == 'virto-network' && vars.CRATES_IO_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Ubuntu dependencies
+        run: sudo apt update && sudo apt install -y protobuf-compiler
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz
+        id: release
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Create GitHub release
+        if: steps.release.outputs.releases_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          RELEASES: ${{ steps.release.outputs.releases }}
+        run: |
+          version="$(jq -r '.[0].version' <<< "$RELEASES")"
+          # The body of `## [X.Y.Z]` up to the next `## [` heading, as curated in the release PR.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on && !/^\[[^]]+\]: https?:\/\// { print }
+          ' CHANGELOG.md > release-notes.md
+          # Keep the reference-style links used by the section.
+          grep -E '^\[[^]]+\]: https?://' CHANGELOG.md >> release-notes.md || true
+          gh release create "v$version" --title "v$version" --notes-file release-notes.md --verify-tag
+
+      - name: Move Polkadot SDK tag
+        if: steps.release.outputs.releases_created == 'true'
+        run: |
+          sdk="$(tr -d '[:space:]' < polkadot-sdk-version)"
+          tag="polkadot-${sdk%%-*}"
+          git tag -f "$tag"
+          git push -f origin "refs/tags/$tag"
+          echo "Moved \`$tag\` to $(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+  release-pr:
+    name: Update release PR
+    if: github.repository_owner == 'virto-network'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Ubuntu dependencies
+        run: sudo apt update && sudo apt install -y protobuf-compiler
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz
+        id: release-pr
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Write changelog section
+        env:
+          PR: ${{ steps.release-pr.outputs.pr }}
+        run: |
+          pr="${PR:-}"
+          [ -n "$pr" ] || pr='{}'
+          branch="$(jq -r '.head_branch // empty' <<< "$pr")"
+          version="$(jq -r '.releases[0].version // empty' <<< "$pr")"
+          if [ -z "$branch" ] || [ -z "$version" ]; then
+            echo "No release PR open; nothing to do."
+            exit 0
+          fi
+
+          git fetch origin "$branch"
+          git switch "$branch"
+
+          # A section already on the branch that the bot didn't write was curated
+          # by a maintainer (e.g. the hand-written first release): keep it.
+          if grep -q "^## \[$version\]" CHANGELOG.md \
+            && [ "$(git log -1 --format=%an -- CHANGELOG.md)" != "github-actions[bot]" ]; then
+            echo "CHANGELOG.md already has a curated $version section; leaving it."
+            exit 0
+          fi
+
+          # Drop any stale bot-written section for this version, then insert the
+          # regenerated one right after `## [Unreleased]`.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { skip = 1; next }
+            skip && /^## \[/ { skip = 0 }
+            !skip { print }
+          ' CHANGELOG.md > CHANGELOG.tmp
+          git cliff --unreleased --tag "v$version" --strip all > section.md
+          awk '
+            { print }
+            /^## \[Unreleased\]/ && !done { print ""; while ((getline line < "section.md") > 0) print line; done = 1 }
+          ' CHANGELOG.tmp > CHANGELOG.md
+          rm CHANGELOG.tmp section.md
+
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "Changelog already up to date."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "docs(changelog): v$version" -- CHANGELOG.md
+          git push origin "$branch"

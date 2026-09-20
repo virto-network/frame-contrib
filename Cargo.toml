@@ -1,4 +1,5 @@
 [workspace.package]
+version = "3.0.0-pre.1"
 authors = ["Virto team <contact@virto.team>"]
 edition = "2021"
 license = "GPL-3.0-only"
@@ -19,19 +20,18 @@ quote = { version = "1.0.40" }
 proc-macro-crate = { version = "3.3.0" }
 
 # FRAME Contrib
-frame-contrib-traits = { path = "./traits", default-features = false }
-fc-traits-authn = { path = "./traits/authn", default-features = false }
-fc-traits-authn-proc = { path = "./traits/authn/proc", default-features = false }
-fc-traits-gas-tank = { path = "./traits/gas-tank", default-features = false }
-fc-traits-listings = { path = "./traits/listings", default-features = false }
-fc-traits-memberships = { path = "./traits/memberships", default-features = false }
-fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", default-features = false }
-fc-traits-payments = { path = "./traits/payments", default-features = false }
-fc-pallet-listings = { path = "./pallets/listings", default-features = false }
-fc-pallet-payments = { path = "./pallets/payments", default-features = false }
-fc-pallet-fees = { path = "./pallets/fees", default-features = false }
-fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", default-features = false }
-mock-helpers = { path = "./mock-helpers", default-features = false }
+frame-contrib-traits = { path = "./traits", version = "3.0.0-pre.1", default-features = false }
+fc-traits-authn = { path = "./traits/authn", version = "3.0.0-pre.1", default-features = false }
+fc-traits-authn-proc = { path = "./traits/authn/proc", version = "3.0.0-pre.1", default-features = false }
+fc-traits-gas-tank = { path = "./traits/gas-tank", version = "3.0.0-pre.1", default-features = false }
+fc-traits-listings = { path = "./traits/listings", version = "3.0.0-pre.1", default-features = false }
+fc-traits-memberships = { path = "./traits/memberships", version = "3.0.0-pre.1", default-features = false }
+fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", version = "3.0.0-pre.1", default-features = false }
+fc-traits-payments = { path = "./traits/payments", version = "3.0.0-pre.1", default-features = false }
+fc-pallet-listings = { path = "./pallets/listings", version = "3.0.0-pre.1", default-features = false }
+fc-pallet-payments = { path = "./pallets/payments", version = "3.0.0-pre.1", default-features = false }
+fc-pallet-fees = { path = "./pallets/fees", version = "3.0.0-pre.1", default-features = false }
+fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", version = "3.0.0-pre.1", default-features = false }
 
 # Polkadot SDK
 frame = { version = "0.15.0", package = "polkadot-sdk-frame", default-features = false, features = ["runtime"] }

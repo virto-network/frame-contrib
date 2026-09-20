@@ -1,10 +1,11 @@
 [package]
 authors.workspace = true
+description = "Traits for gas tanks: prepaid transaction fee allowances in FRAME runtimes."
 edition.workspace = true
 license.workspace = true
 name = "fc-traits-gas-tank"
 repository.workspace = true
-version = "0.1.0"
+version.workspace = true
 
 [dependencies]
 codec.workspace = true
