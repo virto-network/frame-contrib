@@ -150,7 +150,10 @@ where
     }
 
     fn drop(self, who: &AccountId) -> Result<(), DispatchError> {
-        FirstItemIsFree::<C>(self.0).drop(who)
+        match self.0 {
+            Some(c) => c.drop(who),
+            None => Ok(()),
+        }
     }
 
     #[cfg(feature = "runtime-benchmarks")]

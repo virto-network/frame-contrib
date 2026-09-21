@@ -9,6 +9,15 @@ with one extra rule: every new Polkadot SDK line is a major release.
 
 ## [Unreleased]
 
+## [2.1.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.1.0)
+
+### Added
+
+- *(fc-pallet-pass)* `FirstItemsAreFree<N, C>`: a consideration where the first `N` items are
+  free. It is stored as `Option<C>` for every `N`, the same encoding as `FirstItemIsFree`, so
+  switching a runtime to `N = 2` needs no storage migration. `FirstItemIsFree<C>` is now an
+  alias for `FirstItemsAreFree<ConstU32<1>, C>` and behaves exactly as before.
+
 ## [2.0.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.0.0)
 
 This is the first versioned release and the first to be published to crates.io.
