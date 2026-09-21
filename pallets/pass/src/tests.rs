@@ -1474,3 +1474,149 @@ mod device_filters {
         })
     }
 }
+
+mod extension_weights {
+    use super::*;
+    use crate::{AuthenticatedDevice, WeightInfo};
+    use frame_support::{
+        dispatch::{DispatchInfo, GetDispatchInfo},
+        weights::Weight,
+    };
+    use sp_runtime::{
+        traits::{DispatchTransaction, TransactionExtension, TxBaseImplication},
+        transaction_validity::TransactionSource,
+    };
+
+    type Weights = <Test as crate::Config>::WeightInfo;
+
+    parameter_types! {
+        pub Call: RuntimeCall = RuntimeCall::System(frame_system::Call::remark {
+            remark: b"Hello, world".to_vec()
+        });
+    }
+
+    fn credential() -> PassCredential {
+        PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+            user_id: AccountNameA::get(),
+            challenge: authenticator_a::Authenticator::generate(&(), &[]),
+        })
+    }
+
+    fn info_for(ext: &PassAuthenticate<Test>) -> DispatchInfo {
+        let mut info = Call::get().get_dispatch_info();
+        info.extension_weight = ext.weight(&Call::get());
+        info
+    }
+
+    /// Runs `ext` through `validate`, `prepare` and `post_dispatch` (the call
+    /// itself is not dispatched), and returns the resulting actual weight.
+    fn actual_weight(ext: PassAuthenticate<Test>, origin: RuntimeOrigin) -> (Weight, Weight) {
+        let info = info_for(&ext);
+        let post_info = ext
+            .test_run(origin, &Call::get(), &info, 0, 0, |_| Ok(().into()))
+            .expect("valid transaction")
+            .expect("successful dispatch");
+        (
+            info.total_weight(),
+            post_info.actual_weight.expect("set by the extension"),
+        )
+    }
+
+    #[test]
+    fn weight_depends_on_whether_a_credential_is_given() {
+        new_test_ext().execute_with(|| {
+            let none = PassAuthenticate::<Test>::default().weight(&Call::get());
+            let some =
+                PassAuthenticate::<Test>::from(THE_DEVICE, credential()).weight(&Call::get());
+
+            assert_eq!(none, Weights::authenticate_none());
+            assert_eq!(some, Weights::authenticate());
+            assert!(none.all_lt(some));
+        })
+    }
+
+    #[test]
+    fn signed_without_credential_charges_authenticate_none_without_refund() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            let (charged, actual) =
+                actual_weight(PassAuthenticate::default(), RuntimeOrigin::signed(CHARLIE));
+            assert_eq!(
+                charged,
+                Call::get()
+                    .get_dispatch_info()
+                    .call_weight
+                    .saturating_add(Weights::authenticate_none())
+            );
+            assert_eq!(actual, charged);
+        })
+    }
+
+    #[test]
+    fn unsigned_without_credential_refunds_the_session_key_lookup() {
+        // An unsigned origin that reaches `PassAuthenticate` without a
+        // credential never looks up `SessionKeys`. Such a transaction is only
+        // valid if a later extension authorizes it, so the extension is driven
+        // step by step here, rather than through `test_run`.
+        prepare(AccountNameA::get()).execute_with(|| {
+            let ext = PassAuthenticate::<Test>::default();
+            let info = info_for(&ext);
+            let (_, val, origin) = ext
+                .validate(
+                    RuntimeOrigin::none(),
+                    &Call::get(),
+                    &info,
+                    0,
+                    (),
+                    &TxBaseImplication(()),
+                    TransactionSource::External,
+                )
+                .expect("origin is passed through");
+            let pre = ext
+                .prepare(val, &origin, &Call::get(), &info, 0)
+                .expect("prepare is infallible");
+
+            let mut post_info = PostDispatchInfo {
+                actual_weight: Some(info.total_weight()),
+                ..Default::default()
+            };
+            assert_ok!(PassAuthenticate::<Test>::post_dispatch(
+                pre,
+                &info,
+                &mut post_info,
+                0,
+                &Ok(())
+            ));
+
+            let refund = Weight::from_parts(
+                <Test as frame_system::Config>::DbWeight::get()
+                    .reads(1)
+                    .ref_time(),
+                Weights::authenticate_none().proof_size(),
+            );
+            assert!(refund.any_gt(Weight::zero()));
+            assert_eq!(
+                post_info.actual_weight,
+                Some(info.total_weight().saturating_sub(refund))
+            );
+        })
+    }
+
+    #[test]
+    fn with_credential_charges_authenticate_and_clears_the_context() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            let (charged, actual) = actual_weight(
+                PassAuthenticate::from(THE_DEVICE, credential()),
+                RuntimeOrigin::none(),
+            );
+            assert_eq!(
+                charged,
+                Call::get()
+                    .get_dispatch_info()
+                    .call_weight
+                    .saturating_add(Weights::authenticate())
+            );
+            assert_eq!(actual, charged);
+            assert_eq!(AuthenticatedDevice::<Test>::get(), None);
+        })
+    }
+}
