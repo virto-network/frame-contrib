@@ -3,7 +3,7 @@ use crate::{
     WeightInfo,
 };
 use codec::{Decode, DecodeWithMemTracking, Encode};
-use fc_traits_authn::DeviceId;
+use fc_traits_authn::{DeviceId, UserChallengeResponse};
 use frame_support::{
     dispatch::RawOrigin,
     pallet_prelude::{DispatchResult, TransactionValidityError, Weight},
@@ -82,14 +82,17 @@ where
 
     /// Charges only for the branch this extension will actually take:
     ///
-    /// - with a credential, the pallet's own authentication overhead;
+    /// - with a credential, the pallet's own authentication overhead, plus the
+    ///   cost of verifying that specific credential, as reported by its
+    ///   authenticator;
     /// - without one, the (much cheaper) session key lookup.
     ///
     /// Whatever `validate` ends up not spending is refunded in
     /// [`post_dispatch_details`][Self::post_dispatch_details].
     fn weight(&self, _call: &RuntimeCallFor<T>) -> Weight {
         match &self.0 {
-            Some(_) => T::WeightInfo::authenticate(),
+            Some(params) => T::WeightInfo::authenticate()
+                .saturating_add(params.credential.verification_weight()),
             None => T::WeightInfo::authenticate_none(),
         }
     }

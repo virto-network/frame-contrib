@@ -179,6 +179,28 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
         }
     });
 
+    let match_attestation_weight = authenticators.clone().into_iter().map(|(id, path)| {
+        quote! {
+            #device_attestation::#id(attestation) => <
+                <#path as Authenticator>::DeviceAttestation as DeviceChallengeResponse<
+                    <<#path as Authenticator>::Challenger as Challenger>::Context
+                >
+            >::verification_weight(attestation)
+        }
+    });
+
+    let match_credential_weight = authenticators.clone().into_iter().map(|(id, path)| {
+        quote! {
+            #credential::#id(credential) => <
+                <<#path as Authenticator>::Device as UserAuthenticator>::Credential
+                    as UserChallengeResponse<
+                        <<<#path as Authenticator>::Device as UserAuthenticator>::Challenger
+                            as Challenger>::Context
+                    >
+            >::verification_weight(credential)
+        }
+    });
+
     let match_user_id = authenticators.clone().into_iter().map(|(id, _)| {
         quote! {
             #credential::#id(credential) => credential.user_id()
@@ -266,6 +288,12 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
                     #(#match_device_id_from_attestation),*
                 }
             }
+
+            fn verification_weight(&self) -> Weight {
+                match self {
+                    #(#match_attestation_weight),*
+                }
+            }
         }
 
 
@@ -328,6 +356,12 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             fn user_id(&self) -> HashedUserId {
                 match self {
                     #(#match_user_id),*
+                }
+            }
+
+            fn verification_weight(&self) -> Weight {
+                match self {
+                    #(#match_credential_weight),*
                 }
             }
         }

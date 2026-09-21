@@ -290,6 +290,9 @@ pub mod pallet {
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
         /// Registers an account. Takes a deposit to provision the account.
         #[pallet::call_index(0)]
+        #[pallet::weight(
+            T::WeightInfo::register().saturating_add(attestation.verification_weight())
+        )]
         pub fn register(
             origin: OriginFor<T>,
             user: HashedUserId,
@@ -315,6 +318,9 @@ pub mod pallet {
         /// The caller's device is determined by `AuthenticatedDevice` storage,
         /// which is set by the `PassAuthenticate` transaction extension.
         #[pallet::call_index(1)]
+        #[pallet::weight(
+            T::WeightInfo::add_device().saturating_add(attestation.verification_weight())
+        )]
         pub fn add_device(
             origin: OriginFor<T>,
             attestation: DeviceAttestationOf<T, I>,
