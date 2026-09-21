@@ -1,9 +1,8 @@
 use super::*;
-use crate::{DeviceOf, Pallet};
+use crate::{DeviceOf, Pallet, SessionKeys};
 
 use frame_benchmarking::v2::*;
 use frame_support::{
-    assert_ok,
     dispatch::{DispatchInfo, GetDispatchInfo},
     traits::OriginTrait,
 };
@@ -11,7 +10,7 @@ use frame_system::RawOrigin;
 use sp_io::hashing::blake2_256;
 use sp_runtime::traits::{
     transaction_extension::DispatchTransaction, AsTransactionAuthorizedOrigin, DispatchInfoOf,
-    Hash, TxBaseImplication,
+    Hash, PostDispatchInfoOf, TxBaseImplication,
 };
 
 fn assert_has_event<T: Config<I>, I: 'static>(generic_event: T::RuntimeEvent) {
@@ -51,6 +50,15 @@ fn setup_signers<T: frame_system::Config>() -> (T::AccountId, T::AccountId) {
     (account("signer", 0, 0), account("signer", 1, 0))
 }
 
+/// The call dispatched in the `PassAuthenticate` benchmarks. The dispatch
+/// itself is substituted, so only its encoding is relevant.
+fn benchmark_call<T: frame_system::Config>() -> RuntimeCallFor<T> {
+    frame_system::Call::remark {
+        remark: b"Hello, world".to_vec(),
+    }
+    .into()
+}
+
 fn hash<T: frame_system::Config>(b: &[u8]) -> HashedUserId
 where
     T::Hash: Into<HashedUserId>,
@@ -62,6 +70,7 @@ where
 where
     T::Hash: Into<HashedUserId>,
     DispatchInfoOf<RuntimeCallFor<T>>: From<DispatchInfo>,
+    PostDispatchInfoOf<RuntimeCallFor<T>>: From<()>,
     OriginFor<T>: From<frame_system::Origin<T>> + AsTransactionAuthorizedOrigin,
 )]
 mod benchmarks {
@@ -98,16 +107,15 @@ mod benchmarks {
         Ok(())
     }
 
+    /// `PassAuthenticate` with a credential: the whole extension pipeline
+    /// (`validate`, `prepare` and `post_dispatch`).
     #[benchmark]
     pub fn authenticate() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
         let device_id = do_register::<T, I>(user_id)?;
 
-        let call: RuntimeCallFor<T> = frame_system::Call::remark {
-            remark: b"Hello, world".to_vec(),
-        }
-        .into();
+        let call = benchmark_call::<T>();
         let ext = PassAuthenticate::<T, I>::from(
             device_id,
             T::BenchmarkHelper::credential(
@@ -116,19 +124,53 @@ mod benchmarks {
                 &TxBaseImplication((0u8, call.clone())).using_encoded(blake2_256),
             ),
         );
+        let info = call.get_dispatch_info();
+        let len = call.encoded_size();
 
         #[block]
         {
-            assert_ok!(ext
-                .validate_only(
-                    RawOrigin::None.into(),
+            assert!(matches!(
+                ext.test_run(RawOrigin::None.into(), &call, &info.into(), len, 0, |_| Ok(
+                    ().into()
+                )),
+                Ok(Ok(_))
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// `PassAuthenticate` without a credential, signed by a session key: the
+    /// most expensive branch the extension takes when not authenticating (a
+    /// `SessionKeys` hit).
+    #[benchmark]
+    pub fn authenticate_none() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        do_register::<T, I>(user_id)?;
+        let address = Pallet::<T, I>::address_for(user_id);
+
+        let call = benchmark_call::<T>();
+        let session_key: T::AccountId = account("session-key", 0, 0);
+        SessionKeys::<T, I>::insert(&session_key, (address, T::MaxSessionDuration::get()));
+
+        let ext = PassAuthenticate::<T, I>::default();
+        let info = call.get_dispatch_info();
+        let len = call.encoded_size();
+
+        #[block]
+        {
+            assert!(matches!(
+                ext.test_run(
+                    RawOrigin::Signed(session_key).into(),
                     &call,
-                    &call.get_dispatch_info().into(),
-                    call.encoded_size(),
-                    TransactionSource::External,
-                    0
-                )
-                .map(|_| ()));
+                    &info.into(),
+                    len,
+                    0,
+                    |_| Ok(().into())
+                ),
+                Ok(Ok(_))
+            ));
         }
 
         Ok(())
