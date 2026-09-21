@@ -1480,6 +1480,7 @@ mod extension_weights {
     use crate::{AuthenticatedDevice, WeightInfo};
     use frame_support::{
         dispatch::{DispatchInfo, GetDispatchInfo},
+        traits::OnInitialize,
         weights::Weight,
     };
     use sp_runtime::{
@@ -1621,6 +1622,104 @@ mod extension_weights {
             );
             assert_eq!(actual, charged);
             assert_eq!(AuthenticatedDevice::<Test>::get(), None);
+        })
+    }
+
+    #[test]
+    fn without_credential_does_not_touch_the_authenticated_device() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            // Any value there is left alone: the path without a credential
+            // performs no writes.
+            AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
+            actual_weight(PassAuthenticate::default(), RuntimeOrigin::signed(CHARLIE));
+            assert_eq!(
+                AuthenticatedDevice::<Test>::get(),
+                Some((Address::get(), THE_DEVICE))
+            );
+        })
+    }
+
+    #[test]
+    fn on_initialize_clears_a_leaked_authenticated_device() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
+
+            let weight = Pass::on_initialize(System::block_number() + 1);
+
+            assert_eq!(AuthenticatedDevice::<Test>::get(), None);
+            assert_eq!(
+                weight,
+                <Test as frame_system::Config>::DbWeight::get().writes(1)
+            );
+        })
+    }
+
+    #[test]
+    fn a_leaked_context_cannot_be_used_by_a_session_key_in_a_later_block() {
+        // Transactions without a credential don't clear `AuthenticatedDevice`.
+        // Should a value ever leak past its transaction, a later transaction
+        // from a session key of the same account would pass the account check
+        // in `check_no_escalation`, and could add an `Admin` device. The
+        // per-block clear in `on_initialize` is what stops that.
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_ok!(Balances::mint_into(&Address::get(), Balance::MAX / 2));
+
+            // A session key allowed to call anything in `pallet-pass`.
+            AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
+            assert_ok!(Pass::add_session_key(
+                RuntimeOrigin::signed(Address::get()),
+                OTHER,
+                None,
+                DeviceFilter::Pallets(
+                    [11u8]
+                        .into_iter()
+                        .collect::<alloc::collections::BTreeSet<_>>()
+                        .try_into()
+                        .unwrap()
+                ),
+            ));
+            // ...and the admin device's context left behind.
+            assert_eq!(
+                AuthenticatedDevice::<Test>::get(),
+                Some((Address::get(), THE_DEVICE))
+            );
+
+            let n = System::block_number() + 1;
+            System::set_block_number(n);
+            Pass::on_initialize(n);
+
+            let call: RuntimeCall = crate::Call::<Test>::add_device {
+                attestation: PassDeviceAttestation::AuthenticatorAAuthenticator(
+                    authenticator_a::DeviceAttestation {
+                        device_id: OTHER_DEVICE,
+                        challenge: authenticator_a::Authenticator::generate(&(), &[]),
+                    },
+                ),
+                filter: DeviceFilter::Admin,
+            }
+            .into();
+            let xt = CheckedExtrinsic {
+                format: ExtrinsicFormat::Signed(
+                    OTHER,
+                    (
+                        PassAuthenticate::<Test>::default(),
+                        pallet_transaction_payment::ChargeTransactionPayment::from(0),
+                    ),
+                ),
+                function: call.clone(),
+            };
+            let result = xt
+                .apply::<Test>(&call.get_dispatch_info(), call.encoded_size())
+                .expect("the session key's filter allows the call");
+
+            assert_eq!(
+                result.map_err(|e| e.error),
+                Err(Error::<Test>::NotAuthenticatedByDevice.into())
+            );
+            assert!(!crate::Devices::<Test>::contains_key(
+                Address::get(),
+                OTHER_DEVICE
+            ));
         })
     }
 }

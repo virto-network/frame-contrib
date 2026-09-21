@@ -166,13 +166,14 @@ where
         _info: &DispatchInfoOf<RuntimeCallFor<T>>,
         _len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
-        // Defense-in-depth: clear any stale authentication context from a
-        // previous transaction whose `post_dispatch_details` may have failed
-        // to run (e.g. due to a node panic mid-dispatch).
-        AuthenticatedDevice::<T, I>::kill();
-
         // Store the authenticated (account, device_id) so extrinsics can
-        // read it for no-escalation checks.
+        // read it for no-escalation checks. `put` overwrites whatever might be
+        // there, so no prior `kill` is needed.
+        //
+        // Transactions without a device credential do not touch this storage
+        // at all: they are the vast majority, and a write on each of them
+        // would cost more than the rest of this extension. A stale value can't
+        // outlive the block that left it, since `on_initialize` clears it.
         if let (Some(ref auth), _) = val {
             AuthenticatedDevice::<T, I>::put(auth);
         }

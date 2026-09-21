@@ -18,8 +18,7 @@ pub trait WeightInfo {
 	fn authenticate() -> Weight;
 	/// Weight of `PassAuthenticate` when it carries no credential (the path taken by every
 	/// extrinsic that does not authenticate with a Pass device): at most one `SessionKeys`
-	/// lookup, plus the session key's call filter check, and clearing the transient
-	/// `AuthenticatedDevice` context.
+	/// lookup, plus the session key's call filter check.
 	fn authenticate_none() -> Weight;
 	/// Does not include verifying the attestation, which the authenticator reports separately.
 	fn add_device() -> Weight;
@@ -57,21 +56,19 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// conservative estimates; DB accesses are counted from the code path:
 	/// Storage: `Pass::Devices` (r:2 w:1)
 	/// Storage: `Pass::DeviceFilters` (r:1 w:0)
-	/// Storage: `Pass::AuthenticatedDevice` (r:0 w:3)
+	/// Storage: `Pass::AuthenticatedDevice` (r:0 w:2)
 	fn authenticate() -> Weight {
 		Weight::from_parts(20_000_000, 10_000)
 			.saturating_add(T::DbWeight::get().reads(3_u64))
-			.saturating_add(T::DbWeight::get().writes(4_u64))
+			.saturating_add(T::DbWeight::get().writes(3_u64))
 	}
 
 	/// PLACEHOLDER: not produced by a benchmark run. Execution time and proof size are
 	/// conservative estimates; DB accesses are counted from the code path:
 	/// Storage: `Pass::SessionKeys` (r:1 w:0)
-	/// Storage: `Pass::AuthenticatedDevice` (r:0 w:1)
 	fn authenticate_none() -> Weight {
 		Weight::from_parts(10_000_000, 4_000)
 			.saturating_add(T::DbWeight::get().reads(1_u64))
-			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 
 	/// PLACEHOLDER: not produced by a benchmark run. Execution time and proof size are
@@ -158,14 +155,13 @@ impl WeightInfo for () {
 	fn authenticate() -> Weight {
 		Weight::from_parts(20_000_000, 10_000)
 			.saturating_add(RocksDbWeight::get().reads(3_u64))
-			.saturating_add(RocksDbWeight::get().writes(4_u64))
+			.saturating_add(RocksDbWeight::get().writes(3_u64))
 	}
 
 	/// PLACEHOLDER: mirrors [`SubstrateWeight::authenticate_none`] with `RocksDbWeight`.
 	fn authenticate_none() -> Weight {
 		Weight::from_parts(10_000_000, 4_000)
 			.saturating_add(RocksDbWeight::get().reads(1_u64))
-			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 
 	/// The range of component `l` is `[1, 1048576]`.
