@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{FullCodec, MaxEncodedLen};
-use frame_support::{traits::Get, Parameter};
+use frame_support::{traits::Get, weights::Weight, Parameter};
 use scale_info::TypeInfo;
 
 pub mod util;
@@ -17,7 +17,7 @@ pub mod prelude {
     };
     pub use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
     pub use frame_support::{
-        pallet_prelude::TypeInfo, traits::Get, DebugNoBound, EqNoBound, Parameter,
+        pallet_prelude::TypeInfo, traits::Get, weights::Weight, DebugNoBound, EqNoBound, Parameter,
     };
 }
 
@@ -150,6 +150,18 @@ pub trait DeviceChallengeResponse<Cx>: Parameter {
     fn used_challenge(&self) -> (Cx, Challenge);
     fn authority(&self) -> AuthorityId;
     fn device_id(&self) -> &DeviceId;
+
+    /// The weight of verifying this attestation (see [`Authenticator::verify_device`]), on top
+    /// of what the pallet that consumes it already accounts for.
+    ///
+    /// Consumers (e.g. `pallet-pass`) can't know what verifying an attestation costs, since it
+    /// depends on the authenticator: decoding and parsing its fields, checking its signature,
+    /// etc. Authenticators whose verification is not negligible, or whose cost grows with the
+    /// size of the attestation (e.g. `base + per_byte * client_data.len()`), must return a
+    /// benchmarked upper bound for `self` here. Defaults to zero.
+    fn verification_weight(&self) -> Weight {
+        Weight::zero()
+    }
 }
 
 /// A response to a challenge for identifying a user
@@ -158,4 +170,16 @@ pub trait UserChallengeResponse<Cx>: Parameter {
     fn used_challenge(&self) -> (Cx, Challenge);
     fn authority(&self) -> AuthorityId;
     fn user_id(&self) -> HashedUserId;
+
+    /// The weight of verifying this credential (see [`UserAuthenticator::verify_user`]), on top
+    /// of what the pallet that consumes it already accounts for.
+    ///
+    /// Consumers (e.g. `pallet-pass`) can't know what verifying a credential costs, since it
+    /// depends on the authenticator: decoding and parsing its fields, checking its signature,
+    /// etc. Authenticators whose verification is not negligible, or whose cost grows with the
+    /// size of the credential (e.g. `base + per_byte * client_data.len()`), must return a
+    /// benchmarked upper bound for `self` here. Defaults to zero.
+    fn verification_weight(&self) -> Weight {
+        Weight::zero()
+    }
 }

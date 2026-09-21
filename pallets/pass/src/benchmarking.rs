@@ -249,6 +249,15 @@ mod benchmarks {
             Footprint::from_parts(2, T::AccountId::max_encoded_len()),
         );
 
+        // Worst case: the key is already in use by this account, so the
+        // existing session (and its scheduled removal) is torn down before the
+        // new one is created and scheduled.
+        Pallet::<T, I>::add_session_key(
+            RawOrigin::Signed(address.clone()).into(),
+            T::Lookup::unlookup(new_session_key.clone()),
+            None,
+        )?;
+
         #[extrinsic_call]
         _(
             RawOrigin::Signed(address.clone()),
@@ -257,6 +266,12 @@ mod benchmarks {
         );
 
         // Verification code
+        assert_has_event::<T, I>(
+            Event::SessionRemoved {
+                session_key: new_session_key.clone(),
+            }
+            .into(),
+        );
         assert_has_event::<T, I>(
             Event::SessionCreated {
                 session_key_hash: T::Hashing::hash(&new_session_key.encode()),
