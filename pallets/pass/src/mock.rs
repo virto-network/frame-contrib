@@ -121,9 +121,11 @@ parameter_types! {
 }
 
 composite_authenticators! {
+    // `AuthenticatorB` goes first: benchmarks use the first authenticator's helper, and it
+    // actually checks credentials (signature and nonce).
     pub Pass<AuthorityFromPalletId<PassPalletId>> {
-        authenticator_a::Authenticator,
         AuthenticatorB::<LastThreeBlocksChallenger>,
+        authenticator_a::Authenticator,
     };
 }
 
@@ -192,61 +194,6 @@ impl Config for Test {
     type MaxDevicesPerAccount = ConstU32<2>;
     type MaxSessionsPerAccount = ConstU32<2>;
     type MaxSessionDuration = ConstU64<10>;
-    #[cfg(feature = "runtime-benchmarks")]
-    type BenchmarkHelper = benchmarks::BenchmarkHelper;
-}
-
-#[cfg(feature = "runtime-benchmarks")]
-mod benchmarks {
-    use super::*;
-    use core::cell::Cell;
-    use pallet_pass::{CredentialOf, DeviceAttestationOf};
-    use sp_core::U256;
-    use sp_runtime::traits::TrailingZeroInput;
-
-    thread_local! {
-        pub static LAST_ID: Cell<U256>  = const { Cell::new(U256::zero()) };
-    }
-
-    pub struct BenchmarkHelper;
-
-    impl BenchmarkHelper {
-        fn next_device() -> DeviceId {
-            LAST_ID.with(|id| {
-                let device_id: DeviceId =
-                    Decode::decode(&mut TrailingZeroInput::new(&id.get().encode()))
-                        .expect("infinite size, decodes to expected byte array; qed");
-                id.set(id.get().saturating_add(U256::one()));
-                device_id
-            })
-        }
-    }
-
-    impl pallet_pass::BenchmarkHelper<Test> for BenchmarkHelper {
-        fn device_attestation(xtc: &impl ExtrinsicContext) -> DeviceAttestationOf<Test, ()> {
-            PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
-                device_id: Self::next_device(),
-                context: System::block_number(),
-                challenge: LastThreeBlocksChallenger::generate(&System::block_number(), xtc),
-            })
-        }
-
-        fn credential(
-            user_id: HashedUserId,
-            device_id: DeviceId,
-            xtc: &impl ExtrinsicContext,
-        ) -> CredentialOf<Test, ()> {
-            PassCredential::AuthenticatorB(
-                authenticator_b::Credential::new(
-                    user_id,
-                    System::block_number(),
-                    0,
-                    LastThreeBlocksChallenger::generate(&System::block_number(), xtc),
-                )
-                .sign(&device_id),
-            )
-        }
-    }
 }
 
 pub fn new_test_ext() -> TestExternalities {

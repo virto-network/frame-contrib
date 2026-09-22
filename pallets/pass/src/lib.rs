@@ -80,6 +80,10 @@ pub mod pallet {
         type Balances: Inspect<Self::AccountId> + Mutate<Self::AccountId>;
         /// A single or composite authenticator that allows the pallet to handle the actions
         /// regarding assertion to register devices and authenticating with credentials.
+        ///
+        /// Benchmarks (`runtime-benchmarks`) also require it to implement
+        /// [`AuthenticatorBenchmarkHelper`], to produce valid device attestations and
+        /// credentials.
         type Authenticator: Authenticator<Authority = util::AuthorityFromPalletId<Self::PalletId>>;
         /// The `Scheduler` system.
         type Scheduler: Named<BlockNumberFor<Self, I>, Self::RuntimeCall, Self::PalletsOrigin>;
@@ -110,12 +114,6 @@ pub mod pallet {
         /// The maximum duration of a session
         #[pallet::constant]
         type MaxSessionDuration: Get<BlockNumberFor<Self, I>>;
-
-        // Benchmarking: Types to handle benchmarks.
-
-        /// A helper trait to set up benchmark tests.
-        #[cfg(feature = "runtime-benchmarks")]
-        type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }
 
     #[pallet::composite_enum]

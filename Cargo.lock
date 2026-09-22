@@ -1359,6 +1359,7 @@ dependencies = [
  "log",
  "parity-scale-codec",
  "scale-info",
+ "sp-io",
 ]
 
 [[package]]
