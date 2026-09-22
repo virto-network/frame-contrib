@@ -22,8 +22,9 @@
 # - Self-hosted runners labelled `self-hosted`, `benchmark` and `ccx43` (reference hardware), with
 #   `git`, `curl`, `sha256sum` and `python3`.
 # - (recommended) A GitHub App installed on the repository with `Contents: write`,
-#   `Pull requests: write` and `Issues: write`, and the secrets `CMD_BOT_APP_ID` and
-#   `CMD_BOT_APP_PRIVATE_KEY`. Commits pushed with the default `GITHUB_TOKEN` don't trigger CI.
+#   `Pull requests: write` and `Issues: write`: the repository variable `KREIVOPS_APP_ID` and the
+#   secret `KREIVOPS_APP_PRIVATE_KEY`. Without them, the bot pushes with `GITHUB_TOKEN`, whose
+#   commits don't trigger CI.
 
 name: Command
 
@@ -140,6 +141,7 @@ jobs:
       help: ${{ steps.command.outputs.help }}
       branch: ${{ steps.pr.outputs.branch }}
       sha: ${{ steps.pr.outputs.sha }}
+      base: ${{ steps.pr.outputs.base }}
     steps:
       - name: Parse the command
         id: command
@@ -181,6 +183,10 @@ jobs:
             }
             core.setOutput('branch', pr.head.ref);
             core.setOutput('sha', pr.head.sha);
+            // The line the pull request targets (e.g. `main` or `release/v2`). Every line is
+            // served from the bot on `main`: it always builds and benchmarks the PR's head.
+            core.setOutput('base', pr.base.ref);
+            core.info(`PR #${pr.number}: ${pr.head.ref} (${pr.head.sha}) -> ${pr.base.ref}`);
 
       - name: Report a rejected command
         if: ${{ failure() }}
@@ -289,15 +295,14 @@ jobs:
       CMD: ${{ needs.prepare.outputs.command }}
       PR_BRANCH: ${{ needs.prepare.outputs.branch }}
       GH_ACTOR: ${{ github.event.comment.user.login }}
-      HAS_APP: ${{ secrets.CMD_BOT_APP_ID != '' }}
     steps:
       - name: Create the bot's token
         id: app-token
-        if: ${{ env.HAS_APP == 'true' }}
+        if: ${{ vars.KREIVOPS_APP_ID != '' }}
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ secrets.CMD_BOT_APP_ID }}
-          private-key: ${{ secrets.CMD_BOT_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.KREIVOPS_APP_ID }}
+          private-key: ${{ secrets.KREIVOPS_APP_PRIVATE_KEY }}
 
       # The bot's scripts always come from the default branch.
       - name: Checkout the bot
@@ -360,17 +365,27 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
 
+      - name: Check the pull request's line has the kitchensink runtime
+        env:
+          BASE: ${{ needs.prepare.outputs.base }}
+        run: |
+          if [ ! -f kitchensink/Cargo.toml ]; then
+            echo "::error::The head of this pull request (against $BASE) has no kitchensink runtime (kitchensink/Cargo.toml), so it can't be benchmarked. Rebase it on a $BASE that includes it."
+            exit 1
+          fi
+
       - name: Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none
           components: rust-src
 
+      # One cache per line: `main` and `release/v2` don't share their dependency versions.
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2.7.3
         with:
           cache-on-failure: true
-          key: cmd-bench
+          key: cmd-bench-${{ needs.prepare.outputs.base }}
 
       - name: Build the kitchensink runtime with benchmarks
         run: cargo build --release --locked -p fc-kitchensink-runtime --features runtime-benchmarks
@@ -462,15 +477,14 @@ jobs:
       CMD: ${{ needs.prepare.outputs.command }}
       PR_BRANCH: ${{ needs.prepare.outputs.branch }}
       GH_ACTOR: ${{ github.event.comment.user.login }}
-      HAS_APP: ${{ secrets.CMD_BOT_APP_ID != '' }}
     steps:
       - name: Create the bot's token
         id: app-token
-        if: ${{ env.HAS_APP == 'true' }}
+        if: ${{ vars.KREIVOPS_APP_ID != '' }}
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ secrets.CMD_BOT_APP_ID }}
-          private-key: ${{ secrets.CMD_BOT_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.KREIVOPS_APP_ID }}
+          private-key: ${{ secrets.KREIVOPS_APP_PRIVATE_KEY }}
 
       - name: Checkout the bot
         uses: actions/checkout@v4
