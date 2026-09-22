@@ -26,6 +26,7 @@ std = [
 	"fc-traits-tracks/std",
 ]
 runtime-benchmarks = [
+	"fc-traits-authn/runtime-benchmarks",
 	"fc-traits-gas-tank/runtime-benchmarks",
 	"fc-traits-memberships/runtime-benchmarks",
 	"fc-traits-tracks/runtime-benchmarks",

@@ -83,6 +83,41 @@ impl<T: MaxEncodedLen, A, Ch, Cr> MaxEncodedLen for Dev<T, A, Ch, Cr> {
     }
 }
 
+/// [`Auth`] produces benchmark inputs from the helpers of its challenger, attestation and
+/// credential types.
+#[cfg(feature = "runtime-benchmarks")]
+impl<Dev, Att> crate::AuthenticatorBenchmarkHelper for Auth<Dev, Att>
+where
+    Att: crate::DeviceAttestationBenchmarkHelper<CxOf<ChallengerOf<Dev>>>,
+    Dev: UserAuthenticator + From<Att>,
+    ChallengerOf<Dev>: crate::ChallengerBenchmarkHelper,
+    Dev::Credential: crate::CredentialBenchmarkHelper<CxOf<ChallengerOf<Dev>>>,
+{
+    fn device_attestation(xtc: &impl crate::ExtrinsicContext) -> Self::DeviceAttestation {
+        use crate::ChallengerBenchmarkHelper;
+        let context = ChallengerOf::<Dev>::benchmark_context();
+        let challenge = ChallengerOf::<Dev>::generate(&context, xtc);
+        Att::benchmark_attestation(Self::Authority::get(), context, challenge)
+    }
+
+    fn credential(
+        user_id: crate::HashedUserId,
+        device_id: DeviceId,
+        xtc: &impl crate::ExtrinsicContext,
+    ) -> <Dev as UserAuthenticator>::Credential {
+        use crate::{ChallengerBenchmarkHelper, CredentialBenchmarkHelper};
+        let context = ChallengerOf::<Dev>::benchmark_context();
+        let challenge = ChallengerOf::<Dev>::generate(&context, xtc);
+        Dev::Credential::benchmark_credential(
+            Self::Authority::get(),
+            user_id,
+            device_id,
+            context,
+            challenge,
+        )
+    }
+}
+
 pub mod dummy {
     use super::*;
     use frame_support::{
@@ -218,6 +253,77 @@ pub mod dummy {
 
         fn user_id(&self) -> HashedUserId {
             self.1
+        }
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    mod benchmarking {
+        use super::*;
+        use crate::{
+            Challenge, ChallengerBenchmarkHelper, CredentialBenchmarkHelper,
+            DeviceAttestationBenchmarkHelper,
+        };
+
+        impl ChallengerBenchmarkHelper for DummyChallenger {
+            fn benchmark_context() -> Self::Context {
+                0
+            }
+        }
+
+        impl<A> DeviceAttestationBenchmarkHelper<DummyCx> for DummyAttestation<A>
+        where
+            A: Get<AuthorityId> + 'static,
+        {
+            fn benchmark_attestation(_: AuthorityId, _: DummyCx, _: Challenge) -> Self {
+                // A fresh `device_id` on each call, from a counter kept in storage under this
+                // helper's own key.
+                const KEY: &[u8] = b":fc-traits-authn:dummy:benchmark-devices:";
+                let n: u32 = frame_support::storage::unhashed::get_or_default(KEY);
+                frame_support::storage::unhashed::put(KEY, &n.wrapping_add(1));
+
+                let mut device_id = DUMMY_DEV;
+                device_id[28..].copy_from_slice(&n.to_le_bytes());
+                Self::new(true, device_id)
+            }
+        }
+
+        impl<A> CredentialBenchmarkHelper<DummyCx> for DummyCredential<A>
+        where
+            A: Get<AuthorityId> + 'static,
+        {
+            fn benchmark_credential(
+                _: AuthorityId,
+                user_id: HashedUserId,
+                _: DeviceId,
+                _: DummyCx,
+                _: Challenge,
+            ) -> Self {
+                Self::new(true, user_id)
+            }
+        }
+    }
+
+    #[cfg(all(test, feature = "runtime-benchmarks"))]
+    mod tests {
+        use super::*;
+        use crate::{Authenticator, AuthenticatorBenchmarkHelper, UserAuthenticator};
+
+        type A = Dummy<DummyAuthority>;
+
+        #[test]
+        fn auth_produces_inputs_that_verify() {
+            sp_io::TestExternalities::default().execute_with(|| {
+                let first = A::device_attestation(&b"xtc");
+                let second = A::device_attestation(&b"xtc");
+                assert_ne!(first.device_id(), second.device_id());
+
+                let device_id = *first.device_id();
+                let mut device = A::verify_device(first, &b"xtc").expect("valid attestation");
+
+                let credential = A::credential(DUMMY_USER, device_id, &b"other-xtc");
+                assert_eq!(credential.user_id(), DUMMY_USER);
+                assert!(device.verify_user(&credential, &b"other-xtc").is_some());
+            })
         }
     }
 }

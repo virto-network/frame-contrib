@@ -6,11 +6,28 @@ use scale_info::TypeInfo;
 
 pub mod util;
 
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmarking;
+#[cfg(feature = "runtime-benchmarks")]
+pub use benchmarking::*;
+
+/// Conditionally expands its input when `fc-traits-authn` is built with `runtime-benchmarks`.
+#[cfg(not(feature = "runtime-benchmarks"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __if_runtime_benchmarks {
+    ($($t:tt)*) => {};
+}
+
 pub use fc_traits_authn_proc::composite_authenticator;
 
 const LOG_TARGET: &str = "authn";
 
 pub mod prelude {
+    #[doc(hidden)]
+    pub use crate::__if_runtime_benchmarks;
+    #[cfg(feature = "runtime-benchmarks")]
+    pub use crate::AuthenticatorBenchmarkHelper;
     pub use crate::{
         Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
         ExtrinsicContext, HashedUserId, UserAuthenticator, UserChallengeResponse,

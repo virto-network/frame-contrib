@@ -95,6 +95,13 @@ impl Parse for AuthMacroInput {
     }
 }
 
+/// Aggregates several authenticators into a single one, whose device attestations, devices and
+/// credentials are enums with one variant per authenticator.
+///
+/// When `fc-traits-authn` is built with `runtime-benchmarks`, the composite also implements
+/// `AuthenticatorBenchmarkHelper` by delegating to the **first** listed authenticator, which
+/// must implement it. The order of the list is also the encoding of those enums, so don't
+/// reorder an existing composite just to pick another helper.
 #[proc_macro]
 pub fn composite_authenticator(input: TokenStream) -> TokenStream {
     let AuthMacroInput {
@@ -225,6 +232,33 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             }
         }
     };
+
+    // The composite produces benchmark inputs through its first authenticator.
+    let benchmark_helper = authenticators.first().map(|(id, path)| {
+        quote! {
+            #prelude_crate::prelude::__if_runtime_benchmarks! {
+                impl #prelude_crate::prelude::AuthenticatorBenchmarkHelper for #auth_struct {
+                    fn device_attestation(xtc: &impl ExtrinsicContext) -> Self::DeviceAttestation {
+                        #device_attestation::#id(
+                            <#path as #prelude_crate::prelude::AuthenticatorBenchmarkHelper>::device_attestation(xtc)
+                        )
+                    }
+
+                    fn credential(
+                        user_id: HashedUserId,
+                        device_id: DeviceId,
+                        xtc: &impl ExtrinsicContext,
+                    ) -> #credential {
+                        #credential::#id(
+                            <#path as #prelude_crate::prelude::AuthenticatorBenchmarkHelper>::credential(
+                                user_id, device_id, xtc,
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    });
 
     // Generate the full struct and impl code
     let expanded = quote! {
@@ -365,6 +399,11 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
                 }
             }
         }
+    };
+
+    let expanded = quote! {
+        #expanded
+        #benchmark_helper
     };
 
     TokenStream::from(expanded)
