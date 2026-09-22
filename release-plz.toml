@@ -24,6 +24,12 @@ semver_check = true
 pr_name = "chore: release v{{ version }}"
 pr_labels = ["release"]
 
+# The kitchensink runtime only exists to benchmark the pallets: it's never released.
+[[package]]
+name = "fc-kitchensink-runtime"
+release = false
+publish = false
+
 [[package]]
 name = "fc-mock-helpers"
 version_group = "frame-contrib"
