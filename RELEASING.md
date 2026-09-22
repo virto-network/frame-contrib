@@ -80,8 +80,9 @@ cargo check --workspace --all-features --all-targets
 
 - Secret `CARGO_REGISTRY_TOKEN`: a crates.io API token with the `publish-new` and
   `publish-update` scopes.
-- Variable `CRATES_IO_PUBLISH` = `true`: enables the publishing job. Until it is
-  set, only the release PR is maintained.
+- `CRATES_IO_PUBLISH` = `true`, as a repository **variable or secret**: enables
+  publishing. Until it is set, only the release PR is maintained. (A secret works
+  too, for maintainers who can't create variables.)
 - Secret `RELEASE_PLZ_TOKEN` (recommended): a fine-grained PAT or GitHub App token
   with `contents` and `pull-requests` write access. PRs opened with the default
   `GITHUB_TOKEN` don't trigger CI, so without this secret the release PR and the SDK

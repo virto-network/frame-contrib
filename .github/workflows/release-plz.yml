@@ -11,7 +11,7 @@ name: Release
 #
 # Required setup:
 # - secret `CARGO_REGISTRY_TOKEN`: crates.io token with publish-new and publish-update scopes.
-# - variable `CRATES_IO_PUBLISH=true`: enables the `release` job. Until it is set,
+# - `CRATES_IO_PUBLISH=true`, as a repository variable or secret: enables publishing. Until it is set,
 #   only the release PR is maintained.
 # - (recommended) secret `RELEASE_PLZ_TOKEN`: a PAT or GitHub App token. PRs opened
 #   and commits pushed with the default GITHUB_TOKEN don't trigger CI, so the
@@ -24,23 +24,42 @@ on:
 jobs:
   release:
     name: Publish release
-    if: github.repository_owner == 'virto-network' && vars.CRATES_IO_PUBLISH == 'true'
+    if: github.repository_owner == 'virto-network'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      # `CRATES_IO_PUBLISH` may be set as a repository variable or as a secret. A job-level
+      # `if` can't read secrets, so the gate is a step.
+      - name: Check that publishing is enabled
+        id: gate
+        env:
+          FROM_VARIABLE: ${{ vars.CRATES_IO_PUBLISH }}
+          FROM_SECRET: ${{ secrets.CRATES_IO_PUBLISH }}
+        run: |
+          if [ "$FROM_VARIABLE" = "true" ] || [ "$FROM_SECRET" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Publishing is off: set CRATES_IO_PUBLISH=true (variable or secret) to enable it." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.enabled == 'true'
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Setup Ubuntu dependencies
+        if: steps.gate.outputs.enabled == 'true'
         run: sudo apt update && sudo apt install -y protobuf-compiler
 
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.gate.outputs.enabled == 'true'
 
       - name: Run release-plz
         id: release
+        if: steps.gate.outputs.enabled == 'true'
         uses: release-plz/action@v0.5
         with:
           command: release
