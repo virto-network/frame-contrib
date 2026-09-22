@@ -74,6 +74,7 @@ impl frame_system::Config for Test {
     type Lookup = IdentityLookup<AccountId>;
     type Block = Block;
     type AccountData = pallet_balances::AccountData<Balance>;
+    type DbWeight = frame_support::weights::constants::RocksDbWeight;
 }
 
 parameter_types! {

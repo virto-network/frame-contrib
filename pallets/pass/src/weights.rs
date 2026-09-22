@@ -4,12 +4,22 @@
 #![allow(missing_docs)]
 
 use core::marker::PhantomData;
-use frame_support::weights::Weight;
+use frame_support::{traits::Get, weights::{constants::RocksDbWeight, Weight}};
 
 /// Weight functions needed for pallet_remark.
 pub trait WeightInfo {
 	fn register() -> Weight;
+	/// Weight of `PassAuthenticate` when it carries a credential: authenticates the device,
+	/// checks its call filter, and sets/clears the transient `AuthenticatedDevice` context.
+	///
+	/// Does not include the cost of verifying the credential itself, which the authenticator
+	/// reports separately.
 	fn authenticate() -> Weight;
+	/// Weight of `PassAuthenticate` when it carries no credential (the path taken by every
+	/// extrinsic that does not authenticate with a Pass device): at most one `SessionKeys`
+	/// lookup, plus the session key's call filter check, and clearing the transient
+	/// `AuthenticatedDevice` context.
+	fn authenticate_none() -> Weight;
 	fn add_device() -> Weight;
 	fn remove_device() -> Weight;
 	fn add_session_key() -> Weight;
@@ -30,15 +40,25 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(Weight::from_parts(1_359, 0))
 	}
 
-	/// The range of component `l` is `[1, 1048576]`.
+	/// PLACEHOLDER: not produced by a benchmark run. Execution time and proof size are
+	/// conservative estimates; DB accesses are counted from the code path:
+	/// Storage: `Pass::Devices` (r:2 w:1)
+	/// Storage: `Pass::DeviceFilters` (r:1 w:0)
+	/// Storage: `Pass::AuthenticatedDevice` (r:0 w:3)
 	fn authenticate() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 8_471_000 picoseconds.
-		Weight::from_parts(8_586_000, 0)
-			// Standard Error: 0
-			.saturating_add(Weight::from_parts(1_359, 0))
+		Weight::from_parts(20_000_000, 10_000)
+			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().writes(4_u64))
+	}
+
+	/// PLACEHOLDER: not produced by a benchmark run. Execution time and proof size are
+	/// conservative estimates; DB accesses are counted from the code path:
+	/// Storage: `Pass::SessionKeys` (r:1 w:0)
+	/// Storage: `Pass::AuthenticatedDevice` (r:0 w:1)
+	fn authenticate_none() -> Weight {
+		Weight::from_parts(10_000_000, 4_000)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 
 	/// The range of component `l` is `[1, 1048576]`.
@@ -99,15 +119,18 @@ impl WeightInfo for () {
 			.saturating_add(Weight::from_parts(1_359, 0))
 	}
 
-	/// The range of component `l` is `[1, 1048576]`.
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::authenticate`] with `RocksDbWeight`.
 	fn authenticate() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `0`
-		//  Estimated: `0`
-		// Minimum execution time: 8_471_000 picoseconds.
-		Weight::from_parts(0, 0)
-			// Standard Error: 0
-			.saturating_add(Weight::from_parts(0, 0))
+		Weight::from_parts(20_000_000, 10_000)
+			.saturating_add(RocksDbWeight::get().reads(3_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::authenticate_none`] with `RocksDbWeight`.
+	fn authenticate_none() -> Weight {
+		Weight::from_parts(10_000_000, 4_000)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 
 	/// The range of component `l` is `[1, 1048576]`.

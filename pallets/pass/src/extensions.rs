@@ -7,6 +7,7 @@ use fc_traits_authn::DeviceId;
 use frame_support::{
     dispatch::RawOrigin,
     pallet_prelude::{DispatchResult, TransactionValidityError, Weight},
+    traits::Get,
     CloneNoBound, DebugNoBound, DefaultNoBound, EqNoBound, PartialEqNoBound,
 };
 use frame_system::{ensure_signed, pallet_prelude::RuntimeCallFor};
@@ -74,12 +75,23 @@ where
 {
     const IDENTIFIER: &'static str = "PassAuthenticate";
     type Implicit = ();
-    /// The authenticated (account, device_id), if any.
-    type Val = Option<(T::AccountId, DeviceId)>;
-    type Pre = Option<(T::AccountId, DeviceId)>;
+    /// The authenticated `(account, device_id)`, if any, and the part of
+    /// [`weight`][Self::weight] that `validate` did not spend.
+    type Val = (Option<(T::AccountId, DeviceId)>, Weight);
+    type Pre = (Option<(T::AccountId, DeviceId)>, Weight);
 
+    /// Charges only for the branch this extension will actually take:
+    ///
+    /// - with a credential, the pallet's own authentication overhead;
+    /// - without one, the (much cheaper) session key lookup.
+    ///
+    /// Whatever `validate` ends up not spending is refunded in
+    /// [`post_dispatch_details`][Self::post_dispatch_details].
     fn weight(&self, _call: &RuntimeCallFor<T>) -> Weight {
-        T::WeightInfo::authenticate()
+        match &self.0 {
+            Some(_) => T::WeightInfo::authenticate(),
+            None => T::WeightInfo::authenticate_none(),
+        }
     }
 
     fn validate(
@@ -115,7 +127,7 @@ where
             }
 
             Ok::<_, TransactionValidityError>((
-                Some((address.clone(), params.device_id)),
+                (Some((address.clone(), params.device_id)), Weight::zero()),
                 RawOrigin::Signed(address).into(),
             ))
         } else {
@@ -130,12 +142,13 @@ where
                     ) {
                         return Err(InvalidTransaction::Call.into());
                     }
-                    Ok((None, RawOrigin::Signed(account).into()))
+                    Ok(((None, Weight::zero()), RawOrigin::Signed(account).into()))
                 } else {
-                    Ok((None, RawOrigin::Signed(who).into()))
+                    Ok(((None, Weight::zero()), RawOrigin::Signed(who).into()))
                 }
             } else {
-                Ok((None, origin))
+                // Not signed: the session key lookup never happened.
+                Ok(((None, Self::unsigned_refund()), origin))
             }
         }?;
 
@@ -157,23 +170,38 @@ where
 
         // Store the authenticated (account, device_id) so extrinsics can
         // read it for no-escalation checks.
-        if let Some(ref auth) = val {
+        if let (Some(ref auth), _) = val {
             AuthenticatedDevice::<T, I>::put(auth);
         }
         Ok(val)
     }
 
     fn post_dispatch_details(
-        pre: Self::Pre,
+        (device, unspent): Self::Pre,
         _info: &DispatchInfoOf<RuntimeCallFor<T>>,
         _post_info: &PostDispatchInfoOf<RuntimeCallFor<T>>,
         _len: usize,
         _result: &DispatchResult,
     ) -> Result<Weight, TransactionValidityError> {
         // Clear transient storage regardless of success/failure.
-        if pre.is_some() {
+        if device.is_some() {
             AuthenticatedDevice::<T, I>::kill();
         }
-        Ok(Weight::zero())
+        Ok(unspent)
+    }
+}
+
+impl<T, I> PassAuthenticate<T, I>
+where
+    T: Config<I>,
+    I: 'static,
+{
+    /// The part of [`WeightInfo::authenticate_none`] that an unsigned origin
+    /// does not spend: the `SessionKeys` read (and its proof), which only
+    /// happens for signed origins.
+    fn unsigned_refund() -> Weight {
+        let charged = T::WeightInfo::authenticate_none();
+        Weight::from_parts(T::DbWeight::get().reads(1).ref_time(), charged.proof_size())
+            .min(charged)
     }
 }
