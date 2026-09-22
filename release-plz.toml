@@ -100,4 +100,6 @@ version_group = "frame-contrib"
 
 [[package]]
 name = "fc-pallet-template"
+# Its Cargo.toml has `publish = false`; release-plz requires the config to agree.
 release = false
+publish = false
