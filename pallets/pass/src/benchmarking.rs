@@ -223,15 +223,15 @@ mod benchmarks {
             Footprint::from_parts(2, DeviceOf::<T, I>::max_encoded_len()),
         );
 
-        // Set the authenticated device for no-escalation check
+        // Worst case for the no-escalation check: `Admin` would short-circuit
+        // it, so the caller device and the new one get the largest `Calls`
+        // filter instead, which `is_superset_of` has to walk entirely.
+        let filter = max_calls_filter::<T, I>(&benchmark_call::<T>());
+        DeviceFilters::<T, I>::insert(&address, admin_device_id, filter.clone());
         AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
 
         #[extrinsic_call]
-        _(
-            RawOrigin::Signed(address.clone()),
-            attestation,
-            DeviceFilter::Admin,
-        );
+        _(RawOrigin::Signed(address.clone()), attestation, filter);
 
         // Verification code
         assert_has_event::<T, I>(
@@ -294,13 +294,22 @@ mod benchmarks {
             Footprint::from_parts(2, T::AccountId::max_encoded_len()),
         );
 
-        // Need a non-Admin filter for session keys
-        let filter: crate::DeviceFilterOf<T, I> = DeviceFilter::Pallets(
-            alloc::collections::BTreeSet::from([0u8])
-                .try_into()
-                .expect("within bounds"),
-        );
+        // Worst case for the no-escalation check: the caller device and the
+        // session key get the largest `Calls` filter (session keys can't be
+        // `Admin`, and `Admin` would short-circuit the check anyway).
+        let filter = max_calls_filter::<T, I>(&benchmark_call::<T>());
+        DeviceFilters::<T, I>::insert(&address, admin_device_id, filter.clone());
         AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
+
+        // Worst case for the session itself: the key is already in use by
+        // this account, so the existing session (and its scheduled removal)
+        // is torn down before the new one is created and scheduled.
+        Pallet::<T, I>::add_session_key(
+            RawOrigin::Signed(address.clone()).into(),
+            T::Lookup::unlookup(new_session_key.clone()),
+            None,
+            filter.clone(),
+        )?;
 
         #[extrinsic_call]
         _(
@@ -311,6 +320,12 @@ mod benchmarks {
         );
 
         // Verification code
+        assert_has_event::<T, I>(
+            Event::SessionRemoved {
+                session_key: new_session_key.clone(),
+            }
+            .into(),
+        );
         assert_has_event::<T, I>(
             Event::SessionCreated {
                 session_key_hash: T::Hashing::hash(&new_session_key.encode()),
