@@ -21,6 +21,17 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_semver_check:
+        description: >-
+          Compute the version bump from the commit titles alone, without
+          cargo-semver-checks. Use it for a release whose only Rust API change
+          is runtime-configuration rework (a new `Config` associated type, a
+          `WeightInfo` signature), which is not client-visible and so is not a
+          breaking change here. See RELEASING.md.
+        type: boolean
+        default: false
 
 jobs:
   release:
@@ -66,12 +77,35 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         if: steps.gate.outputs.enabled == 'true'
 
+      # `semver_check` lives in release-plz.toml, and cargo-semver-checks raises the bump
+      # whenever the Rust API changed, whatever the commit titles said. A Config/WeightInfo
+      # rework trips it without being client-visible, so this run can opt out by using a
+      # patched copy of the config. The committed file is never touched.
+      - name: Resolve the release-plz config
+        id: cfg
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          SKIP_SEMVER_CHECK: ${{ inputs.skip_semver_check }}
+        run: |
+          config=release-plz.toml
+          if [ "$SKIP_SEMVER_CHECK" = "true" ]; then
+            config="$RUNNER_TEMP/release-plz.no-semver-check.toml"
+            sed 's/^semver_check = true$/semver_check = false/' release-plz.toml > "$config"
+            grep -q '^semver_check = false$' "$config" || {
+              echo "release-plz.toml no longer has 'semver_check = true'; update this step." >&2
+              exit 1
+            }
+            echo "cargo-semver-checks is off for this run: the bump comes from the commit titles." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "path=$config" >> "$GITHUB_OUTPUT"
+
       - name: Run release-plz
         id: release
         if: steps.gate.outputs.enabled == 'true'
         uses: release-plz/action@v0.5
         with:
           command: release
+          config: ${{ steps.cfg.outputs.path }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -131,11 +165,33 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # `semver_check` lives in release-plz.toml, and cargo-semver-checks raises the bump
+      # whenever the Rust API changed, whatever the commit titles said. A Config/WeightInfo
+      # rework trips it without being client-visible, so this run can opt out by using a
+      # patched copy of the config. The committed file is never touched.
+      - name: Resolve the release-plz config
+        id: cfg
+        env:
+          SKIP_SEMVER_CHECK: ${{ inputs.skip_semver_check }}
+        run: |
+          config=release-plz.toml
+          if [ "$SKIP_SEMVER_CHECK" = "true" ]; then
+            config="$RUNNER_TEMP/release-plz.no-semver-check.toml"
+            sed 's/^semver_check = true$/semver_check = false/' release-plz.toml > "$config"
+            grep -q '^semver_check = false$' "$config" || {
+              echo "release-plz.toml no longer has 'semver_check = true'; update this step." >&2
+              exit 1
+            }
+            echo "cargo-semver-checks is off for this run: the bump comes from the commit titles." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "path=$config" >> "$GITHUB_OUTPUT"
+
       - name: Run release-plz
         id: release-pr
         uses: release-plz/action@v0.5
         with:
           command: release-pr
+          config: ${{ steps.cfg.outputs.path }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
