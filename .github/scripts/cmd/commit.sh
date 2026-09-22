@@ -12,7 +12,8 @@ fi
 
 if [ -n "${APP_SLUG:-}" ]; then
   name="${APP_SLUG}[bot]"
-  id="$(curl -fsSL -H "Authorization: Bearer $TOKEN" "https://api.github.com/users/$name" | jq -r .id)"
+  # `-g`: the `[bot]` suffix is part of the login, not a curl URL range.
+  id="$(curl -gfsSL -H "Authorization: Bearer $TOKEN" "https://api.github.com/users/$name" | jq -r .id)"
   email="$id+$name@users.noreply.github.com"
 else
   name="github-actions[bot]"
