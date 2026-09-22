@@ -225,35 +225,6 @@ where
     }
 }
 
-#[cfg(feature = "runtime-benchmarks")]
-pub use benchmarks::BenchmarkHelper;
-
-#[cfg(feature = "runtime-benchmarks")]
-mod benchmarks {
-    use super::*;
-    use fc_traits_authn::{ExtrinsicContext, HashedUserId};
-
-    #[cfg(feature = "runtime-benchmarks")]
-    pub trait BenchmarkHelper<T, I = ()>
-    where
-        T: Config<I>,
-        I: 'static,
-    {
-        /// Returns the attestation of a new device.
-        ///
-        /// This method must ensure that each returned device attestation contains a different
-        /// `device_id`.
-        fn device_attestation(xtc: &impl ExtrinsicContext) -> DeviceAttestationOf<T, I>;
-        /// Requests some credentials for authenticating an [`user_id`] using a device identified
-        /// by [`device_id`], and some [`xtc`].
-        fn credential(
-            user_id: HashedUserId,
-            device_id: DeviceId,
-            xtc: &impl ExtrinsicContext,
-        ) -> CredentialOf<T, I>;
-    }
-}
-
 #[cfg(test)]
 mod first_items_are_free {
     use super::*;

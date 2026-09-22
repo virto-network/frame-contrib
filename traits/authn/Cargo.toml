@@ -14,7 +14,11 @@ fc-traits-authn-proc.workspace = true
 log.workspace = true
 scale-info.workspace = true
 
+[dev-dependencies]
+sp-io = { workspace = true, features = ["std"] }
+
 [features]
 default = ["std", "runtime"]
+runtime-benchmarks = ["runtime", "frame-support?/runtime-benchmarks"]
 runtime = ["dep:frame-support"]
-std = ["codec/std", "frame-support?/std", "log/std", "scale-info/std"]
+std = ["codec/std", "frame-support?/std", "log/std", "scale-info/std", "sp-io/std"]
