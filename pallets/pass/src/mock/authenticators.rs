@@ -33,6 +33,20 @@ pub mod authenticator_a {
     /// What this authenticator reports for verifying a credential.
     pub const CREDENTIAL_WEIGHT: Weight = Weight::from_parts(2_000_000, 200);
 
+    /// A stand-in for a runtime-bound, benchmarked `WeightInfo`: flat on both components, so
+    /// the tests can assert on an exact number.
+    pub struct Weights;
+
+    impl AuthenticatorWeightInfo for Weights {
+        fn verify_device(_c: u32, _a: u32) -> Weight {
+            ATTESTATION_WEIGHT
+        }
+
+        fn verify_user(_c: u32, _a: u32) -> Weight {
+            CREDENTIAL_WEIGHT
+        }
+    }
+
     #[derive(
         TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
     )]
@@ -59,6 +73,7 @@ pub mod authenticator_a {
         type Challenger = Self;
         type DeviceAttestation = DeviceAttestation;
         type Device = Device;
+        type WeightInfo = Weights;
 
         fn unpack_device(attestation: Self::DeviceAttestation) -> Self::Device {
             Device {
@@ -80,6 +95,7 @@ pub mod authenticator_a {
         type Authority = PassAuthorityId;
         type Challenger = Authenticator;
         type Credential = Credential;
+        type WeightInfo = Weights;
 
         // Note: This authenticator should pass intentionally, to pass on simpler tests
         fn verify_credential(&mut self, _: &Self::Credential) -> Option<()> {
@@ -107,10 +123,6 @@ pub mod authenticator_a {
         fn device_id(&self) -> &DeviceId {
             &self.device_id
         }
-
-        fn verification_weight(&self) -> Weight {
-            ATTESTATION_WEIGHT
-        }
     }
 
     impl UserChallengeResponse<()> for Credential {
@@ -128,10 +140,6 @@ pub mod authenticator_a {
 
         fn user_id(&self) -> HashedUserId {
             self.user_id
-        }
-
-        fn verification_weight(&self) -> Weight {
-            CREDENTIAL_WEIGHT
         }
     }
 }
@@ -231,6 +239,7 @@ pub mod authenticator_b {
         type Challenger = C;
         type DeviceAttestation = DeviceAttestation<CxOf<C>>;
         type Device = Device<C>;
+        type WeightInfo = ();
 
         fn unpack_device(attestation: Self::DeviceAttestation) -> Self::Device {
             Device {
@@ -249,6 +258,7 @@ pub mod authenticator_b {
         type Authority = PassAuthorityId;
         type Challenger = C;
         type Credential = Credential<CxOf<C>>;
+        type WeightInfo = ();
 
         fn verify_credential(&mut self, credential: &Self::Credential) -> Option<()> {
             credential.signature.and_then(|signature| {

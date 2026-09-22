@@ -1,6 +1,6 @@
-use crate::{Config, CredentialOf, Pallet, WeightInfo};
+use crate::{Config, CredentialOf, DeviceOf, Pallet, WeightInfo};
 use codec::{Decode, DecodeWithMemTracking, Encode};
-use fc_traits_authn::{DeviceId, UserChallengeResponse};
+use fc_traits_authn::{DeviceId, UserAuthenticator};
 use frame_support::pallet_prelude::DispatchResult;
 use frame_support::{
     dispatch::RawOrigin,
@@ -88,8 +88,9 @@ where
     /// [`post_dispatch_details`][Self::post_dispatch_details].
     fn weight(&self, _call: &RuntimeCallFor<T>) -> Weight {
         match &self.0 {
-            Some(params) => T::WeightInfo::authenticate()
-                .saturating_add(params.credential.verification_weight()),
+            Some(params) => T::WeightInfo::authenticate().saturating_add(
+                <DeviceOf<T, I> as UserAuthenticator>::verification_weight(&params.credential),
+            ),
             None => T::WeightInfo::authenticate_none(),
         }
     }

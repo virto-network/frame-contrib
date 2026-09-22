@@ -188,22 +188,15 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
 
     let match_attestation_weight = authenticators.clone().into_iter().map(|(id, path)| {
         quote! {
-            #device_attestation::#id(attestation) => <
-                <#path as Authenticator>::DeviceAttestation as DeviceChallengeResponse<
-                    <<#path as Authenticator>::Challenger as Challenger>::Context
-                >
-            >::verification_weight(attestation)
+            #device_attestation::#id(attestation) =>
+                <#path as Authenticator>::verification_weight(attestation)
         }
     });
 
     let match_credential_weight = authenticators.clone().into_iter().map(|(id, path)| {
         quote! {
             #credential::#id(credential) => <
-                <<#path as Authenticator>::Device as UserAuthenticator>::Credential
-                    as UserChallengeResponse<
-                        <<<#path as Authenticator>::Device as UserAuthenticator>::Challenger
-                            as Challenger>::Context
-                    >
+                <#path as Authenticator>::Device as UserAuthenticator
             >::verification_weight(credential)
         }
     });
@@ -271,6 +264,14 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             type Challenger = Self;
             type DeviceAttestation = #device_attestation;
             type Device = #device;
+            // Unused: the composite dispatches to each authenticator's own `WeightInfo`.
+            type WeightInfo = ();
+
+            fn verification_weight(attestation: &Self::DeviceAttestation) -> Weight {
+                match attestation {
+                    #(#match_attestation_weight),*
+                }
+            }
 
             fn verify_device(attestation: Self::DeviceAttestation, xtc: &impl ExtrinsicContext) -> Option<Self::Device> {
                 Some(match attestation {
@@ -322,12 +323,6 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
                     #(#match_device_id_from_attestation),*
                 }
             }
-
-            fn verification_weight(&self) -> Weight {
-                match self {
-                    #(#match_attestation_weight),*
-                }
-            }
         }
 
 
@@ -340,6 +335,14 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             type Authority = #authority;
             type Challenger = #auth_struct;
             type Credential = #credential;
+            // Unused: the composite dispatches to each device's own `WeightInfo`.
+            type WeightInfo = ();
+
+            fn verification_weight(credential: &Self::Credential) -> Weight {
+                match credential {
+                    #(#match_credential_weight),*
+                }
+            }
 
             fn verify_user(&mut self, credential: &Self::Credential, xtc: &impl ExtrinsicContext) -> Option<()> {
                 match (self, credential) {
@@ -390,12 +393,6 @@ pub fn composite_authenticator(input: TokenStream) -> TokenStream {
             fn user_id(&self) -> HashedUserId {
                 match self {
                     #(#match_user_id),*
-                }
-            }
-
-            fn verification_weight(&self) -> Weight {
-                match self {
-                    #(#match_credential_weight),*
                 }
             }
         }
