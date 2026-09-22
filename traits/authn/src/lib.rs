@@ -24,10 +24,10 @@ pub use fc_traits_authn_proc::composite_authenticator;
 const LOG_TARGET: &str = "authn";
 
 pub mod prelude {
-    #[cfg(feature = "runtime-benchmarks")]
-    pub use crate::AuthenticatorBenchmarkHelper;
     #[doc(hidden)]
     pub use crate::__if_runtime_benchmarks;
+    #[cfg(feature = "runtime-benchmarks")]
+    pub use crate::AuthenticatorBenchmarkHelper;
     pub use crate::{
         Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
         ExtrinsicContext, HashedUserId, UserAuthenticator, UserChallengeResponse,
