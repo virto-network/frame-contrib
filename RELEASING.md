@@ -20,6 +20,21 @@ anything else → patch). `cargo-semver-checks` can raise it, but it can't see s
 or call-encoding changes. See
 [What counts as breaking](./CONTRIBUTING.md#what-counts-as-breaking-).
 
+### Releasing without `cargo-semver-checks`
+
+`cargo-semver-checks` compares the Rust API, so it raises the bump for changes that
+are not visible to a chain's clients — reworking runtime configuration, for example:
+a new `Config` associated type, or a `WeightInfo` signature. A runtime that takes
+such a release doesn't change its metadata, call encodings or `transaction_version`;
+it just adjusts how it's configured.
+
+To cut such a release as the commit titles describe it, run the **Release** workflow
+manually (Actions → Release → Run workflow) with **Skip semver check** ticked. That
+run uses a patched copy of `release-plz.toml` with `semver_check = false`; the
+committed config is untouched, and the next push to `main` has the safety net back.
+
+Only use it when you've checked that the release really is client-invisible.
+
 ## Tags
 
 - `vX.Y.Z`: one per release, created by release-plz. Pin to these.
