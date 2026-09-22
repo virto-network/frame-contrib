@@ -7,7 +7,6 @@
 extern crate alloc;
 extern crate core;
 
-use core::fmt::Debug;
 use fc_traits_authn::*;
 use frame_support::{
     pallet_prelude::*,
@@ -454,7 +453,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Error::<T, I>::NotAuthenticatedByDevice
         );
         ensure!(
-            Devices::<T, I>::contains_key(address, &caller_device_id),
+            Devices::<T, I>::contains_key(address, caller_device_id),
             Error::<T, I>::DeviceNotFound
         );
         let caller_filter = DeviceFilters::<T, I>::get(address, caller_device_id)

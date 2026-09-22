@@ -52,7 +52,6 @@ const ORIGIN_SIGNED_4: OriginCaller = OriginCaller::system(RawOrigin::Signed(4))
 const ORIGIN_SIGNED_5: OriginCaller = OriginCaller::system(RawOrigin::Signed(5));
 // Origins for group 1 (admin=account 2, accounts 10-19)
 const ORIGIN_SIGNED_10: OriginCaller = OriginCaller::system(RawOrigin::Signed(10));
-const ORIGIN_SIGNED_11: OriginCaller = OriginCaller::system(RawOrigin::Signed(11));
 // Origin for group 2 (admin=account 3, accounts 20-29) — available for future tests
 
 mod insert {
