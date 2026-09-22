@@ -31,7 +31,7 @@ use frame::{
 use frame_system::RawOrigin;
 
 fn assert_last_event<T: Config>(generic_event: T::RuntimeEvent) {
-    frame_system::Pallet::<T>::assert_last_event(generic_event.into());
+    frame_system::Pallet::<T>::assert_last_event(generic_event);
 }
 
 #[benchmarks(where

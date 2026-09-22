@@ -35,7 +35,7 @@ type BalanceOf<T, I> =
 fn assert_last_event<T: Config<I>, I: 'static>(
     generic_event: <T as frame_system::Config>::RuntimeEvent,
 ) {
-    frame_system::Pallet::<T>::assert_last_event(generic_event.into());
+    frame_system::Pallet::<T>::assert_last_event(generic_event);
 }
 
 fn track_info_of<T, I: 'static>() -> TrackInfoOf<T, I>

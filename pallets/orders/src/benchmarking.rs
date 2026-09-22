@@ -8,7 +8,7 @@ use frame_support::traits::fungibles::{Create, Mutate};
 use frame_support::traits::DefensiveSaturating;
 
 fn assert_has_event<T: Config<I>, I: 'static>(generic_event: T::RuntimeEvent) {
-    frame_system::Pallet::<T>::assert_has_event(generic_event.into());
+    frame_system::Pallet::<T>::assert_has_event(generic_event);
 }
 
 fn prepare_named_account<T: Config<I>, I: 'static>(name: &'static str) -> AccountIdOf<T> {
@@ -88,7 +88,7 @@ fn prepare_owner<T: Config<I>, I: 'static>(
             <T::BenchmarkHelper as BenchmarkHelper<T, I>>::ItemDeposit::get()
                 .defensive_saturating_mul((amount as u32).into()),
         );
-    <T::BenchmarkHelper as BenchmarkHelper<T, I>>::Balances::mint_into(owner, amount.into())?;
+    <T::BenchmarkHelper as BenchmarkHelper<T, I>>::Balances::mint_into(owner, amount)?;
     Ok(())
 }
 

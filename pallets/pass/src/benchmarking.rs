@@ -14,7 +14,7 @@ use sp_runtime::traits::{
 };
 
 fn assert_has_event<T: Config<I>, I: 'static>(generic_event: T::RuntimeEvent) {
-    frame_system::Pallet::<T>::assert_has_event(generic_event.into());
+    frame_system::Pallet::<T>::assert_has_event(generic_event);
 }
 
 fn prepare_register<T: Config<I>, I: 'static>(
