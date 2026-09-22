@@ -1,16 +1,21 @@
 use crate::{Config, CredentialOf, Pallet, WeightInfo};
 use codec::{Decode, DecodeWithMemTracking, Encode};
 use fc_traits_authn::DeviceId;
+use frame_support::pallet_prelude::DispatchResult;
 use frame_support::{
     dispatch::RawOrigin,
     pallet_prelude::{TransactionValidityError, Weight},
+    traits::Get,
     CloneNoBound, DebugNoBound, DefaultNoBound, EqNoBound, PartialEqNoBound,
 };
 use frame_system::{ensure_signed, pallet_prelude::RuntimeCallFor};
 use scale_info::TypeInfo;
 use sp_io::hashing::blake2_256;
 use sp_runtime::{
-    traits::{DispatchInfoOf, DispatchOriginOf, Implication, TransactionExtension, ValidateResult},
+    traits::{
+        DispatchInfoOf, DispatchOriginOf, Implication, PostDispatchInfoOf, TransactionExtension,
+        ValidateResult,
+    },
     transaction_validity::{InvalidTransaction, TransactionSource, ValidTransaction},
 };
 
@@ -68,11 +73,22 @@ where
 {
     const IDENTIFIER: &'static str = "PassAuthenticate";
     type Implicit = ();
-    type Val = ();
-    type Pre = ();
+    /// The part of [`weight`][Self::weight] that `validate` did not spend.
+    type Val = Weight;
+    type Pre = Weight;
 
+    /// Charges only for the branch this extension will actually take:
+    ///
+    /// - with a credential, the pallet's own authentication overhead;
+    /// - without one, the (much cheaper) session key lookup.
+    ///
+    /// Whatever `validate` ends up not spending is refunded in
+    /// [`post_dispatch_details`][Self::post_dispatch_details].
     fn weight(&self, _call: &RuntimeCallFor<T>) -> Weight {
-        T::WeightInfo::authenticate()
+        match &self.0 {
+            Some(_) => T::WeightInfo::authenticate(),
+            None => T::WeightInfo::authenticate_none(),
+        }
     }
 
     fn validate(
@@ -85,13 +101,13 @@ where
         inherited_implication: &impl Implication,
         _source: TransactionSource,
     ) -> ValidateResult<Self::Val, RuntimeCallFor<T>> {
-        let origin = if let Some(params) = &self.0 {
+        let (unspent, origin) = if let Some(params) = &self.0 {
             Pallet::<T, I>::authenticate(
                 &params.device_id,
                 &params.credential,
                 &inherited_implication.using_encoded(blake2_256),
             )
-            .map(|address| RawOrigin::Signed(address).into())
+            .map(|address| (Weight::zero(), RawOrigin::Signed(address).into()))
             .map_err(|e| {
                 log::error!(target: "pallet_pass", "Authentication failed: {:?}", e);
                 InvalidTransaction::BadSigner.into()
@@ -103,26 +119,55 @@ where
             // Otherwise, just pass the previous origin to the rest of the extensions pipeline.
 
             Ok::<_, TransactionValidityError>(if let Ok(who) = ensure_signed(origin.clone()) {
-                Pallet::<T, I>::pass_account_from_session_key(&who)
-                    .or(Some(who))
-                    .map(|who| RawOrigin::Signed(who).into())
-                    .unwrap()
+                (
+                    Weight::zero(),
+                    Pallet::<T, I>::pass_account_from_session_key(&who)
+                        .or(Some(who))
+                        .map(|who| RawOrigin::Signed(who).into())
+                        .unwrap(),
+                )
             } else {
-                origin
+                // Not signed: the session key lookup never happened.
+                (Self::unsigned_refund(), origin)
             })
         }?;
 
-        Ok((ValidTransaction::default(), (), origin))
+        Ok((ValidTransaction::default(), unspent, origin))
     }
 
     fn prepare(
         self,
-        _val: Self::Val,
+        val: Self::Val,
         _origin: &DispatchOriginOf<RuntimeCallFor<T>>,
         _call: &RuntimeCallFor<T>,
         _info: &DispatchInfoOf<RuntimeCallFor<T>>,
         _len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
-        Ok(())
+        Ok(val)
+    }
+
+    fn post_dispatch_details(
+        unspent: Self::Pre,
+        _info: &DispatchInfoOf<RuntimeCallFor<T>>,
+        _post_info: &PostDispatchInfoOf<RuntimeCallFor<T>>,
+        _len: usize,
+        _result: &DispatchResult,
+    ) -> Result<Weight, TransactionValidityError> {
+        Ok(unspent)
+    }
+}
+
+impl<T, I> PassAuthenticate<T, I>
+where
+    T: Config<I>,
+    I: 'static,
+{
+    /// The part of [`WeightInfo::authenticate_none`] that an unsigned origin
+    /// does not spend: the `SessionKeys` read (and its proof), which only
+    /// happens for signed origins.
+    fn unsigned_refund() -> Weight {
+        let charged = T::WeightInfo::authenticate_none();
+        Weight::from_parts(T::DbWeight::get().reads(1).ref_time(), charged.proof_size())
+            .min(charged)
     }
 }
