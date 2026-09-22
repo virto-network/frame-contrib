@@ -221,7 +221,8 @@ pub mod pallet {
         /// Registers an account. Takes a deposit to provision the account.
         #[pallet::call_index(0)]
         #[pallet::weight(
-            T::WeightInfo::register().saturating_add(attestation.verification_weight())
+            T::WeightInfo::register()
+                .saturating_add(<T::Authenticator as Authenticator>::verification_weight(&attestation))
         )]
         pub fn register(
             origin: OriginFor<T>,
@@ -245,7 +246,8 @@ pub mod pallet {
 
         #[pallet::call_index(1)]
         #[pallet::weight(
-            T::WeightInfo::add_device().saturating_add(attestation.verification_weight())
+            T::WeightInfo::add_device()
+                .saturating_add(<T::Authenticator as Authenticator>::verification_weight(&attestation))
         )]
         pub fn add_device(
             origin: OriginFor<T>,
