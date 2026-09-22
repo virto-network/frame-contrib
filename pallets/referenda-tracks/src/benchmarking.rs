@@ -197,12 +197,17 @@ mod benchmarks {
         );
     }
 
+    /// `n` is the number of tracks in the group: its first track plus `n - 1` sub-tracks.
     #[benchmark]
-    pub fn remove_group() {
+    pub fn remove_group(n: Linear<1, { max_tracks::<T, I>() }>) {
         let track = track_info_of::<T, I>();
         let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
-        ReferendaTracks::<T, I>::new_group_with_track(RawOrigin::Root.into(), origin, track)
-            .expect("inserts track");
+        ReferendaTracks::<T, I>::new_group_with_track(
+            RawOrigin::Root.into(),
+            origin,
+            track.clone(),
+        )
+        .expect("inserts track");
 
         let id = TracksIds::<T, I>::get()
             .into_iter()
@@ -210,8 +215,20 @@ mod benchmarks {
             .expect("at least one track");
         let (group, _) = id.split();
 
+        for i in 1..n {
+            let sub_id = ReferendaTracks::<T, I>::next_sub_track_id(group.clone())
+                .expect("sub-track id available");
+            let sub_origin: PalletsOriginOf<T> =
+                RawOrigin::Signed(account("sub_track", i, 0)).into();
+            ReferendaTracks::<T, I>::do_insert(sub_id, track.clone(), sub_origin)
+                .expect("inserts sub-track");
+        }
+        assert_eq!(Tracks::<T, I>::iter_key_prefix(&group).count() as u32, n);
+
         #[extrinsic_call]
-        _(RawOrigin::Root, group, 1u32);
+        _(RawOrigin::Root, group.clone(), n);
+
+        assert_eq!(Tracks::<T, I>::iter_key_prefix(&group).count(), 0);
     }
 
     #[benchmark]
