@@ -10,6 +10,36 @@ with one extra rule: every new Polkadot SDK line is a major release.
 
 ## [Unreleased]
 
+## [3.0.0-pre.2](https://github.com/virto-network/frame-contrib/releases/tag/v3.0.0-pre.2) - 2026-09-22
+
+### ⚠ Breaking changes
+
+- *(deps)* Update to polkadot-sdk `stable2606-2` ([#78](https://github.com/virto-network/frame-contrib/pull/78))
+
+### Added
+
+- *(fc-pallet-pass)* Move benchmark helpers to the authenticators ([#91](https://github.com/virto-network/frame-contrib/pull/91))
+- *(fc-pallet-pass)* Add `FirstItemsAreFree<N, C>` ([#82](https://github.com/virto-network/frame-contrib/pull/82))
+- Custom fees pallet with protocol and community fee layers ([#70](https://github.com/virto-network/frame-contrib/pull/70))
+- Update to polkadot-sdk `stable2603` ([#73](https://github.com/virto-network/frame-contrib/pull/73))
+- *(pallet-pass)* Per-device call filters ([#71](https://github.com/virto-network/frame-contrib/pull/71))
+- Refereda multi tracks ([#68](https://github.com/virto-network/frame-contrib/pull/68))
+
+### Fixed
+
+- *(ci)* Tell release-plz the template pallet isn't published ([#94](https://github.com/virto-network/frame-contrib/pull/94))
+- *(fc-pallet-pass)* Charge authenticator-reported verification weights ([#87](https://github.com/virto-network/frame-contrib/pull/87))
+- *(fc-pallet-pass)* Charge `PassAuthenticate` only for the branch it takes ([#86](https://github.com/virto-network/frame-contrib/pull/86))
+
+### Performance
+
+- *(fc-pallet-pass)* Clear the authentication context every block, not every transaction ([#88](https://github.com/virto-network/frame-contrib/pull/88))
+
+### Other
+
+- Automate SDK upgrades, lockstep versioning and crates.io releases ([#77](https://github.com/virto-network/frame-contrib/pull/77))
+- Gate frame-support behind runtime feature ([#72](https://github.com/virto-network/frame-contrib/pull/72))
+
 ## [3.0.0-pre.1](https://github.com/virto-network/frame-contrib/releases/tag/v3.0.0-pre.1)
 
 Prerelease of the next major version. It carries the breaking pallet changes that
