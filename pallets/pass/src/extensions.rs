@@ -3,7 +3,7 @@ use crate::{
     SpendMatcher, WeightInfo,
 };
 use codec::{Decode, DecodeWithMemTracking, Encode};
-use fc_traits_authn::{DeviceId, UserAuthenticator, UserChallengeResponse};
+use fc_traits_authn::{DeviceId, UserAuthenticator};
 use frame_support::{
     dispatch::RawOrigin,
     pallet_prelude::{DispatchResult, TransactionValidityError, Weight},
