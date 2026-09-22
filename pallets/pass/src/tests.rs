@@ -1132,7 +1132,10 @@ mod extension_weights {
                 PassAuthenticate::<Test>::from(THE_DEVICE, credential()).weight(&Call::get());
 
             assert_eq!(none, Weights::authenticate_none());
-            assert_eq!(some, Weights::authenticate());
+            assert_eq!(
+                some,
+                Weights::authenticate().saturating_add(authenticator_a::CREDENTIAL_WEIGHT)
+            );
             assert!(none.all_lt(some));
         })
     }
@@ -1216,8 +1219,106 @@ mod extension_weights {
                     .get_dispatch_info()
                     .call_weight
                     .saturating_add(Weights::authenticate())
+                    .saturating_add(authenticator_a::CREDENTIAL_WEIGHT)
             );
             assert_eq!(actual, charged);
+        })
+    }
+}
+
+mod authenticator_weights {
+    use super::*;
+    use crate::WeightInfo;
+    use frame_support::dispatch::GetDispatchInfo;
+    use sp_runtime::traits::TransactionExtension;
+
+    type Weights = <Test as crate::Config>::WeightInfo;
+
+    fn attestation_a() -> PassDeviceAttestation {
+        PassDeviceAttestation::AuthenticatorAAuthenticator(authenticator_a::DeviceAttestation {
+            device_id: THE_DEVICE,
+            challenge: [0; 32],
+        })
+    }
+
+    fn attestation_b() -> PassDeviceAttestation {
+        PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
+            device_id: THE_DEVICE,
+            context: 0,
+            challenge: [0; 32],
+        })
+    }
+
+    fn call_weight(call: crate::Call<Test>) -> frame_support::weights::Weight {
+        RuntimeCall::from(call).get_dispatch_info().call_weight
+    }
+
+    #[test]
+    fn register_charges_what_the_authenticator_reports() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                call_weight(crate::Call::register {
+                    user: AccountNameA::get(),
+                    attestation: attestation_a(),
+                }),
+                Weights::register().saturating_add(authenticator_a::ATTESTATION_WEIGHT)
+            );
+            // Authenticator B does not report a weight: it defaults to zero.
+            assert_eq!(
+                call_weight(crate::Call::register {
+                    user: AccountNameA::get(),
+                    attestation: attestation_b(),
+                }),
+                Weights::register()
+            );
+        })
+    }
+
+    #[test]
+    fn add_device_charges_what_the_authenticator_reports() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                call_weight(crate::Call::add_device {
+                    attestation: attestation_a(),
+                }),
+                Weights::add_device().saturating_add(authenticator_a::ATTESTATION_WEIGHT)
+            );
+            assert_eq!(
+                call_weight(crate::Call::add_device {
+                    attestation: attestation_b(),
+                }),
+                Weights::add_device()
+            );
+        })
+    }
+
+    #[test]
+    fn pass_authenticate_charges_what_the_authenticator_reports() {
+        new_test_ext().execute_with(|| {
+            let call: RuntimeCall = frame_system::Call::remark { remark: vec![] }.into();
+
+            let with_a = PassAuthenticate::<Test>::from(
+                THE_DEVICE,
+                PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+                    user_id: AccountNameA::get(),
+                    challenge: [0; 32],
+                }),
+            );
+            assert_eq!(
+                with_a.weight(&call),
+                Weights::authenticate().saturating_add(authenticator_a::CREDENTIAL_WEIGHT)
+            );
+
+            let with_b = PassAuthenticate::<Test>::from(
+                THE_DEVICE,
+                PassCredential::AuthenticatorB(authenticator_b::Credential::new(
+                    AccountNameA::get(),
+                    0,
+                    0,
+                    [0; 32],
+                )),
+            );
+            assert_eq!(with_b.weight(&call), Weights::authenticate());
         })
     }
 }

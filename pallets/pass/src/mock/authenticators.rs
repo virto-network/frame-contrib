@@ -28,6 +28,11 @@ pub mod authenticator_a {
 
     pub struct Authenticator;
 
+    /// What this authenticator reports for verifying an attestation.
+    pub const ATTESTATION_WEIGHT: Weight = Weight::from_parts(1_000_000, 100);
+    /// What this authenticator reports for verifying a credential.
+    pub const CREDENTIAL_WEIGHT: Weight = Weight::from_parts(2_000_000, 200);
+
     #[derive(
         TypeInfo, DebugNoBound, EqNoBound, PartialEq, Clone, Encode, Decode, DecodeWithMemTracking,
     )]
@@ -102,6 +107,10 @@ pub mod authenticator_a {
         fn device_id(&self) -> &DeviceId {
             &self.device_id
         }
+
+        fn verification_weight(&self) -> Weight {
+            ATTESTATION_WEIGHT
+        }
     }
 
     impl UserChallengeResponse<()> for Credential {
@@ -119,6 +128,10 @@ pub mod authenticator_a {
 
         fn user_id(&self) -> HashedUserId {
             self.user_id
+        }
+
+        fn verification_weight(&self) -> Weight {
+            CREDENTIAL_WEIGHT
         }
     }
 }
