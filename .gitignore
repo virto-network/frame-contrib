@@ -11,3 +11,5 @@ target/
 .vscode
 .DS_Store
 .idea
+# Python
+__pycache__/

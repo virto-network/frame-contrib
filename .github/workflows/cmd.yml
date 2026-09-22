@@ -1,0 +1,537 @@
+# The `/cmd` bot: runs commands (e.g. benchmarks) on a pull request when a maintainer comments
+# `/cmd <command>` on it, and pushes the results to the pull request's branch.
+#
+# Ported from polkadot-fellows/runtimes (.github/workflows/cmd.yml), Apache-2.0, and adapted to
+# FRAME Contrib:
+#
+# - Anyone with `write`, `maintain` or `admin` permission on the repository may run commands
+#   (instead of the Polkadot Fellowship).
+# - `issue_comment` workflows always run from the default branch (`main`), also for pull requests
+#   against `release/v2`. So the bot's scripts are taken from `main`, and run against the pull
+#   request's head, which must have the kitchensink runtime.
+# - Commands only run on pull requests from branches of this repository, not from forks: the bot
+#   pushes its results to the pull request's branch.
+# - `/cmd bench` runs in three jobs: `bench-build` builds the kitchensink runtime on a
+#   GitHub-hosted runner; `bench-run` runs the benchmarks on the reference hardware (a self-hosted
+#   runner labelled `benchmark` and `ccx43`), with no Rust toolchain and no credentials; and
+#   `bench-commit` pushes the new weights from a GitHub-hosted runner.
+# - Nothing runs before the commenter is authorized, and nothing here runs on `pull_request`
+#   events.
+#
+# Setup:
+# - Self-hosted runners labelled `self-hosted`, `benchmark` and `ccx43` (reference hardware), with
+#   `git`, `curl`, `sha256sum` and `python3`.
+# - (recommended) A GitHub App installed on the repository with `Contents: write`,
+#   `Pull requests: write` and `Issues: write`, and the secrets `CMD_BOT_APP_ID` and
+#   `CMD_BOT_APP_PRIVATE_KEY`. Commits pushed with the default `GITHUB_TOKEN` don't trigger CI.
+
+name: Command
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/cmd') }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    outputs:
+      allowed: ${{ steps.permission.outputs.allowed }}
+    steps:
+      - name: Check the commenter's permission
+        id: permission
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const username = context.payload.comment.user.login;
+            let permission = 'none';
+            try {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username,
+              });
+              permission = data.permission;
+            } catch (e) {
+              core.info(`Could not get the permission of ${username}: ${e.message}`);
+            }
+            const allowed = ['admin', 'maintain', 'write'].includes(permission);
+            core.info(`${username} has ${permission} permission: allowed=${allowed}`);
+            core.setOutput('allowed', allowed ? 'true' : 'false');
+
+      - name: Reject the command
+        if: ${{ steps.permission.outputs.allowed != 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              comment_id: context.payload.comment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              content: 'confused',
+            });
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Sorry @${context.payload.comment.user.login}, only maintainers (with write access) can run commands.`,
+            });
+
+      - name: Acknowledge the command
+        if: ${{ steps.permission.outputs.allowed == 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              comment_id: context.payload.comment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              content: 'eyes',
+            });
+
+  clean:
+    needs: authorize
+    if: ${{ needs.authorize.outputs.allowed == 'true' && contains(github.event.comment.body, '--clean') }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Clean previous comments
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            for (const comment of comments) {
+              const fromBot = comment.user.type === 'Bot' &&
+                (comment.body.startsWith('Command') || comment.body.startsWith('<details><summary>Command'));
+              const fromAuthor = comment.body.startsWith('/cmd') && comment.user.login === context.payload.comment.user.login;
+              if (comment.id !== context.payload.comment.id && (fromBot || fromAuthor)) {
+                await github.rest.issues.deleteComment({
+                  comment_id: comment.id,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                });
+              }
+            }
+
+  # Parses the command and the pull request's head. The comment's body is only ever read through
+  # environment variables, never interpolated into scripts.
+  prepare:
+    needs: authorize
+    if: ${{ needs.authorize.outputs.allowed == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    outputs:
+      command: ${{ steps.command.outputs.command }}
+      name: ${{ steps.command.outputs.name }}
+      help: ${{ steps.command.outputs.help }}
+      branch: ${{ steps.pr.outputs.branch }}
+      sha: ${{ steps.pr.outputs.sha }}
+    steps:
+      - name: Parse the command
+        id: command
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          line="$(printf '%s\n' "$BODY" | head -n1 | tr -d '\r')"
+          if ! printf '%s\n' "$line" | grep -Eq '^/cmd( [A-Za-z0-9_:-]+)+ *$'; then
+            echo "::error::Invalid command: only letters, digits, spaces, '_', ':' and '-' are allowed"
+            exit 1
+          fi
+          command="${line#/cmd }"
+          echo "command=$command" >> "$GITHUB_OUTPUT"
+          echo "name=${command%% *}" >> "$GITHUB_OUTPUT"
+          case " $command " in
+            *" --help "*) echo "help=true" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "help=false" >> "$GITHUB_OUTPUT"
+              case "${command%% *}" in
+                bench|fmt) ;;
+                *) echo "::error::Unknown command: see \`/cmd --help\`"; exit 1 ;;
+              esac
+              ;;
+          esac
+
+      - name: Get the pull request's head
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            if (pr.head.repo === null || pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Commands only run on pull requests from branches of this repository, not from forks.');
+              return;
+            }
+            core.setOutput('branch', pr.head.ref);
+            core.setOutput('sha', pr.head.sha);
+
+      - name: Report a rejected command
+        if: ${{ failure() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.reactions.createForIssueComment({
+              comment_id: context.payload.comment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              content: 'confused',
+            });
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Command rejected: it's not a valid \`/cmd\` command, or the pull request comes from a fork. [See logs here](${runUrl})`,
+            });
+
+  help:
+    needs: [authorize, prepare]
+    if: ${{ needs.prepare.outputs.help == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout the bot
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Save output of help
+        id: help
+        env:
+          CMD: ${{ needs.prepare.outputs.command }}
+        run: |
+          {
+            echo 'help<<EOF'
+            # `$CMD` was validated in `prepare`, and is split into arguments on purpose.
+            # shellcheck disable=SC2086
+            python3 .github/scripts/cmd/cmd.py $CMD
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment PR (Help)
+        uses: actions/github-script@v7
+        env:
+          HELP: ${{ steps.help.outputs.help }}
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `<details><summary>Command help:</summary>\n\n\`\`\`\n${process.env.HELP}\n\`\`\`\n\n</details>`,
+            });
+
+      - name: Add reaction
+        if: ${{ always() }}
+        uses: actions/github-script@v7
+        env:
+          OUTCOME: ${{ job.status }}
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              comment_id: context.payload.comment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              content: process.env.OUTCOME === 'success' ? '+1' : 'confused',
+            });
+
+  # Announces the command.
+  start:
+    needs: [authorize, prepare]
+    if: ${{ needs.prepare.outputs.help == 'false' && !contains(needs.prepare.outputs.command, '--quiet') }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Comment PR (Start)
+        uses: actions/github-script@v7
+        env:
+          CMD: ${{ needs.prepare.outputs.command }}
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Command \`${process.env.CMD}\` has started 🚀 [See logs here](${runUrl})`,
+            });
+
+  fmt:
+    needs: [authorize, prepare]
+    if: ${{ needs.prepare.outputs.help == 'false' && needs.prepare.outputs.name == 'fmt' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      CMD: ${{ needs.prepare.outputs.command }}
+      PR_BRANCH: ${{ needs.prepare.outputs.branch }}
+      GH_ACTOR: ${{ github.event.comment.user.login }}
+      HAS_APP: ${{ secrets.CMD_BOT_APP_ID != '' }}
+    steps:
+      - name: Create the bot's token
+        id: app-token
+        if: ${{ env.HAS_APP == 'true' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.CMD_BOT_APP_ID }}
+          private-key: ${{ secrets.CMD_BOT_APP_PRIVATE_KEY }}
+
+      # The bot's scripts always come from the default branch.
+      - name: Checkout the bot
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: bot
+          persist-credentials: false
+          sparse-checkout: .github/scripts/cmd
+
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          path: pr
+          persist-credentials: false
+
+      - name: Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Run cmd
+        working-directory: pr
+        run: |
+          # `$CMD` was validated in `prepare`, and is split into arguments on purpose.
+          # shellcheck disable=SC2086
+          python3 ../bot/.github/scripts/cmd/cmd.py $CMD
+
+      - name: Commit changes
+        working-directory: pr
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: ../bot/.github/scripts/cmd/commit.sh
+
+  bench-build:
+    needs: [authorize, prepare]
+    if: ${{ needs.prepare.outputs.help == 'false' && needs.prepare.outputs.name == 'bench' }}
+    runs-on: ubuntu-latest
+    env:
+      # Recent `rustc`s no longer turn undefined symbols into imports when linking for
+      # `wasm32v1-none`, but a runtime imports its host functions from the host.
+      WASM_BUILD_RUSTFLAGS: "-C link-arg=--allow-undefined"
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Setup Ubuntu dependencies
+        run: sudo apt update && sudo apt install -y protobuf-compiler
+
+      # No credentials are persisted while the pull request's code builds.
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+
+      - name: Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: rust-src
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2.7.3
+        with:
+          cache-on-failure: true
+          key: cmd-bench
+
+      - name: Build the kitchensink runtime with benchmarks
+        run: cargo build --release --locked -p fc-kitchensink-runtime --features runtime-benchmarks
+
+      - name: Upload the runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: kitchensink-runtime
+          path: target/release/wbuild/fc-kitchensink-runtime/fc_kitchensink_runtime.compact.compressed.wasm
+          if-no-files-found: error
+          retention-days: 1
+
+  # Runs on the reference hardware: no Rust toolchain, no build, and no credentials.
+  bench-run:
+    needs: [prepare, bench-build]
+    runs-on: [self-hosted, benchmark, ccx43]
+    timeout-minutes: 180
+    concurrency:
+      group: cmd-bench-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    env:
+      CMD: ${{ needs.prepare.outputs.command }}
+    steps:
+      # The bot's scripts always come from the default branch.
+      - name: Checkout the bot
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: bot
+          persist-credentials: false
+          sparse-checkout: .github/scripts/cmd
+
+      # Only what the benchmarks need: the weight template and header, the SDK version, and the
+      # weights files to overwrite.
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          path: pr
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.maintain/
+            /polkadot-sdk-version
+            /pallets/*/src/weights.rs
+
+      - name: Download the runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: kitchensink-runtime
+          path: ${{ runner.temp }}/runtime
+
+      - name: Install frame-omni-bencher
+        working-directory: pr
+        run: |
+          release="polkadot-$(cat polkadot-sdk-version)"
+          base="https://github.com/paritytech/polkadot-sdk/releases/download/$release"
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          rm -f frame-omni-bencher frame-omni-bencher.sha256
+          curl -fsSL --retry 5 -O "$base/frame-omni-bencher" -O "$base/frame-omni-bencher.sha256"
+          sha256sum -c frame-omni-bencher.sha256
+          chmod +x frame-omni-bencher
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          ./frame-omni-bencher --version
+
+      - name: Run the benchmarks
+        working-directory: pr
+        run: |
+          # `$CMD` was validated in `prepare`, and is split into arguments on purpose.
+          # shellcheck disable=SC2086
+          python3 ../bot/.github/scripts/cmd/cmd.py $CMD \
+            --runtime "$RUNNER_TEMP/runtime/fc_kitchensink_runtime.compact.compressed.wasm"
+          git status --short
+
+      - name: Upload the weights
+        uses: actions/upload-artifact@v4
+        with:
+          name: weights
+          path: pr/pallets/*/src/weights.rs
+          if-no-files-found: error
+          retention-days: 7
+
+  bench-commit:
+    needs: [prepare, bench-run]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      CMD: ${{ needs.prepare.outputs.command }}
+      PR_BRANCH: ${{ needs.prepare.outputs.branch }}
+      GH_ACTOR: ${{ github.event.comment.user.login }}
+      HAS_APP: ${{ secrets.CMD_BOT_APP_ID != '' }}
+    steps:
+      - name: Create the bot's token
+        id: app-token
+        if: ${{ env.HAS_APP == 'true' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.CMD_BOT_APP_ID }}
+          private-key: ${{ secrets.CMD_BOT_APP_PRIVATE_KEY }}
+
+      - name: Checkout the bot
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: bot
+          persist-credentials: false
+          sparse-checkout: .github/scripts/cmd
+
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          path: pr
+          persist-credentials: false
+
+      - name: Download the weights
+        uses: actions/download-artifact@v4
+        with:
+          name: weights
+          path: pr/pallets
+
+      - name: Commit changes
+        working-directory: pr
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: ../bot/.github/scripts/cmd/commit.sh
+
+  # Reports the outcome of the command.
+  finish:
+    needs: [authorize, prepare, fmt, bench-build, bench-run, bench-commit]
+    if: ${{ always() && needs.prepare.result == 'success' && needs.prepare.outputs.help == 'false' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Report the outcome
+        uses: actions/github-script@v7
+        env:
+          CMD: ${{ needs.prepare.outputs.command }}
+          RESULTS: ${{ toJSON(needs) }}
+        with:
+          script: |
+            const results = JSON.parse(process.env.RESULTS);
+            const jobs = ['fmt', 'bench-build', 'bench-run', 'bench-commit'].map((j) => results[j].result);
+            const failed = jobs.some((r) => r === 'failure' || r === 'cancelled');
+            const quiet = process.env.CMD.split(' ').includes('--quiet');
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            if (!quiet) {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `Command \`${process.env.CMD}\` ${failed ? 'has failed ❌' : 'has finished ✅'} [See logs here](${runUrl})`,
+              });
+            }
+            await github.rest.reactions.createForIssueComment({
+              comment_id: context.payload.comment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              content: failed ? 'confused' : '+1',
+            });
