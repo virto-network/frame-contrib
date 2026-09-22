@@ -3,7 +3,7 @@ use crate::Pallet;
 use frame_benchmarking::v2::*;
 
 fn assert_last_event<T: Config>(generic_event: T::RuntimeEvent) {
-    frame_system::Pallet::<T>::assert_last_event(generic_event.into());
+    frame_system::Pallet::<T>::assert_last_event(generic_event);
 }
 
 #[benchmarks]
