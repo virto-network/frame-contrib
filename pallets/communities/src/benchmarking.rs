@@ -22,7 +22,7 @@ use sp_runtime::traits::{Hash, StaticLookup};
 type RuntimeEventFor<T> = <T as frame_system::Config>::RuntimeEvent;
 
 fn assert_has_event<T: Config>(generic_event: RuntimeEventFor<T>) {
-    frame_system::Pallet::<T>::assert_has_event(generic_event.into());
+    frame_system::Pallet::<T>::assert_has_event(generic_event);
 }
 
 fn setup_account<T: Config>(

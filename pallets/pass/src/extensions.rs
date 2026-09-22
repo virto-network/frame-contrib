@@ -119,7 +119,7 @@ where
             })?;
 
             // Check the device's call filter (missing filter = denied)
-            let filter = DeviceFilters::<T, I>::get(&address, &params.device_id)
+            let filter = DeviceFilters::<T, I>::get(&address, params.device_id)
                 .ok_or(TransactionValidityError::from(InvalidTransaction::Call))?;
             if !filter.allows(
                 T::CallMatcher::call_indices(call),

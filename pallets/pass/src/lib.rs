@@ -7,7 +7,6 @@
 extern crate alloc;
 extern crate core;
 
-use core::fmt::Debug;
 use fc_traits_authn::*;
 use frame_support::{
     pallet_prelude::*,
@@ -82,6 +81,10 @@ pub mod pallet {
         type Balances: Inspect<Self::AccountId> + Mutate<Self::AccountId>;
         /// A single or composite authenticator that allows the pallet to handle the actions
         /// regarding assertion to register devices and authenticating with credentials.
+        ///
+        /// Benchmarks (`runtime-benchmarks`) also require it to implement
+        /// [`AuthenticatorBenchmarkHelper`], to produce valid device attestations and
+        /// credentials.
         type Authenticator: Authenticator<Authority = util::AuthorityFromPalletId<Self::PalletId>>;
         /// The `Scheduler` system.
         type Scheduler: Named<BlockNumberFor<Self, I>, Self::RuntimeCall, Self::PalletsOrigin>;
@@ -127,12 +130,6 @@ pub mod pallet {
         /// Maximum assets in a device's spend filter.
         #[pallet::constant]
         type MaxFilteredAssets: Get<u32>;
-
-        // Benchmarking: Types to handle benchmarks.
-
-        /// A helper trait to set up benchmark tests.
-        #[cfg(feature = "runtime-benchmarks")]
-        type BenchmarkHelper: BenchmarkHelper<Self, I>;
     }
 
     #[pallet::composite_enum]
@@ -456,7 +453,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Error::<T, I>::NotAuthenticatedByDevice
         );
         ensure!(
-            Devices::<T, I>::contains_key(address, &caller_device_id),
+            Devices::<T, I>::contains_key(address, caller_device_id),
             Error::<T, I>::DeviceNotFound
         );
         let caller_filter = DeviceFilters::<T, I>::get(address, caller_device_id)

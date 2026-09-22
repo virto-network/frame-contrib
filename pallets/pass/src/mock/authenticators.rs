@@ -307,3 +307,49 @@ pub mod authenticator_b {
         }
     }
 }
+
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarks {
+    use super::*;
+    use authenticator_b::{Credential, DeviceAttestation};
+    use fc_traits_authn::AuthenticatorBenchmarkHelper;
+    use sp_runtime::traits::TrailingZeroInput;
+
+    /// A counter kept in storage by this helper, to hand out fresh device ids (the pallet
+    /// imposes no storage layout on authenticators).
+    #[frame_support::storage_alias]
+    type LastDevice =
+        StorageValue<AuthenticatorBHelper, u32, frame_support::pallet_prelude::ValueQuery>;
+
+    impl AuthenticatorBenchmarkHelper for AuthenticatorB<LastThreeBlocksChallenger> {
+        fn device_attestation(xtc: &impl ExtrinsicContext) -> Self::DeviceAttestation {
+            let n = LastDevice::mutate(|n| {
+                *n += 1;
+                *n
+            });
+            let context = System::block_number();
+            DeviceAttestation {
+                device_id: Decode::decode(&mut TrailingZeroInput::new(&n.encode()))
+                    .expect("infinite input; qed"),
+                context,
+                challenge: LastThreeBlocksChallenger::generate(&context, xtc),
+            }
+        }
+
+        fn credential(
+            user_id: HashedUserId,
+            device_id: DeviceId,
+            xtc: &impl ExtrinsicContext,
+        ) -> Credential<BlockNumberFor<Test>> {
+            let context = System::block_number();
+            // Devices produced above start with a nonce of zero.
+            Credential::new(
+                user_id,
+                context,
+                0,
+                LastThreeBlocksChallenger::generate(&context, xtc),
+            )
+            .sign(&device_id)
+        }
+    }
+}

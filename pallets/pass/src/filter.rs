@@ -90,7 +90,7 @@ pub enum DeviceFilter<
 #[derive(
     Clone, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Debug, PartialEq, Eq,
 )]
-pub struct AssetSpendLimit<AssetId: Clone + Debug + Eq, Balance: Clone + Debug + Eq> {
+pub struct AssetSpendLimit<AssetId, Balance> {
     pub asset: AssetId,
     pub max_amount: Balance,
 }

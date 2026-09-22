@@ -6,7 +6,7 @@ use frame_support::traits::{fungible::Unbalanced, tokens::Precision};
 use sp_runtime::traits::Bounded;
 
 fn assert_has_event<T: Config<I>, I: 'static>(generic_event: T::RuntimeEvent) {
-    frame_system::Pallet::<T>::assert_has_event(generic_event.into())
+    frame_system::Pallet::<T>::assert_has_event(generic_event)
 }
 
 type InventoryInfoOf<T, I> = (OriginFor<T>, InventoryIdFor<T, I>, AccountIdOf<T>);
