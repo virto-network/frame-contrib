@@ -11,8 +11,8 @@ mod runtime {
     use scale_info::TypeInfo;
 
     use crate::{
-        Authenticator, AuthorityId, Challenger, CxOf, DeviceChallengeResponse, DeviceId,
-        UserAuthenticator, UserChallengeResponse,
+        Authenticator, AuthenticatorWeightInfo, AuthorityId, Challenger, CxOf,
+        DeviceChallengeResponse, DeviceId, UserAuthenticator, UserChallengeResponse,
     };
 
     use super::VerifyCredential;
@@ -31,19 +31,25 @@ mod runtime {
     }
 
     #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug)]
-    #[scale_info(skip_type_params(Dev, Att))]
+    #[scale_info(skip_type_params(Dev, Att, W))]
     /// Convenient auto-implementor of the Authenticator trait
-    pub struct Auth<Dev, Att>(PhantomData<(Dev, Att)>);
+    ///
+    /// `W` is the authenticator's [`AuthenticatorWeightInfo`], which the runtime binds; it
+    /// defaults to `()` (no extra cost), so an authenticator that has not been benchmarked yet
+    /// can keep spelling this `Auth<Dev, Att>`.
+    pub struct Auth<Dev, Att, W = ()>(PhantomData<(Dev, Att, W)>);
 
-    impl<Dev, Att> Authenticator for Auth<Dev, Att>
+    impl<Dev, Att, W> Authenticator for Auth<Dev, Att, W>
     where
         Att: DeviceChallengeResponse<CxOf<ChallengerOf<Dev>>>,
         Dev: UserAuthenticator + From<Att>,
+        W: AuthenticatorWeightInfo,
     {
         type Authority = <Dev as UserAuthenticator>::Authority;
         type Challenger = ChallengerOf<Dev>;
         type DeviceAttestation = Att;
         type Device = Dev;
+        type WeightInfo = W;
 
         fn unpack_device(attestation: Self::DeviceAttestation) -> Self::Device {
             attestation.into()
@@ -52,16 +58,16 @@ mod runtime {
 
     /// Convenient auto-implementor of the UserAuthenticator trait
     #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug)]
-    #[scale_info(skip_type_params(A, Ch, Cred))]
-    pub struct Dev<T, A, Ch, Cred>(T, PhantomData<(A, Ch, Cred)>);
+    #[scale_info(skip_type_params(A, Ch, Cred, W))]
+    pub struct Dev<T, A, Ch, Cred, W = ()>(T, PhantomData<(A, Ch, Cred, W)>);
 
-    impl<T, A, Ch, Cred> Dev<T, A, Ch, Cred> {
+    impl<T, A, Ch, Cred, W> Dev<T, A, Ch, Cred, W> {
         pub fn new(t: T) -> Self {
             Self(t, PhantomData)
         }
     }
 
-    impl<T, A, Ch, Cred> UserAuthenticator for Dev<T, A, Ch, Cred>
+    impl<T, A, Ch, Cred, W> UserAuthenticator for Dev<T, A, Ch, Cred, W>
     where
         T: VerifyCredential<Cred>
             + AsRef<DeviceId>
@@ -72,10 +78,12 @@ mod runtime {
         A: Get<AuthorityId> + 'static,
         Ch: Challenger + 'static,
         Cred: UserChallengeResponse<Ch::Context> + 'static + Send + Sync,
+        W: AuthenticatorWeightInfo + 'static,
     {
         type Authority = A;
         type Challenger = Ch;
         type Credential = Cred;
+        type WeightInfo = W;
 
         fn verify_credential(&mut self, credential: &Self::Credential) -> Option<()> {
             self.0.verify(credential)
@@ -86,7 +94,7 @@ mod runtime {
         }
     }
 
-    impl<T: MaxEncodedLen, A, Ch, Cr> MaxEncodedLen for Dev<T, A, Ch, Cr> {
+    impl<T: MaxEncodedLen, A, Ch, Cr, W> MaxEncodedLen for Dev<T, A, Ch, Cr, W> {
         fn max_encoded_len() -> usize {
             T::max_encoded_len()
         }
@@ -95,12 +103,13 @@ mod runtime {
     /// [`Auth`] produces benchmark inputs from the helpers of its challenger, attestation and
     /// credential types.
     #[cfg(feature = "runtime-benchmarks")]
-    impl<Dev, Att> crate::AuthenticatorBenchmarkHelper for Auth<Dev, Att>
+    impl<Dev, Att, W> crate::AuthenticatorBenchmarkHelper for Auth<Dev, Att, W>
     where
         Att: crate::DeviceAttestationBenchmarkHelper<CxOf<ChallengerOf<Dev>>>,
         Dev: UserAuthenticator + From<Att>,
         ChallengerOf<Dev>: crate::ChallengerBenchmarkHelper,
         Dev::Credential: crate::CredentialBenchmarkHelper<CxOf<ChallengerOf<Dev>>>,
+        W: AuthenticatorWeightInfo,
     {
         fn device_attestation(xtc: &impl crate::ExtrinsicContext) -> Self::DeviceAttestation {
             use crate::ChallengerBenchmarkHelper;
@@ -199,15 +208,17 @@ mod runtime {
             }
         }
 
-        pub type DummyDev<AuthorityId> = Dev<
+        pub type DummyDev<AuthorityId, W = ()> = Dev<
             DummyAttestation<AuthorityId>,
             AuthorityId,
             DummyChallenger,
             DummyCredential<AuthorityId>,
+            W,
         >;
-        pub type Dummy<AuthorityId> = Auth<DummyDev<AuthorityId>, DummyAttestation<AuthorityId>>;
+        pub type Dummy<AuthorityId, W = ()> =
+            Auth<DummyDev<AuthorityId, W>, DummyAttestation<AuthorityId>, W>;
 
-        impl<A> From<DummyAttestation<A>> for DummyDev<A> {
+        impl<A, W> From<DummyAttestation<A>> for DummyDev<A, W> {
             fn from(value: DummyAttestation<A>) -> Self {
                 DummyDev::new(value)
             }

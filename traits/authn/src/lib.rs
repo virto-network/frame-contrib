@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[cfg(feature = "runtime")]
-use codec::{FullCodec, MaxEncodedLen};
+use codec::{Encode, FullCodec, MaxEncodedLen};
 #[cfg(feature = "runtime")]
 use frame_support::{traits::Get, weights::Weight, Parameter};
 #[cfg(feature = "runtime")]
@@ -34,8 +34,9 @@ pub mod prelude {
     #[cfg(feature = "runtime-benchmarks")]
     pub use crate::AuthenticatorBenchmarkHelper;
     pub use crate::{
-        Authenticator, AuthorityId, Challenge, Challenger, DeviceChallengeResponse, DeviceId,
-        ExtrinsicContext, HashedUserId, UserAuthenticator, UserChallengeResponse,
+        Authenticator, AuthenticatorWeightInfo, AuthorityId, Challenge, Challenger,
+        DeviceChallengeResponse, DeviceId, ExtrinsicContext, HashedUserId, UserAuthenticator,
+        UserChallengeResponse,
     };
     pub use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
     pub use frame_support::{
@@ -95,6 +96,51 @@ pub trait Challenger {
     }
 }
 
+/// The weights of the verification routines of an authenticator.
+///
+/// Verification is pure computation (parsing the payload, hashing it, checking a signature), so
+/// these weights depend only on the CPU, and not on storage access. They are meant to be
+/// produced by a benchmark of the authenticator itself, and bound by the runtime, exactly like a
+/// pallet's `WeightInfo`:
+///
+/// ```ignore
+/// impl fc_pass_authenticator_webauthn::Config for Runtime {
+///     type WeightInfo = weights::pass_authenticators_webauthn::WeightInfo<Runtime>;
+/// }
+/// ```
+///
+/// The components are the lengths (in bytes) of the two variable-length parts of a WebAuthn-like
+/// payload, since those are what the verification cost grows with:
+///
+/// - `c`: the length of the client data,
+/// - `a`: the length of the authenticator data.
+///
+/// An authenticator that has only one (or neither) of them is free to ignore the components it
+/// does not use; the benchmark for it will simply come out flat on that axis.
+#[cfg(feature = "runtime")]
+pub trait AuthenticatorWeightInfo {
+    /// The weight of verifying a device attestation whose client data is `c` bytes long and
+    /// whose authenticator data is `a` bytes long.
+    fn verify_device(c: u32, a: u32) -> Weight;
+
+    /// The weight of verifying a user credential whose client data is `c` bytes long and whose
+    /// authenticator data is `a` bytes long.
+    fn verify_user(c: u32, a: u32) -> Weight;
+}
+
+/// Reports no cost at all: for authenticators whose verification is negligible, and as the
+/// starting point for a runtime that has not benchmarked its authenticators yet.
+#[cfg(feature = "runtime")]
+impl AuthenticatorWeightInfo for () {
+    fn verify_device(_c: u32, _a: u32) -> Weight {
+        Weight::zero()
+    }
+
+    fn verify_user(_c: u32, _a: u32) -> Weight {
+        Weight::zero()
+    }
+}
+
 /// Authenticator is used to verify authentication devices that in turn are used to verify users
 #[cfg(feature = "runtime")]
 pub trait Authenticator {
@@ -102,6 +148,26 @@ pub trait Authenticator {
     type Challenger: Challenger;
     type DeviceAttestation: DeviceChallengeResponse<CxOf<Self::Challenger>>;
     type Device: UserAuthenticator<Challenger = Self::Challenger>;
+    /// The benchmarked cost of this authenticator's verification routines, bound by the runtime.
+    type WeightInfo: AuthenticatorWeightInfo;
+
+    /// The weight of verifying `attestation` (see [`Self::verify_device`]), on top of what the
+    /// pallet that consumes it already accounts for.
+    ///
+    /// Consumers (e.g. `pallet-pass`) can't know what verifying an attestation costs, since it
+    /// depends on the authenticator: decoding and parsing its fields, checking its signature,
+    /// etc. The value must be an **upper bound for `attestation` as submitted**: its size is
+    /// chosen by whoever sends the extrinsic, so a cost that grows with the payload has to be
+    /// charged from the payload's actual lengths, never from a constant.
+    ///
+    /// The default feeds the whole encoded size as both components, which over-counts but stays
+    /// an upper bound for any [`AuthenticatorWeightInfo`] that grows monotonically on each of
+    /// them. Authenticators that can tell their variable-length parts apart should override this
+    /// and pass the real lengths.
+    fn verification_weight(attestation: &Self::DeviceAttestation) -> Weight {
+        let size = attestation.encoded_size() as u32;
+        Self::WeightInfo::verify_device(size, size)
+    }
 
     fn verify_device(
         attestation: Self::DeviceAttestation,
@@ -138,6 +204,26 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
     type Authority: Get<AuthorityId>;
     type Challenger: Challenger;
     type Credential: UserChallengeResponse<CxOf<Self::Challenger>> + Send + Sync;
+    /// The benchmarked cost of this device's verification routines, bound by the runtime.
+    type WeightInfo: AuthenticatorWeightInfo;
+
+    /// The weight of verifying `credential` (see [`Self::verify_user`]), on top of what the
+    /// pallet that consumes it already accounts for.
+    ///
+    /// Consumers (e.g. `pallet-pass`) can't know what verifying a credential costs, since it
+    /// depends on the authenticator: decoding and parsing its fields, checking its signature,
+    /// etc. The value must be an **upper bound for `credential` as submitted**: its size is
+    /// chosen by whoever sends the transaction, so a cost that grows with the payload has to be
+    /// charged from the payload's actual lengths, never from a constant.
+    ///
+    /// The default feeds the whole encoded size as both components, which over-counts but stays
+    /// an upper bound for any [`AuthenticatorWeightInfo`] that grows monotonically on each of
+    /// them. Authenticators that can tell their variable-length parts apart should override this
+    /// and pass the real lengths.
+    fn verification_weight(credential: &Self::Credential) -> Weight {
+        let size = credential.encoded_size() as u32;
+        Self::WeightInfo::verify_user(size, size)
+    }
 
     fn verify_user(
         &mut self,
@@ -177,18 +263,6 @@ pub trait DeviceChallengeResponse<Cx>: Parameter {
     fn used_challenge(&self) -> (Cx, Challenge);
     fn authority(&self) -> AuthorityId;
     fn device_id(&self) -> &DeviceId;
-
-    /// The weight of verifying this attestation (see [`Authenticator::verify_device`]), on top
-    /// of what the pallet that consumes it already accounts for.
-    ///
-    /// Consumers (e.g. `pallet-pass`) can't know what verifying an attestation costs, since it
-    /// depends on the authenticator: decoding and parsing its fields, checking its signature,
-    /// etc. Authenticators whose verification is not negligible, or whose cost grows with the
-    /// size of the attestation (e.g. `base + per_byte * client_data.len()`), must return a
-    /// benchmarked upper bound for `self` here. Defaults to zero.
-    fn verification_weight(&self) -> Weight {
-        Weight::zero()
-    }
 }
 
 /// A response to a challenge for identifying a user
@@ -198,16 +272,4 @@ pub trait UserChallengeResponse<Cx>: Parameter {
     fn used_challenge(&self) -> (Cx, Challenge);
     fn authority(&self) -> AuthorityId;
     fn user_id(&self) -> HashedUserId;
-
-    /// The weight of verifying this credential (see [`UserAuthenticator::verify_user`]), on top
-    /// of what the pallet that consumes it already accounts for.
-    ///
-    /// Consumers (e.g. `pallet-pass`) can't know what verifying a credential costs, since it
-    /// depends on the authenticator: decoding and parsing its fields, checking its signature,
-    /// etc. Authenticators whose verification is not negligible, or whose cost grows with the
-    /// size of the credential (e.g. `base + per_byte * client_data.len()`), must return a
-    /// benchmarked upper bound for `self` here. Defaults to zero.
-    fn verification_weight(&self) -> Weight {
-        Weight::zero()
-    }
 }
