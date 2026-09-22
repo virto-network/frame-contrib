@@ -27,6 +27,9 @@ jobs:
   check:
     needs: lint
     runs-on: ubuntu-latest
+    env:
+      # The kitchensink runtime's WASM blob is built by the `kitchensink` job.
+      SKIP_WASM_BUILD: 1
     steps:
       - name: Setup Ubuntu dependencies
         shell: bash
@@ -75,6 +78,9 @@ jobs:
   test:
     needs: lint
     runs-on: ubuntu-latest
+    env:
+      # The kitchensink runtime's WASM blob is built by the `kitchensink` job.
+      SKIP_WASM_BUILD: 1
     steps:
       - name: Setup Ubuntu dependencies
         shell: bash
@@ -99,3 +105,48 @@ jobs:
 
       - name: Run tests
         run: cargo test --release --locked --all-features --workspace
+
+  kitchensink:
+    needs: lint
+    runs-on: ubuntu-latest
+    env:
+      # Recent `rustc`s no longer turn undefined symbols into imports when linking for
+      # `wasm32v1-none`, but a runtime imports its host functions from the host.
+      WASM_BUILD_RUSTFLAGS: "-C link-arg=--allow-undefined"
+    steps:
+      - name: Setup Ubuntu dependencies
+        shell: bash
+        run: sudo apt update && sudo apt install -y protobuf-compiler
+
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: rust-src
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2.7.3
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+          key: kitchensink
+
+      - name: Build the kitchensink runtime with benchmarks
+        run: cargo build --release --locked -p fc-kitchensink-runtime --features runtime-benchmarks
+
+      - name: Install frame-omni-bencher
+        run: |
+          release="polkadot-$(cat polkadot-sdk-version)"
+          base="https://github.com/paritytech/polkadot-sdk/releases/download/$release"
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSL --retry 5 -O "$base/frame-omni-bencher" -O "$base/frame-omni-bencher.sha256"
+          sha256sum -c frame-omni-bencher.sha256
+          chmod +x frame-omni-bencher
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Run every benchmark once
+        run: |
+          frame-omni-bencher v1 benchmark pallet --all --steps 2 --repeat 1 \
+            --runtime target/release/wbuild/fc-kitchensink-runtime/fc_kitchensink_runtime.compact.compressed.wasm
