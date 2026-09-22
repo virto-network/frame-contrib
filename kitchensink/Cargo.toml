@@ -1,0 +1,159 @@
+[package]
+name = "fc-kitchensink-runtime"
+description = "A runtime with every FRAME Contrib pallet, to generate their default weights with `frame-omni-bencher`. Not meant to run a chain."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+publish = false
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+codec.workspace = true
+scale-info.workspace = true
+serde_json = { workspace = true, features = ["alloc"] }
+
+# FRAME Contrib
+fc-pallet-black-hole.workspace = true
+fc-pallet-communities.workspace = true
+fc-pallet-gas-transaction-payment.workspace = true
+fc-pallet-listings.workspace = true
+fc-pallet-orders.workspace = true
+fc-pallet-pass.workspace = true
+fc-pallet-payments.workspace = true
+fc-pallet-referenda-tracks.workspace = true
+frame-contrib-traits.workspace = true
+
+# Polkadot SDK
+frame-benchmarking = { workspace = true, optional = true }
+frame-executive.workspace = true
+frame-support.workspace = true
+frame-system.workspace = true
+frame-system-rpc-runtime-api.workspace = true
+frame-try-runtime = { workspace = true, optional = true }
+pallet-assets.workspace = true
+pallet-assets-freezer.workspace = true
+pallet-assets-holder.workspace = true
+pallet-balances.workspace = true
+pallet-nfts.workspace = true
+pallet-preimage.workspace = true
+pallet-referenda.workspace = true
+pallet-scheduler.workspace = true
+pallet-timestamp.workspace = true
+pallet-transaction-payment.workspace = true
+pallet-transaction-payment-rpc-runtime-api.workspace = true
+sp-api.workspace = true
+sp-block-builder.workspace = true
+sp-core.workspace = true
+sp-genesis-builder.workspace = true
+sp-inherents.workspace = true
+sp-io.workspace = true
+sp-keyring.workspace = true
+sp-offchain.workspace = true
+sp-runtime.workspace = true
+sp-session.workspace = true
+sp-transaction-pool.workspace = true
+sp-version.workspace = true
+
+[build-dependencies]
+substrate-wasm-builder = { workspace = true, optional = true }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"fc-pallet-black-hole/std",
+	"fc-pallet-communities/std",
+	"fc-pallet-gas-transaction-payment/std",
+	"fc-pallet-listings/std",
+	"fc-pallet-orders/std",
+	"fc-pallet-pass/std",
+	"fc-pallet-payments/std",
+	"fc-pallet-referenda-tracks/std",
+	"frame-benchmarking?/std",
+	"frame-contrib-traits/std",
+	"frame-executive/std",
+	"frame-support/std",
+	"frame-system-rpc-runtime-api/std",
+	"frame-system/std",
+	"frame-try-runtime?/std",
+	"pallet-assets-freezer/std",
+	"pallet-assets-holder/std",
+	"pallet-assets/std",
+	"pallet-balances/std",
+	"pallet-nfts/std",
+	"pallet-preimage/std",
+	"pallet-referenda/std",
+	"pallet-scheduler/std",
+	"pallet-timestamp/std",
+	"pallet-transaction-payment-rpc-runtime-api/std",
+	"pallet-transaction-payment/std",
+	"scale-info/std",
+	"serde_json/std",
+	"sp-api/std",
+	"sp-block-builder/std",
+	"sp-core/std",
+	"sp-genesis-builder/std",
+	"sp-inherents/std",
+	"sp-io/std",
+	"sp-keyring/std",
+	"sp-offchain/std",
+	"sp-runtime/std",
+	"sp-session/std",
+	"sp-transaction-pool/std",
+	"sp-version/std",
+	"substrate-wasm-builder",
+]
+runtime-benchmarks = [
+	"fc-pallet-black-hole/runtime-benchmarks",
+	"fc-pallet-communities/runtime-benchmarks",
+	"fc-pallet-gas-transaction-payment/runtime-benchmarks",
+	"fc-pallet-listings/runtime-benchmarks",
+	"fc-pallet-orders/runtime-benchmarks",
+	"fc-pallet-pass/runtime-benchmarks",
+	"fc-pallet-payments/runtime-benchmarks",
+	"fc-pallet-referenda-tracks/runtime-benchmarks",
+	"frame-benchmarking/runtime-benchmarks",
+	"frame-contrib-traits/runtime-benchmarks",
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"pallet-assets-freezer/runtime-benchmarks",
+	"pallet-assets-holder/runtime-benchmarks",
+	"pallet-assets/runtime-benchmarks",
+	"pallet-balances/runtime-benchmarks",
+	"pallet-nfts/runtime-benchmarks",
+	"pallet-preimage/runtime-benchmarks",
+	"pallet-referenda/runtime-benchmarks",
+	"pallet-scheduler/runtime-benchmarks",
+	"pallet-timestamp/runtime-benchmarks",
+	"pallet-transaction-payment/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
+]
+try-runtime = [
+	"fc-pallet-black-hole/try-runtime",
+	"fc-pallet-communities/try-runtime",
+	"fc-pallet-gas-transaction-payment/try-runtime",
+	"fc-pallet-listings/try-runtime",
+	"fc-pallet-orders/try-runtime",
+	"fc-pallet-pass/try-runtime",
+	"fc-pallet-payments/try-runtime",
+	"fc-pallet-referenda-tracks/try-runtime",
+	"frame-executive/try-runtime",
+	"frame-support/try-runtime",
+	"frame-system/try-runtime",
+	"frame-try-runtime/try-runtime",
+	"pallet-assets-freezer/try-runtime",
+	"pallet-assets-holder/try-runtime",
+	"pallet-assets/try-runtime",
+	"pallet-balances/try-runtime",
+	"pallet-nfts/try-runtime",
+	"pallet-preimage/try-runtime",
+	"pallet-referenda/try-runtime",
+	"pallet-scheduler/try-runtime",
+	"pallet-timestamp/try-runtime",
+	"pallet-transaction-payment/try-runtime",
+	"sp-runtime/try-runtime",
+]
