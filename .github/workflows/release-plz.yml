@@ -13,9 +13,10 @@ name: Release
 # - secret `CARGO_REGISTRY_TOKEN`: crates.io token with publish-new and publish-update scopes.
 # - `CRATES_IO_PUBLISH=true`, as a repository variable or secret: enables publishing. Until it is set,
 #   only the release PR is maintained.
-# - (recommended) secret `RELEASE_PLZ_TOKEN`: a PAT or GitHub App token. PRs opened
-#   and commits pushed with the default GITHUB_TOKEN don't trigger CI, so the
-#   release PR would never get its checks.
+# - (recommended) the org's GitHub App: variable `KREIVOPS_APP_ID` and secret
+#   `KREIVOPS_APP_PRIVATE_KEY`. PRs opened and commits pushed with the default
+#   GITHUB_TOKEN don't trigger CI, so the release PR would never get its checks.
+#   A `RELEASE_PLZ_TOKEN` PAT secret still works as a fallback.
 
 on:
   push:
@@ -44,11 +45,19 @@ jobs:
             echo "Publishing is off: set CRATES_IO_PUBLISH=true (variable or secret) to enable it." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Mint GitHub App token
+        id: app-token
+        if: ${{ vars.KREIVOPS_APP_ID != '' && steps.gate.outputs.enabled == 'true' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.KREIVOPS_APP_ID }}
+          private-key: ${{ secrets.KREIVOPS_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         if: steps.gate.outputs.enabled == 'true'
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Setup Ubuntu dependencies
         if: steps.gate.outputs.enabled == 'true'
@@ -64,13 +73,13 @@ jobs:
         with:
           command: release
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Create GitHub release
         if: steps.release.outputs.releases_created == 'true'
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
           RELEASES: ${{ steps.release.outputs.releases }}
         run: |
           version="$(jq -r '.[0].version' <<< "$RELEASES")"
@@ -104,10 +113,18 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
+      - name: Mint GitHub App token
+        id: app-token
+        if: ${{ vars.KREIVOPS_APP_ID != '' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.KREIVOPS_APP_ID }}
+          private-key: ${{ secrets.KREIVOPS_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Setup Ubuntu dependencies
         run: sudo apt update && sudo apt install -y protobuf-compiler
@@ -120,7 +137,7 @@ jobs:
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - uses: taiki-e/install-action@v2
