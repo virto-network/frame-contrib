@@ -210,8 +210,9 @@ pub mod pallet {
     ///   authenticated with a device credential.
     /// - **Read**: by `check_no_escalation` during `add_device` /
     ///   `add_session_key`.
-    /// - **Cleared**: at the start of every `PassAuthenticate::prepare`
-    ///   (defense-in-depth) AND in `post_dispatch_details`.
+    /// - **Cleared**: in `PassAuthenticate::post_dispatch_details` of the same
+    ///   transaction, AND at the start of every block in `on_initialize`
+    ///   (defense-in-depth).
     ///
     /// # Invariants
     ///
@@ -219,9 +220,18 @@ pub mod pallet {
     ///    slot. Do not add other setters — the integrity of the no-escalation
     ///    check depends on this being a faithful record of the current tx's
     ///    device authentication. The `pub(crate)` visibility is load-bearing.
-    /// 2. **Cleared between transactions**: must be `None` before each
-    ///    `prepare` begins. Enforced by the `kill()` at the start of
-    ///    `prepare` and the `kill()` in `post_dispatch_details`.
+    /// 2. **Cleared between transactions**: must be `None` whenever a
+    ///    transaction that did not authenticate with a device is dispatched.
+    ///    Enforced by the `kill()` in `post_dispatch_details`, which always
+    ///    runs after the dispatch of a transaction that set it: a transaction
+    ///    whose application fails before that point is rolled back as a whole
+    ///    by the block builder, and a panic invalidates the whole block. Should
+    ///    a value leak anyway, the `kill()` in `on_initialize` keeps it from
+    ///    outliving the block that wrote it.
+    ///
+    ///    Note that invariant 3 does not replace this one: a stale value for
+    ///    account `A` would still be accepted by a later transaction from a
+    ///    session key of `A`, so it must not survive.
     /// 3. **Account-bound**: consumers (`check_no_escalation`) must verify
     ///    that the stored `AccountId` matches the call's signer. This
     ///    prevents stale values from a prior transaction (if cleanup ever
@@ -284,6 +294,18 @@ pub mod pallet {
         /// The transaction did not carry a device authentication, so no
         /// device filter context is available for this operation.
         NotAuthenticatedByDevice,
+    }
+
+    #[pallet::hooks]
+    impl<T: Config<I>, I: 'static> Hooks<frame_system::pallet_prelude::BlockNumberFor<T>>
+        for Pallet<T, I>
+    {
+        fn on_initialize(_: frame_system::pallet_prelude::BlockNumberFor<T>) -> Weight {
+            // Defense-in-depth for `AuthenticatedDevice` invariant 2: one write
+            // per block, instead of one on every transaction.
+            AuthenticatedDevice::<T, I>::kill();
+            T::DbWeight::get().writes(1)
+        }
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
