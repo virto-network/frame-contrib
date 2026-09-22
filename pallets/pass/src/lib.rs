@@ -7,7 +7,6 @@
 extern crate alloc;
 extern crate core;
 
-use core::fmt::Debug;
 use fc_traits_authn::*;
 use frame_support::{
     pallet_prelude::*,
