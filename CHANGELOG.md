@@ -9,6 +9,50 @@ with one extra rule: every new Polkadot SDK line is a major release.
 
 ## [Unreleased]
 
+## [2.2.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.2.0)
+
+`fc-pallet-pass` now charges the weight of what it actually does, and authenticators own their
+weights and benchmark inputs (#57, #76). Encodings and metadata are unchanged: no call, event,
+error, storage or transaction extension changes, so no `transaction_version` bump. Runtimes adapt
+their configuration and weights, as listed under "Changed".
+
+### Added
+
+- *(fc-traits-authn)* `verification_weight(&self)` on device attestations and user credentials,
+  so an authenticator can report what verifying its input costs (e.g. a signature check, or
+  parsing that grows with the input size). It defaults to zero.
+- *(fc-traits-authn)* Benchmark helpers, behind the new `runtime-benchmarks` feature:
+  `AuthenticatorBenchmarkHelper`, `ChallengerBenchmarkHelper`,
+  `DeviceAttestationBenchmarkHelper<Cx>` and `CredentialBenchmarkHelper<Cx>`. An authenticator
+  produces valid device attestations and credentials for benchmarks. `composite_authenticator!`
+  derives the helper by delegating to the **first** authenticator listed.
+- *(fc-pallet-pass)* The `authenticate_none` weight, for transactions that don't authenticate.
+
+### Changed
+
+- *(fc-pallet-pass)* `PassAuthenticate` charges `authenticate_none` when there is no credential,
+  and `authenticate` only when there is one. Before, every transaction paid the full
+  `authenticate` weight. It refunds weight it doesn't use.
+- *(fc-pallet-pass)* The `authenticate` benchmark measures the whole extension (validate, prepare
+  and post-dispatch), not only validation, and `add_session_key` is benchmarked at its worst case.
+- *(fc-pallet-pass)* `register`, `add_device` and `PassAuthenticate` add the authenticator's
+  `verification_weight`.
+- *(fc-pallet-pass)* `Config::BenchmarkHelper` is removed: benchmarks get their inputs from the
+  authenticator (`AuthenticatorBenchmarkHelper`).
+- *(fc-pallet-pass)* The default `SubstrateWeight` values are labelled placeholders that count
+  database accesses, pending a benchmark run on reference hardware. Runtimes should use their own
+  benchmarked weights.
+
+**Runtime integration:**
+
+- Add `fn authenticate_none() -> Weight` to your `fc_pallet_pass` weights, and re-run the pallet's
+  benchmarks (`authenticate` changed too).
+- Remove `type BenchmarkHelper` from your `pallet_pass` config, and implement
+  `ChallengerBenchmarkHelper` for your challenger. Enable `fc-traits-authn/runtime-benchmarks`
+  (through `frame-contrib-traits`) in your `runtime-benchmarks` feature.
+- Use authenticators that implement `verification_weight` and the benchmark helpers (for
+  `composite_authenticator!`, at least the first one listed).
+
 ## [2.1.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.1.0)
 
 ### Added
