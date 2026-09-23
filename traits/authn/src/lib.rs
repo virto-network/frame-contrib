@@ -150,13 +150,12 @@ pub trait Authenticator {
     /// chosen by whoever sends the extrinsic, so a cost that grows with the payload has to be
     /// charged from the payload's actual lengths, never from a constant.
     ///
-    /// The default feeds the whole encoded size as both components, which over-counts but stays
-    /// an upper bound for any [`AuthenticatorWeightInfo`] that grows monotonically on each of
-    /// them. Authenticators that can tell their variable-length parts apart should override this
-    /// and pass the real lengths.
+    /// The components come from [`DeviceChallengeResponse::weight_components`], so an
+    /// authenticator charges the real lengths of its payload by implementing that on its
+    /// attestation type.
     fn verification_weight(attestation: &Self::DeviceAttestation) -> Weight {
-        let size = attestation.encoded_size() as u32;
-        Self::WeightInfo::verify_device(size, size)
+        let (c, a) = attestation.weight_components();
+        Self::WeightInfo::verify_device(c, a)
     }
 
     fn verify_device(
@@ -205,13 +204,12 @@ pub trait UserAuthenticator: FullCodec + MaxEncodedLen + TypeInfo {
     /// chosen by whoever sends the transaction, so a cost that grows with the payload has to be
     /// charged from the payload's actual lengths, never from a constant.
     ///
-    /// The default feeds the whole encoded size as both components, which over-counts but stays
-    /// an upper bound for any [`AuthenticatorWeightInfo`] that grows monotonically on each of
-    /// them. Authenticators that can tell their variable-length parts apart should override this
-    /// and pass the real lengths.
+    /// The components come from [`UserChallengeResponse::weight_components`], so an
+    /// authenticator charges the real lengths of its payload by implementing that on its
+    /// credential type.
     fn verification_weight(credential: &Self::Credential) -> Weight {
-        let size = credential.encoded_size() as u32;
-        Self::WeightInfo::verify_user(size, size)
+        let (c, a) = credential.weight_components();
+        Self::WeightInfo::verify_user(c, a)
     }
 
     fn verify_user(
@@ -251,6 +249,18 @@ pub trait DeviceChallengeResponse<Cx>: Parameter {
     fn used_challenge(&self) -> (Cx, Challenge);
     fn authority(&self) -> AuthorityId;
     fn device_id(&self) -> &DeviceId;
+
+    /// The `(c, a)` components [`AuthenticatorWeightInfo`] is charged with for this attestation:
+    /// the lengths, in bytes, of its client data and of its authenticator data.
+    ///
+    /// The default uses the whole encoded size for both, which over-counts but is an upper bound
+    /// for any weight that grows monotonically on each component. Implementors that can tell
+    /// their variable-length parts apart should return their real lengths. Either way, these are
+    /// lengths of the payload **as submitted**, never constants.
+    fn weight_components(&self) -> (u32, u32) {
+        let size = self.encoded_size() as u32;
+        (size, size)
+    }
 }
 
 /// A response to a challenge for identifying a user
@@ -259,4 +269,16 @@ pub trait UserChallengeResponse<Cx>: Parameter {
     fn used_challenge(&self) -> (Cx, Challenge);
     fn authority(&self) -> AuthorityId;
     fn user_id(&self) -> HashedUserId;
+
+    /// The `(c, a)` components [`AuthenticatorWeightInfo`] is charged with for this credential:
+    /// the lengths, in bytes, of its client data and of its authenticator data.
+    ///
+    /// The default uses the whole encoded size for both, which over-counts but is an upper bound
+    /// for any weight that grows monotonically on each component. Implementors that can tell
+    /// their variable-length parts apart should return their real lengths. Either way, these are
+    /// lengths of the payload **as submitted**, never constants.
+    fn weight_components(&self) -> (u32, u32) {
+        let size = self.encoded_size() as u32;
+        (size, size)
+    }
 }
