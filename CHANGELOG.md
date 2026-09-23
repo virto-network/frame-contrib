@@ -9,6 +9,46 @@ with one extra rule: every new Polkadot SDK line is a major release.
 
 ## [Unreleased]
 
+## [2.3.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.3.0)
+
+The first release with **measured weights**: every pallet's `SubstrateWeight` now comes from a
+benchmark run on dedicated hardware, not from placeholders. Authenticators' verification weights
+can also be bound by the runtime. Encodings and metadata are unchanged: no call, event, error,
+storage or transaction extension changes, so no `transaction_version` bump. Runtimes adapt their
+configuration, as listed under "Changed".
+
+### Added
+
+- *(fc-traits-authn)* `AuthenticatorWeightInfo`, with `verify_device(c, a)` and `verify_user(c, a)`
+  (`c`: client data length, `a`: authenticator data length). `()` implements it as zero.
+- *(fc-traits-authn)* A `WeightInfo` associated type on `Authenticator` and `UserAuthenticator`,
+  and `verification_weight(&attestation)` / `verification_weight(&credential)` on those traits,
+  which default to asking `WeightInfo` with the payload's actual size. A runtime binds an
+  authenticator's weights like a pallet's (#100).
+- *(fc-traits-authn)* `weight_components(&self) -> (u32, u32)` on `DeviceChallengeResponse` and
+  `UserChallengeResponse`, the `(c, a)` lengths `verification_weight` charges with. The default is
+  the whole encoded size for both, an upper bound; authenticators return their real lengths (#111).
+- A kitchensink runtime (`fc-kitchensink-runtime`, not published) that runs every pallet's
+  benchmarks, checked on each pull request (#95).
+
+### Changed
+
+- **Weights for every pallet are measured**, on a Hetzner CCX43 (AMD EPYC-Milan, 16 dedicated
+  vCPUs) with `--steps 50 --repeat 20` through the kitchensink runtime (#109). Notable changes in
+  `fc-pallet-pass`: `register` was undercharged (50 µs → 83.5 µs) and `add_session_key`'s proof
+  size grows to about 220 KB; most other calls get cheaper.
+- *(fc-traits-authn)* `verification_weight` moves from `DeviceChallengeResponse` /
+  `UserChallengeResponse` to the authenticator traits. Implementors of `Authenticator` or
+  `UserAuthenticator` must set `type WeightInfo` (use `()` to keep reporting zero). The `Auth`,
+  `Dev`, `Dummy` and `DummyDev` aliases take an optional weight parameter that defaults to `()`,
+  and `composite_authenticator!` dispatches to each member's weights.
+- *(fc-pallet-pass)* `register`, `add_device` and `PassAuthenticate` read the verification weight
+  through the authenticator.
+
+### Fixed
+
+- Clippy warnings in benchmark code (useless conversions) and an unused import (#105).
+
 ## [2.2.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.2.0)
 
 `fc-pallet-pass` now charges the weight of what it actually does, and authenticators own their
