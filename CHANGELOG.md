@@ -10,6 +10,41 @@ with one extra rule: every new Polkadot SDK line is a major release.
 
 ## [Unreleased]
 
+## [3.0.0-pre.3](https://github.com/virto-network/frame-contrib/releases/tag/v3.0.0-pre.3) - 2026-09-25
+
+### ⚠ Breaking changes
+
+- *(deps)* Update to polkadot-sdk `stable2606-2` ([#78](https://github.com/virto-network/frame-contrib/pull/78))
+
+### Added
+
+- *(fc-traits-authn)* Let authenticators report their weight components ([#112](https://github.com/virto-network/frame-contrib/pull/112))
+- *(fc-traits-authn)* Bind authenticator verification weights through the runtime ([#102](https://github.com/virto-network/frame-contrib/pull/102))
+- Add a kitchensink runtime for benchmarks ([#96](https://github.com/virto-network/frame-contrib/pull/96))
+- *(fc-pallet-pass)* Move benchmark helpers to the authenticators ([#91](https://github.com/virto-network/frame-contrib/pull/91))
+- *(fc-pallet-pass)* Add `FirstItemsAreFree<N, C>` ([#82](https://github.com/virto-network/frame-contrib/pull/82))
+- Custom fees pallet with protocol and community fee layers ([#70](https://github.com/virto-network/frame-contrib/pull/70))
+- Update to polkadot-sdk `stable2603` ([#73](https://github.com/virto-network/frame-contrib/pull/73))
+- *(pallet-pass)* Per-device call filters ([#71](https://github.com/virto-network/frame-contrib/pull/71))
+- Refereda multi tracks ([#68](https://github.com/virto-network/frame-contrib/pull/68))
+
+### Fixed
+
+- *(fc-pallet-communities)* Only a community's admin can set its decision method ([#115](https://github.com/virto-network/frame-contrib/pull/115))
+- *(fc-pallet-referenda-tracks)* Give the remove_group benchmark its component ([#101](https://github.com/virto-network/frame-contrib/pull/101))
+- *(ci)* Tell release-plz the template pallet isn't published ([#94](https://github.com/virto-network/frame-contrib/pull/94))
+- *(fc-pallet-pass)* Charge authenticator-reported verification weights ([#87](https://github.com/virto-network/frame-contrib/pull/87))
+- *(fc-pallet-pass)* Charge `PassAuthenticate` only for the branch it takes ([#86](https://github.com/virto-network/frame-contrib/pull/86))
+
+### Performance
+
+- *(fc-pallet-pass)* Clear the authentication context every block, not every transaction ([#88](https://github.com/virto-network/frame-contrib/pull/88))
+
+### Other
+
+- Automate SDK upgrades, lockstep versioning and crates.io releases ([#77](https://github.com/virto-network/frame-contrib/pull/77))
+- Gate frame-support behind runtime feature ([#72](https://github.com/virto-network/frame-contrib/pull/72))
+
 ## [3.0.0-pre.2](https://github.com/virto-network/frame-contrib/releases/tag/v3.0.0-pre.2) - 2026-09-22
 
 ### ⚠ Breaking changes
