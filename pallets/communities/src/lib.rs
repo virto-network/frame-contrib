@@ -499,14 +499,20 @@ pub mod pallet {
 
         // === Governance ===
 
-        /// Decide the method used by the community to vote on proposals
+        /// Decide the method used by the community to vote on proposals.
+        ///
+        /// The origin must be the admin of `community_id`; the admin of any
+        /// other community is rejected with `BadOrigin`.
         #[pallet::call_index(7)]
         pub fn set_decision_method(
             origin: OriginFor<T>,
             community_id: T::CommunityId,
             decision_method: DecisionMethodFor<T>,
         ) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+            ensure!(
+                T::AdminOrigin::ensure_origin(origin)? == community_id,
+                DispatchError::BadOrigin
+            );
             if let DecisionMethod::CommunityAsset(ref asset, min_vote) = decision_method {
                 // best effort attemt to create the asset if it doesn't exist
                 let _ = <T::Assets as fungibles::Create<T::AccountId>>::create(
