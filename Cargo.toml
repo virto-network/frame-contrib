@@ -1,5 +1,5 @@
 [workspace.package]
-version = "2.3.0"
+version = "2.3.1"
 authors = ["Virto team <contact@virto.team>"]
 edition = "2021"
 license = "GPL-3.0-only"
@@ -20,23 +20,23 @@ quote = { version = "1.0.40" }
 proc-macro-crate = { version = "3.3.0" }
 
 # FRAME Contrib
-frame-contrib-traits = { path = "./traits", version = "2.3.0", default-features = false }
-fc-traits-authn = { path = "./traits/authn", version = "2.3.0", default-features = false }
-fc-traits-authn-proc = { path = "./traits/authn/proc", version = "2.3.0", default-features = false }
-fc-traits-gas-tank = { path = "./traits/gas-tank", version = "2.3.0", default-features = false }
-fc-traits-listings = { path = "./traits/listings", version = "2.3.0", default-features = false }
-fc-traits-memberships = { path = "./traits/memberships", version = "2.3.0", default-features = false }
-fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", version = "2.3.0", default-features = false }
-fc-traits-payments = { path = "./traits/payments", version = "2.3.0", default-features = false }
-fc-traits-tracks = { path = "./traits/tracks", version = "2.3.0", default-features = false }
-fc-pallet-black-hole = { path = "./pallets/black-hole", version = "2.3.0", default-features = false }
-fc-pallet-communities = { path = "./pallets/communities", version = "2.3.0", default-features = false }
-fc-pallet-gas-transaction-payment = { path = "./pallets/gas-transaction-payment", version = "2.3.0", default-features = false }
-fc-pallet-orders = { path = "./pallets/orders", version = "2.3.0", default-features = false }
-fc-pallet-pass = { path = "./pallets/pass", version = "2.3.0", default-features = false }
-fc-pallet-listings = { path = "./pallets/listings", version = "2.3.0", default-features = false }
-fc-pallet-payments = { path = "./pallets/payments", version = "2.3.0", default-features = false }
-fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", version = "2.3.0", default-features = false }
+frame-contrib-traits = { path = "./traits", version = "2.3.1", default-features = false }
+fc-traits-authn = { path = "./traits/authn", version = "2.3.1", default-features = false }
+fc-traits-authn-proc = { path = "./traits/authn/proc", version = "2.3.1", default-features = false }
+fc-traits-gas-tank = { path = "./traits/gas-tank", version = "2.3.1", default-features = false }
+fc-traits-listings = { path = "./traits/listings", version = "2.3.1", default-features = false }
+fc-traits-memberships = { path = "./traits/memberships", version = "2.3.1", default-features = false }
+fc-traits-nonfungibles-helpers = { path = "./traits/nonfungibles-helpers", version = "2.3.1", default-features = false }
+fc-traits-payments = { path = "./traits/payments", version = "2.3.1", default-features = false }
+fc-traits-tracks = { path = "./traits/tracks", version = "2.3.1", default-features = false }
+fc-pallet-black-hole = { path = "./pallets/black-hole", version = "2.3.1", default-features = false }
+fc-pallet-communities = { path = "./pallets/communities", version = "2.3.1", default-features = false }
+fc-pallet-gas-transaction-payment = { path = "./pallets/gas-transaction-payment", version = "2.3.1", default-features = false }
+fc-pallet-orders = { path = "./pallets/orders", version = "2.3.1", default-features = false }
+fc-pallet-pass = { path = "./pallets/pass", version = "2.3.1", default-features = false }
+fc-pallet-listings = { path = "./pallets/listings", version = "2.3.1", default-features = false }
+fc-pallet-payments = { path = "./pallets/payments", version = "2.3.1", default-features = false }
+fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", version = "2.3.1", default-features = false }
 
 # Polkadot SDK
 frame = { version = "0.18.0", package = "polkadot-sdk-frame", default-features = false, features = ["runtime"] }

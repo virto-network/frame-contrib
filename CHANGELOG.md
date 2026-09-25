@@ -9,6 +9,24 @@ with one extra rule: every new Polkadot SDK line is a major release.
 
 ## [Unreleased]
 
+## [2.3.1](https://github.com/virto-network/frame-contrib/releases/tag/v2.3.1)
+
+A security fix. Upgrade from any 2.x release; nothing else changes.
+
+### Fixed
+
+- *(fc-pallet-communities)* `set_decision_method` let the admin of **any** community change the
+  decision method of **any other** community: it checked that the origin was some community's
+  admin but discarded which one, then wrote the `community_id` it was given. Such an admin could,
+  for example, stop another community's governance by switching it to a method under which none of
+  its members' votes carries weight. The call now requires the community resolved from
+  `AdminOrigin` to be `community_id`, and fails with `BadOrigin` otherwise, before any side effect
+  (#114). Present since the pallet moved into this repository; every release up to 2.3.0 is
+  affected.
+
+The call's signature, index, encoding, events, storage and weight are unchanged, so runtimes only
+need to take the new version; no `transaction_version` bump.
+
 ## [2.3.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.3.0)
 
 The first release with **measured weights**: every pallet's `SubstrateWeight` now comes from a
