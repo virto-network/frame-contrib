@@ -201,6 +201,58 @@ fn new_test_ext() -> sp_io::TestExternalities {
     t
 }
 
+mod set_decision_method {
+    use super::*;
+    use crate::{CommunityDecisionMethod, Event};
+    use sp_runtime::DispatchError;
+
+    #[test]
+    fn fails_if_caller_is_admin_of_another_community() {
+        new_test_ext().execute_with(|| {
+            // Community A's admin tries to change community B's decision method
+            assert_noop!(
+                Communities::set_decision_method(
+                    TestEnvBuilder::create_community_origin(&COMMUNITY_A),
+                    COMMUNITY_B,
+                    DecisionMethod::Rank
+                ),
+                DispatchError::BadOrigin
+            );
+            // Also rejected for a method that would create an asset
+            assert_noop!(
+                Communities::set_decision_method(
+                    TestEnvBuilder::create_community_origin(&COMMUNITY_A),
+                    COMMUNITY_B,
+                    DecisionMethod::CommunityAsset(99, 1)
+                ),
+                DispatchError::BadOrigin
+            );
+
+            assert_eq!(
+                CommunityDecisionMethod::<Test>::get(COMMUNITY_B),
+                DecisionMethod::CommunityAsset(COMMUNITY_B_ASSET_ID, 10)
+            );
+        });
+    }
+
+    #[test]
+    fn it_works() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(Communities::set_decision_method(
+                TestEnvBuilder::create_community_origin(&COMMUNITY_A),
+                COMMUNITY_A,
+                DecisionMethod::Rank
+            ));
+
+            assert_eq!(
+                CommunityDecisionMethod::<Test>::get(COMMUNITY_A),
+                DecisionMethod::Rank
+            );
+            System::assert_has_event(Event::DecisionMethodSet { id: COMMUNITY_A }.into());
+        });
+    }
+}
+
 mod vote {
     use super::*;
 
