@@ -1,14 +1,16 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec::Vec};
 use codec::alloc;
 use core::marker::PhantomData;
-use frame_support::traits::Get;
+use frame_support::traits::{ConstU32, Get};
 use frame_support::{
     pallet_prelude::{Decode, Encode},
+    storage::{storage_prefix, unhashed},
     traits::nonfungibles_v2,
     weights::Weight,
+    Blake2_128Concat, StorageHasher,
 };
 
-use sp_runtime::traits::{BlockNumberProvider, Bounded, CheckedAdd, CheckedSub};
+use sp_runtime::traits::{AtLeast32BitUnsigned, BlockNumberProvider, Bounded};
 
 use crate::*;
 
@@ -17,7 +19,13 @@ pub use fc_traits_nonfungibles_helpers::SelectNonFungibleItem;
 type BlockNumberFor<P> = <P as BlockNumberProvider>::BlockNumber;
 
 pub const ATTR_MEMBERSHIP_GAS: &[u8] = b"membership_gas";
-pub const ATTR_GAS_TX_PAY_WITH_MEMBERSHIP: &[u8] = b"mbmshp_pays_gas";
+
+/// How many of an account's items [`NonFungibleGasTank`] reads, at most, to find a tank, unless the
+/// runtime sets its own bound.
+///
+/// Every signed transaction pays for this scan (twice: in the check and in preparation), so the
+/// benchmark of the payment step must set up an account with this many items.
+pub type DefaultMaxScan = ConstU32<4>;
 
 #[derive(Encode, Decode, Debug, Default)]
 pub struct WeightTank<BlockNumber> {
@@ -64,6 +72,75 @@ impl<BlockNumber> WeightTank<BlockNumber> {
     }
 }
 
+impl<BlockNumber: AtLeast32BitUnsigned + Copy> WeightTank<BlockNumber> {
+    /// The start of the usage window that contains `now`, computed from the stored window start
+    /// (`since`) and the period, without writing anything.
+    ///
+    /// - With no period, the window never ends: it is `since`.
+    /// - With `now` before `since` (a start written into the future, as the reset fixed by `DEC-23`
+    ///   did), the stored window stays current, and once the clock reaches it, it lasts a whole
+    ///   period: its usage counts until `since + period`. A tank the old reset left behind gets one
+    ///   stretched window, and never more allowance.
+    /// - Otherwise it is `since + ⌊(now − since) / period⌋ · period`, so a window ends exactly when
+    ///   `now − since ≥ period`. A zero period makes every tick its own window.
+    pub(crate) fn window_start(&self, now: BlockNumber) -> BlockNumber {
+        let Some(period) = self.period else {
+            return self.since;
+        };
+        if now < self.since {
+            return self.since;
+        }
+        match now.saturating_sub(self.since).checked_div(&period) {
+            Some(windows) => self.since.saturating_add(windows.saturating_mul(period)),
+            None => now,
+        }
+    }
+
+    /// What the window that contains `now` has used: the stored usage if that window is the stored
+    /// one, and nothing otherwise.
+    pub(crate) fn used_at(&self, now: BlockNumber) -> Weight {
+        if self.window_start(now) == self.since {
+            self.used
+        } else {
+            Weight::zero()
+        }
+    }
+
+    /// What would be left in the window that contains `now` after using `estimated`, or `None` if the
+    /// tank cannot cover it in either component. An unlimited tank always has [`Weight::MAX`] left.
+    pub(crate) fn remaining_at(&self, now: BlockNumber, estimated: &Weight) -> Option<Weight> {
+        let Some(capacity) = self.capacity_per_period else {
+            return Some(Weight::MAX);
+        };
+        capacity.checked_sub(&self.used_at(now).checked_add(estimated)?)
+    }
+
+    /// Moves the stored window to the one that contains `now`, resetting the usage if it moved.
+    pub(crate) fn roll(&mut self, now: BlockNumber) {
+        let start = self.window_start(now);
+        if start != self.since {
+            self.since = start;
+            self.used = Weight::zero();
+        }
+    }
+}
+
+/// The paying-item note: the item whose tank pays for the transaction, and what
+/// [`GasBurner::prepare_gas`] returned.
+type PayingItem<T, F> = (
+    <F as nonfungibles_v2::Inspect<<T as frame_system::Config>::AccountId>>::CollectionId,
+    <F as nonfungibles_v2::Inspect<<T as frame_system::Config>::AccountId>>::ItemId,
+    Weight,
+);
+
+/// Where [`NonFungibleGasTank`] keeps `who`'s paying-item note between preparation and the burn:
+/// `twox_128(b"NonFungibleGasTank") ++ twox_128(b"PayingItem") ++ blake2_128_concat(who.encode())`.
+pub(crate) fn paying_item_key<AccountId: Encode>(who: &AccountId) -> Vec<u8> {
+    let mut key = storage_prefix(b"NonFungibleGasTank", b"PayingItem").to_vec();
+    key.extend(Blake2_128Concat::hash(&who.encode()));
+    key
+}
+
 pub struct Noop;
 impl Get<Box<()>> for Noop {
     fn get() -> Box<()> {
@@ -71,9 +148,71 @@ impl Get<Box<()>> for Noop {
     }
 }
 
-pub struct NonFungibleGasTank<T, P, F, I, S = Noop>(PhantomData<(T, P, F, I, S)>);
+/// A [`GasBurner`], [`GasFueler`] and [`MakeTank`] that keeps a periodic weight tank on a
+/// non-fungible item (for example, a membership), in the item's `membership_gas` system attribute.
+///
+/// - `T`: the runtime. `P`: the clock the tank's periods are counted in.
+/// - `F`: the non-fungibles implementation (for example, a `pallet_nfts` instance), `I` its item
+///   config.
+/// - `S`: which items may hold a tank.
+/// - `MaxScan`: how many of an account's items, at most, are read to find a tank (default
+///   [`DefaultMaxScan`]). Items past the bound are never considered, so the account pays fees.
+///
+/// The check reads only. The usage window is computed from the stored start, never reset by a
+/// write. [`GasBurner::prepare_gas`] writes the **paying-item note**: which `(collection, item)` pays
+/// for the transaction, with what `prepare_gas` returned, under a key of the account (see below).
+/// [`GasBurner::burn_gas`] takes the note, rolls that item's stored window and adds the usage, with no
+/// scan, so nothing the call does to the account's items during dispatch hides the tank from it.
+/// [`GasBurner::cancel_gas`] takes the note and charges nothing. Either way the note does not outlive
+/// the transaction.
+///
+/// The note's key, in unhashed storage, is `twox_128(b"NonFungibleGasTank") ++
+/// twox_128(b"PayingItem") ++ blake2_128_concat(who.encode())`, and its value is
+/// `(collection, item, remaining)`, SCALE-encoded. A runtime has one such key per account, shared by
+/// every `NonFungibleGasTank` it defines, so a runtime may have at most one payment step backed by a
+/// `NonFungibleGasTank`. A runtime test can hold it to that: after applying a transaction a tank
+/// pays for, no key is left under `twox_128(b"NonFungibleGasTank") ++ twox_128(b"PayingItem")`.
+///
+/// The tank that admitted a transaction pays for it. If the call moves the noted item to another
+/// account during dispatch, its tank is still charged, now in the new owner's hands. If the item's
+/// tank is gone by then, nothing is charged.
+pub struct NonFungibleGasTank<T, P, F, I, S = Noop, MaxScan = DefaultMaxScan>(
+    PhantomData<(T, P, F, I, S, MaxScan)>,
+);
 
-impl<T, P, F, I, S> GasBurner for NonFungibleGasTank<T, P, F, I, S>
+impl<T, P, F, I, S, MaxScan> NonFungibleGasTank<T, P, F, I, S, MaxScan>
+where
+    T: frame_system::Config,
+    P: BlockNumberProvider,
+    F: nonfungibles_v2::Inspect<T::AccountId> + nonfungibles_v2::InspectEnumerable<T::AccountId>,
+    S: Get<Box<dyn SelectNonFungibleItem<F::CollectionId, F::ItemId>>>,
+    MaxScan: Get<u32>,
+{
+    /// The first selected item, among at most `MaxScan` of `who`'s items, whose tank covers
+    /// `estimated` in the current window, with what would be left. Reads only.
+    fn find_tank(
+        who: &T::AccountId,
+        estimated: &Weight,
+    ) -> Option<(F::CollectionId, F::ItemId, Weight)> {
+        let now = P::current_block_number();
+        let selector = S::get();
+
+        F::owned(who)
+            .take(MaxScan::get() as usize)
+            .find_map(|(collection, item)| {
+                if !selector.select(collection.clone(), item.clone()) {
+                    return None;
+                }
+
+                let remaining = WeightTank::<BlockNumberFor<P>>::get::<T, F>(&collection, &item)?
+                    .remaining_at(now, estimated)?;
+
+                Some((collection, item, remaining))
+            })
+    }
+}
+
+impl<T, P, F, I, S, MaxScan> GasBurner for NonFungibleGasTank<T, P, F, I, S, MaxScan>
 where
     T: frame_system::Config,
     P: BlockNumberProvider,
@@ -83,73 +222,59 @@ where
         + nonfungibles_v2::Mutate<T::AccountId, I>,
     I: Default,
     S: Get<Box<dyn SelectNonFungibleItem<F::CollectionId, F::ItemId>>>,
+    MaxScan: Get<u32>,
 {
     type AccountId = T::AccountId;
     type Gas = Weight;
 
     fn check_available_gas(who: &Self::AccountId, estimated: &Self::Gas) -> Option<Self::Gas> {
-        F::owned(who).find_map(|(collection, item)| {
-            if !S::get().select(collection.clone(), item.clone()) {
-                return None;
-            }
+        Self::find_tank(who, estimated).map(|(_, _, remaining)| remaining)
+    }
 
-            let mut tank = WeightTank::<BlockNumberFor<P>>::get::<T, F>(&collection, &item)?;
+    fn prepare_gas(who: &Self::AccountId, estimated: &Self::Gas) -> Option<Self::Gas> {
+        let (collection, item, remaining) = Self::find_tank(who, estimated)?;
 
-            let block_number = P::current_block_number();
-            let period = tank.period.unwrap_or(BlockNumberFor::<P>::max_value());
+        unhashed::put(&paying_item_key(who), &(collection, item, remaining));
 
-            let Some(capacity) = tank.capacity_per_period else {
-                return Some(Weight::MAX);
-            };
-
-            if block_number.checked_sub(&tank.since)? > period {
-                tank.since = block_number.checked_add(&period)?;
-                tank.used = Weight::zero();
-                tank.put::<T, F, I>(&collection, &item).ok()?;
-            };
-
-            let remaining = capacity.checked_sub(&tank.used.checked_add(estimated)?)?;
-            F::set_typed_attribute(
-                &collection,
-                &item,
-                &ATTR_GAS_TX_PAY_WITH_MEMBERSHIP,
-                &remaining,
-            )
-            .ok()?;
-
-            Some(remaining)
-        })
+        Some(remaining)
     }
 
     fn burn_gas(who: &Self::AccountId, expected: &Self::Gas, used: &Self::Gas) -> Self::Gas {
-        F::owned(who)
-            .find_map(|(collection, item)| {
-                if !expected.eq(&F::typed_system_attribute(
-                    &collection,
-                    Some(&item),
-                    &ATTR_GAS_TX_PAY_WITH_MEMBERSHIP,
-                )?) {
-                    return None;
-                }
-                F::clear_typed_attribute(&collection, &item, &ATTR_GAS_TX_PAY_WITH_MEMBERSHIP)
-                    .ok()?;
+        // Taken before anything else, so the note never outlives the transaction.
+        let Some((collection, item, noted)) =
+            unhashed::take::<PayingItem<T, F>>(&paying_item_key(who))
+        else {
+            return Weight::zero();
+        };
+        // A note that does not match is not this transaction's preparation.
+        if noted != *expected {
+            return Weight::zero();
+        }
 
-                let mut tank = WeightTank::<BlockNumberFor<P>>::get::<T, F>(&collection, &item)?;
+        let Some(mut tank) = WeightTank::<BlockNumberFor<P>>::get::<T, F>(&collection, &item)
+        else {
+            return Weight::zero();
+        };
+        let Some(capacity) = tank.capacity_per_period else {
+            return Weight::MAX;
+        };
 
-                if tank.capacity_per_period.is_some() {
-                    tank.used = tank.used.checked_add(used)?;
-                }
+        tank.roll(P::current_block_number());
+        tank.used = tank.used.saturating_add(*used);
+        if tank.put::<T, F, I>(&collection, &item).is_err() {
+            return Weight::zero();
+        }
 
-                tank.put::<T, F, I>(&collection, &item).ok()?;
+        capacity.saturating_sub(tank.used)
+    }
 
-                let max_weight = tank.capacity_per_period?;
-                Some(max_weight.saturating_sub(tank.used))
-            })
-            .unwrap_or_default()
+    fn cancel_gas(who: &Self::AccountId, _expected: &Self::Gas) {
+        unhashed::kill(&paying_item_key(who));
     }
 }
 
-impl<T, P, F, ItemConfig, S> GasFueler for NonFungibleGasTank<T, P, F, ItemConfig, S>
+impl<T, P, F, ItemConfig, S, MaxScan> GasFueler
+    for NonFungibleGasTank<T, P, F, ItemConfig, S, MaxScan>
 where
     T: frame_system::Config,
     P: BlockNumberProvider,
@@ -178,6 +303,7 @@ where
             return Self::Gas::MAX;
         }
 
+        tank.roll(P::current_block_number());
         tank.used = tank.used.saturating_sub(*gas);
 
         // Should infallibly save the tank, given that it already got a tank
@@ -190,7 +316,8 @@ where
     }
 }
 
-impl<T, P, F, ItemConfig, S> MakeTank for NonFungibleGasTank<T, P, F, ItemConfig, S>
+impl<T, P, F, ItemConfig, S, MaxScan> MakeTank
+    for NonFungibleGasTank<T, P, F, ItemConfig, S, MaxScan>
 where
     T: frame_system::Config,
     P: BlockNumberProvider,
