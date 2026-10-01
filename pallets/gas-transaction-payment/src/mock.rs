@@ -3,7 +3,11 @@
 use crate::ChargeTransactionPayment;
 pub use crate::{self as fc_pallet_gas_transaction_payment, Config};
 use frame::{
-    deps::{frame_support::derive_impl, sp_runtime},
+    deps::{
+        frame_support::{derive_impl, dispatch::DispatchClass},
+        frame_system::limits::BlockWeights,
+        sp_runtime::{self, Perbill},
+    },
     storage_alias,
     testing_prelude::*,
 };
@@ -45,8 +49,27 @@ pub type Block =
 pub type AccountId = <Test as frame_system::Config>::AccountId;
 pub type Balance = <Test as pallet_balances::Config>::Balance;
 
+/// The base weight of every extrinsic, small so tests can state metered weights exactly.
+pub const BASE_EXTRINSIC: Weight = Weight::from_parts(5, 0);
+/// The proof-size component of every tank set up by [`new_test_ext`].
+pub const TANK_PROOF_SIZE: u64 = 1 << 20;
+
+parameter_types! {
+    pub MockBlockWeights: BlockWeights = {
+        let mut weights = BlockWeights::with_sensible_defaults(
+            Weight::from_parts(2_000_000_000_000, u64::MAX),
+            Perbill::from_percent(75),
+        );
+        for class in DispatchClass::all() {
+            weights.per_class.get_mut(*class).base_extrinsic = BASE_EXTRINSIC;
+        }
+        weights
+    };
+}
+
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl frame_system::Config for Test {
+    type BlockWeights = MockBlockWeights;
     type Block = Block;
     type AccountData = pallet_balances::AccountData<AccountId>;
 }
@@ -113,11 +136,12 @@ impl fc_pallet_gas_transaction_payment::BenchmarkHelper<Test> for Test {
     }
 }
 
+/// Gives each account a tank of `ref_time` (and [`TANK_PROOF_SIZE`] of proof size).
 pub fn new_test_ext(tank: Vec<(AccountId, u64)>) -> TestExternalities {
     let mut ext = TestExternalities::new(Default::default());
     ext.execute_with(|| {
-        tank.iter().for_each(|(who, remarks)| {
-            Tank::insert(who, Weight::from_parts(*remarks, 0));
+        tank.iter().for_each(|(who, ref_time)| {
+            Tank::insert(who, Weight::from_parts(*ref_time, TANK_PROOF_SIZE));
         });
         System::set_block_number(1);
     });

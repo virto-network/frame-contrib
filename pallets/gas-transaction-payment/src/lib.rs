@@ -13,6 +13,8 @@ mod benchmarking;
 #[cfg(test)]
 mod mock;
 #[cfg(test)]
+mod mock_tank;
+#[cfg(test)]
 mod tests;
 
 mod extensions;
@@ -55,13 +57,18 @@ pub mod pallet {
     }
 }
 
+/// Sets up the `charge_transaction_payment` benchmark in a runtime.
 #[cfg(feature = "runtime-benchmarks")]
 pub trait BenchmarkHelper<T: Config> {
+    /// The fee extension the runtime wraps.
     type Ext: TransactionExtension<T::RuntimeCall>;
 
     /// An instance of the extension, ready to be used.
     fn ext() -> ChargeTransactionPayment<T, Self::Ext>;
 
     /// Prepares an account with enough gas to execute
+    ///
+    /// Set up the worst case for the runtime's tank: the benchmark measures how hard the tank is to
+    /// find, check and burn from the account this leaves.
     fn setup_account(who: &T::AccountId, gas: Weight) -> DispatchResult;
 }
