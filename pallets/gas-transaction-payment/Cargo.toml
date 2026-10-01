@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 name = "fc-pallet-gas-transaction-payment"
 repository.workspace = true
+readme = "README.md"
 version.workspace = true
 
 [package.metadata.docs.rs]
