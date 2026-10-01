@@ -8,7 +8,7 @@ use frame_support::traits::tokens::Balance;
 use frame_support::Parameter;
 use impl_trait_for_tuples::impl_for_tuples;
 
-pub use {Inspect as PaymentInspect, Mutate as PaymentMutate};
+pub use {DirectPayment as PaymentDirect, Inspect as PaymentInspect, Mutate as PaymentMutate};
 
 /// Represents a payment.
 pub struct Payment<AccountId, Asset, Balance> {
@@ -74,6 +74,27 @@ pub trait Mutate<AccountId>: Inspect<AccountId> {
     /// Creates a new payment.
     fn create<Details: Encode>(
         creator: &AccountId,
+        asset: Self::AssetId,
+        amount: Self::Balance,
+        beneficiary: &AccountId,
+        details: Option<Details>,
+    ) -> Result<Self::Id, DispatchError>;
+}
+
+/// A direct payment: the amount moves from the sender to the beneficiary at once, never held in
+/// escrow, and no payment record is kept.
+///
+/// Fees are settled as the implementation's fee policy says, on both sides, in the same call. A
+/// failed payment may leave partial changes (fees already moved, say), so the caller runs it inside
+/// a storage layer (e.g. `frame_support::storage::with_storage_layer`), as `fc-pallet-listings`
+/// does. A dispatchable that fails with the payment's error needs none: its own layer reverts them.
+pub trait DirectPayment<AccountId>: Inspect<AccountId> {
+    /// Pays `amount` of `asset` from `sender` to `beneficiary`, and returns the payment's id.
+    ///
+    /// `details`, encoded, is what the fee policy sees, as in [`Mutate::create`]. Since no record is
+    /// kept, [`Inspect::details`] returns `None` for the returned id.
+    fn pay<Details: Encode>(
+        sender: &AccountId,
         asset: Self::AssetId,
         amount: Self::Balance,
         beneficiary: &AccountId,
