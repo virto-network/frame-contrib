@@ -10,11 +10,10 @@ use alloc::boxed::Box;
 use fc_pallet_communities::origin::{EnsureCommunity, EnsureSignedPays};
 use fc_pallet_listings::{InventoryId, InventoryIdFor, ItemIdOf};
 use fc_pallet_pass::FirstItemIsFree;
-#[allow(deprecated)]
 use frame_contrib_traits::{
     authn::util::{dummy::Dummy, AuthorityFromPalletId},
     gas_tank::{NonFungibleGasTank, SelectNonFungibleItem},
-    memberships::NonFungiblesMemberships,
+    memberships::GroupCollectionMemberships,
 };
 use frame_support::{
     derive_impl,
@@ -320,10 +319,19 @@ parameter_types! {
     pub const CommunitiesPalletId: PalletId = PalletId(*b"fc/comms");
     pub const NoPay: Option<(Balance, AccountId, AccountId)> = None;
     pub const CommunityDeposit: Balance = 10 * UNITS;
+    /// The keyless account that owns and administers every membership collection.
+    pub MembershipsManagerAccount: AccountId =
+        PalletId(*b"fc/mbmgr").into_account_truncating();
 }
 
-#[allow(deprecated)]
-pub type MembershipsManager = NonFungiblesMemberships<Memberships, pallet_nfts::ItemConfig>;
+/// Each community's memberships live in its own collection; the community account holds its
+/// stock, and the manager account owns every collection.
+pub type MembershipsManager = GroupCollectionMemberships<
+    Memberships,
+    pallet_nfts::ItemConfig,
+    fc_pallet_communities::types::CommunityAccount<Runtime>,
+    MembershipsManagerAccount,
+>;
 
 impl fc_pallet_communities::Config for Runtime {
     type RuntimeFreezeReason = RuntimeFreezeReason;
@@ -334,6 +342,7 @@ impl fc_pallet_communities::Config for Runtime {
     >;
     type AdminOrigin = EnsureCommunity<Self>;
     type MemberMgmtOrigin = EnsureCommunity<Self>;
+    type MemberOrigin = EnsureSigned<AccountId>;
     type CommunityId = CommunityId;
     type MembershipId = MembershipId;
     type MemberMgmt = MembershipsManager;
@@ -622,13 +631,8 @@ pub mod benchmark_helpers {
     use fc_pallet_communities::types::{AssetIdOf, CommunityIdOf, MembershipIdOf, PollIndexOf};
     use frame_benchmarking::BenchmarkError;
     use frame_contrib_traits::gas_tank::MakeTank;
-    use frame_support::{
-        traits::{
-            schedule::DispatchTime,
-            tokens::nonfungible_v2::{ItemOf, Mutate as _},
-        },
-        BoundedVec,
-    };
+    use frame_contrib_traits::memberships::Issue;
+    use frame_support::{traits::schedule::DispatchTime, BoundedVec};
     use frame_system::pallet_prelude::{OriginFor, RuntimeCallFor};
     use pallet_referenda::{BoundedCallOf, Curve, PalletsOriginOf, TrackIdOf, TrackInfo};
     use sp_runtime::{traits::IdentifyAccount, DispatchResult, MultiSigner, SaturatedConversion};
@@ -724,9 +728,10 @@ pub mod benchmark_helpers {
         }
     }
 
-    type MembershipCollection = ItemOf<Memberships, frame_support::traits::ConstU16<0>, AccountId>;
-
-    fn create_memberships_collection(id: CommunityId, owner: AccountId) -> DispatchResult {
+    /// Creates a community's memberships collection, owned and administered by the memberships
+    /// manager account.
+    fn create_memberships_collection(id: CommunityId) -> DispatchResult {
+        let owner = MembershipsManagerAccount::get();
         Memberships::do_create_collection(
             id,
             owner.clone(),
@@ -755,28 +760,17 @@ pub mod benchmark_helpers {
         }
 
         fn initialize_memberships_collection() -> Result<(), BenchmarkError> {
-            // The memberships manager collection, which holds every membership.
-            create_memberships_collection(0, TreasuryAccount::get())?;
             // The collection of the community's memberships.
-            let community_id = Self::community_id();
-            create_memberships_collection(
-                community_id,
-                Communities::community_account(&community_id),
-            )?;
+            create_memberships_collection(Self::community_id())?;
             Ok(())
         }
 
+        /// Issues a locked membership into the community's stock.
         fn issue_membership(
             community_id: CommunityIdOf<Runtime>,
             membership_id: MembershipIdOf<Runtime>,
         ) -> Result<(), BenchmarkError> {
-            let community_account = Communities::community_account(&community_id);
-            MembershipCollection::mint_into(
-                &membership_id,
-                &community_account,
-                &Default::default(),
-                true,
-            )?;
+            MembershipsManager::issue(&community_id, &membership_id)?;
             Ok(())
         }
 

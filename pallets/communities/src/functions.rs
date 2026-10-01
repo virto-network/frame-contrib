@@ -1,6 +1,6 @@
 use super::*;
 
-use frame_contrib_traits::memberships::{GenericRank, Inspect, Rank};
+use frame_contrib_traits::memberships::{self as membership, GenericRank, Inspect, Rank};
 use frame_support::{
     fail,
     traits::{
@@ -20,6 +20,11 @@ impl<T: Config> Pallet<T> {
 
     pub fn community_exists(community_id: &T::CommunityId) -> bool {
         Info::<T>::contains_key(community_id)
+    }
+
+    /// The state of a community, or `None` if it doesn't exist. One read.
+    pub fn community_state(community_id: &T::CommunityId) -> Option<CommunityState> {
+        Info::<T>::get(community_id).map(|info| info.state)
     }
 
     pub fn is_member(community_id: &T::CommunityId, who: &AccountIdOf<T>) -> bool {
@@ -88,7 +93,8 @@ impl<T: Config> Pallet<T> {
             let (tally, class) = poll_status.ensure_ongoing().ok_or(Error::<T>::NotOngoing)?;
             ensure!(community_id == &class, Error::<T>::InvalidTrack);
 
-            let vote_multiplier = match CommunityDecisionMethod::<T>::get(community_id) {
+            let vote_multiplier: VoteWeight = match CommunityDecisionMethod::<T>::get(community_id)
+            {
                 DecisionMethod::Rank => T::MemberMgmt::rank_of(community_id, membership_id)
                     .unwrap_or_default()
                     .into(),
@@ -109,9 +115,11 @@ impl<T: Config> Pallet<T> {
             };
 
             let vote_weight = VoteWeight::from(vote);
-            tally.add_vote(say, vote_multiplier * vote_weight, vote_weight);
+            let multiplied_weight = vote_multiplier.saturating_mul(vote_weight);
+            tally.add_vote(say, multiplied_weight, vote_weight);
 
             CommunityVotes::<T>::insert(poll_index, membership_id, (vote, who));
+            CommunityVoteWeights::<T>::insert(poll_index, membership_id, multiplied_weight);
             Self::update_locks(who, poll_index, vote, LockUpdateType::Add)
         })
     }
@@ -128,15 +136,20 @@ impl<T: Config> Pallet<T> {
 
             let (vote, voter) = CommunityVotes::<T>::get(poll_index, membership_id)
                 .ok_or(Error::<T>::NoVoteCasted)?;
-            let vote_multiplier = match decision_method {
-                DecisionMethod::Rank => T::MemberMgmt::rank_of(community_id, membership_id)
-                    .unwrap_or_default()
-                    .into(),
-                _ => 1,
-            };
-
             let vote_weight = VoteWeight::from(&vote);
-            tally.remove_vote(vote.say(), vote_multiplier * vote_weight, vote_weight);
+            // The weight the vote was added with; a vote cast before it was recorded falls back
+            // to the current rank.
+            let multiplied_weight = CommunityVoteWeights::<T>::take(poll_index, membership_id)
+                .unwrap_or_else(|| {
+                    let vote_multiplier: VoteWeight = match decision_method {
+                        DecisionMethod::Rank => T::MemberMgmt::rank_of(community_id, membership_id)
+                            .unwrap_or_default()
+                            .into(),
+                        _ => 1,
+                    };
+                    vote_multiplier.saturating_mul(vote_weight)
+                });
+            tally.remove_vote(vote.say(), multiplied_weight, vote_weight);
 
             CommunityVotes::<T>::remove(poll_index, membership_id);
             Self::update_locks(&voter, poll_index, &vote, LockUpdateType::Remove)
@@ -212,6 +225,17 @@ impl<T: Config> Pallet<T> {
         }
 
         Ok(())
+    }
+
+    /// Maps the memberships manager's refusals to this pallet's errors.
+    pub(crate) fn membership_error(e: DispatchError) -> DispatchError {
+        match membership::Error::try_from(e) {
+            Ok(membership::Error::NotAMember) => Error::<T>::NotAMember.into(),
+            Ok(membership::Error::TransferDisabled) => Error::<T>::TransferDisabled.into(),
+            Ok(membership::Error::NotSameGroup) => Error::<T>::NotSameGroup.into(),
+            Ok(e) => e.into(),
+            Err(e) => e,
+        }
     }
 
     pub(crate) fn do_dispatch_as_community_account(
