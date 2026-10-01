@@ -1,5 +1,5 @@
 use super::{Payment as PaymentDetails, *};
-use fc_traits_payments::{Inspect, Mutate, Payment};
+use fc_traits_payments::{DirectPayment, Inspect, Mutate, Payment};
 use frame_support::pallet_prelude::Get;
 use frame_support::BoundedVec;
 
@@ -95,5 +95,21 @@ impl<T: Config> Mutate<AccountIdOf<T>> for Pallet<T> {
         });
 
         Ok(payment_id)
+    }
+}
+
+impl<T: Config> DirectPayment<AccountIdOf<T>> for Pallet<T> {
+    fn pay<Details: Encode>(
+        sender: &AccountIdOf<T>,
+        asset: Self::AssetId,
+        amount: Self::Balance,
+        beneficiary: &AccountIdOf<T>,
+        details: Option<Details>,
+    ) -> Result<Self::Id, DispatchError> {
+        let remark = details.map(|d| d.encode());
+        // Its own layer: a failure after the fees moved reverts them too.
+        frame_support::storage::with_storage_layer(|| {
+            Self::do_direct_payment(sender, asset, amount, beneficiary, remark.as_deref())
+        })
     }
 }
