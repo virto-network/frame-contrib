@@ -7,14 +7,23 @@ use frame_support::{
     traits::tokens::nonfungibles_v2 as nonfungibles,
 };
 
-const ATTR_MEMBER_TOTAL: &[u8] = b"membership_member_total";
-const ATTR_MEMBER_RANK: &[u8] = b"membership_member_rank";
-const ATTR_MEMBER_RANK_TOTAL: &[u8] = b"membership_rank_total";
-
+/// The account that holds a manager-collection item while its twin is assigned in a group's
+/// collection.
+#[deprecated(
+    since = "2.4.0",
+    note = "memberships live in their group's own collection, with no twin to hold; use GroupCollectionMemberships"
+)]
 pub const ASSIGNED_MEMBERSHIPS_ACCOUNT: [u8; 32] = str_array("memberships/assigned_memberships");
 
+/// Memberships kept in a manager collection (collection `0`), with a twin item minted into the
+/// group's collection for each assigned membership.
+#[deprecated(
+    since = "2.4.0",
+    note = "memberships live in their group's own collection; use GroupCollectionMemberships"
+)]
 pub struct NonFungiblesMemberships<NF, IC>(PhantomData<(NF, IC)>);
 
+#[allow(deprecated)]
 impl<NF, IC, AccountId> Inspect<AccountId> for NonFungiblesMemberships<NF, IC>
 where
     NF: nonfungibles::Inspect<AccountId> + nonfungibles::InspectEnumerable<AccountId>,
@@ -45,6 +54,7 @@ where
     }
 }
 
+#[allow(deprecated)]
 impl<NF, IC, AccountId> InspectEnumerable<AccountId> for NonFungiblesMemberships<NF, IC>
 where
     NF: nonfungibles::Inspect<AccountId> + nonfungibles::InspectEnumerable<AccountId>,
@@ -78,6 +88,7 @@ where
     }
 }
 
+#[allow(deprecated)]
 impl<NF, ItemConfig, AccountId> Attributes<AccountId> for NonFungiblesMemberships<NF, ItemConfig>
 where
     NF: nonfungibles::Inspect<AccountId>
@@ -114,6 +125,7 @@ where
     }
 }
 
+#[allow(deprecated)]
 impl<NF, ItemConfig, AccountId> Manager<AccountId> for NonFungiblesMemberships<NF, ItemConfig>
 where
     NF: nonfungibles::Mutate<AccountId, ItemConfig>
@@ -153,6 +165,7 @@ where
     }
 }
 
+#[allow(deprecated)]
 impl<NF, ItemConfig, AccountId> Rank<AccountId> for NonFungiblesMemberships<NF, ItemConfig>
 where
     NF: nonfungibles::Mutate<AccountId, ItemConfig>
