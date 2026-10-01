@@ -68,10 +68,13 @@
 //!
 //! Calling these functions requires being a member of the community.
 //!
-//! - [`add_member`][c02]: Enroll an account as a community member. In theory,
-//!   any community member should be able to add a member. However, this can be
-//!   changed to ensure it is a privileged function.
+//! - [`add_member`][c02]: Enroll an account as a community member, giving it a
+//!   membership from the community's stock. In theory, any community member
+//!   should be able to add a member. However, this can be changed to ensure it
+//!   is a privileged function.
 //! - `vote`: Adds a vote into a community proposal.
+//! - `transfer_membership`: A member hands its membership on to another
+//!   account, as the community's transfer policy allows.
 //!
 //! ### Privileged Functions
 //!
@@ -86,6 +89,8 @@
 //! - `promote`: Increases the rank of a member in the community.
 //! - `demote`: Decreases the rank of a member in the community.
 //! - `set_decision_method`: Means for a community to make decisions.
+//! - `set_transfer_policy`: Decides whether and how the community's
+//!   memberships may be transferred.
 //!
 //! ### Public Functions
 //!
@@ -116,7 +121,9 @@ extern crate alloc;
 
 use alloc::{boxed::Box, vec::Vec};
 use core::num::NonZeroU8;
-use frame_contrib_traits::memberships::{self as membership, Inspect, Manager, Rank};
+use frame_contrib_traits::memberships::{
+    self as membership, Inspect, InspectEnumerable, Manager, Rank, Transfer as MembershipTransfer,
+};
 use frame_support::{
     pallet_prelude::*,
     traits::{fungible, fungibles, EnsureOrigin, OriginTrait, Polling},
@@ -186,6 +193,8 @@ pub mod pallet {
         type AdminOrigin: EnsureOrigin<OriginFor<Self>, Success = Self::CommunityId>;
         /// Origin authorized to manage memeberships of an active community
         type MemberMgmtOrigin: EnsureOrigin<OriginFor<Self>, Success = Self::CommunityId>;
+        /// Origin of a member acting on a membership it holds (e.g. transferring it).
+        type MemberOrigin: EnsureOrigin<OriginFor<Self>, Success = AccountIdOf<Self>>;
 
         // Types: A set of parameter types that the pallet uses to handle information.
 
@@ -197,10 +206,20 @@ pub mod pallet {
 
         // Dependencies: The external components this pallet depends on.
 
-        /// Means to manage memberships of a community
+        /// Means to manage memberships of a community. A community's stock (its
+        /// unassigned memberships) is what `add_member` assigns from, and a member
+        /// transfers a membership as the community's transfer policy allows.
         type MemberMgmt: Inspect<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>
-            + Manager<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>
-            + Rank<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>;
+            + InspectEnumerable<
+                Self::AccountId,
+                Group = CommunityIdOf<Self>,
+                Membership = MembershipIdOf<Self>,
+            > + Manager<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>
+            + MembershipTransfer<
+                Self::AccountId,
+                Group = CommunityIdOf<Self>,
+                Membership = MembershipIdOf<Self>,
+            > + Rank<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>;
         /// Means to read and mutate the state of a poll.
         type Polls: Polling<
             Tally<Self>,
@@ -296,6 +315,22 @@ pub mod pallet {
         VoteOf<T>,
     >;
 
+    /// The weight each vote in [`CommunityVotes`] added to its poll's tally (its weight times its
+    /// multiplier, such as the membership's rank), so removing the vote subtracts exactly that,
+    /// whatever happened to the rank or the decision method since.
+    ///
+    /// A vote cast before this record existed has none; removing it recomputes the weight from
+    /// the current rank, as it did then.
+    #[pallet::storage]
+    pub(super) type CommunityVoteWeights<T> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        PollIndexOf<T>,
+        Blake2_128Concat,
+        MembershipIdOf<T>,
+        VoteWeight,
+    >;
+
     // Pallets use events to inform users when important changes are made.
     // https://docs.substrate.io/main-docs/build/events-errors/
     #[pallet::event]
@@ -334,6 +369,18 @@ pub mod pallet {
             who: AccountIdOf<T>,
             poll_index: PollIndexOf<T>,
         },
+        /// A member transferred a membership of the community to another account.
+        MembershipTransferred {
+            id: T::CommunityId,
+            membership_id: MembershipIdOf<T>,
+            from: AccountIdOf<T>,
+            to: AccountIdOf<T>,
+        },
+        /// The community set the transfer policy of its memberships.
+        TransferPolicySet {
+            id: T::CommunityId,
+            policy: membership::TransferPolicy,
+        },
     }
 
     // Errors inform users that something worked or went wrong.
@@ -368,6 +415,11 @@ pub mod pallet {
         AlreadyAdmin,
         /// The vote is below the minimum requried
         VoteBelowMinimum,
+        /// The community's transfer policy allows no transfers of its memberships
+        TransferDisabled,
+        /// The community's transfer policy does not allow the recipient to
+        /// receive the membership, or the recipient is the community account
+        NotSameGroup,
     }
 
     // Dispatchable functions allows users to interact with the pallet and invoke
@@ -420,19 +472,20 @@ pub mod pallet {
         // === Memberships management ===
 
         /// Enroll an account as a community member that receives a membership
-        /// from the available pool of memberships of the community.
+        /// from the community's stock (its unassigned memberships).
+        ///
+        /// Fails with `CommunityAtCapacity` if the stock is empty.
         #[pallet::call_index(3)]
         pub fn add_member(origin: OriginFor<T>, who: AccountIdLookupOf<T>) -> DispatchResult {
             let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
             let who = T::Lookup::lookup(who)?;
 
-            let account = Self::community_account(&community_id);
-            // assume the community has memberships to give out to the new member
-            let (_, membership_id) = T::MemberMgmt::user_memberships(&account, None)
+            let membership_id = T::MemberMgmt::group_available_memberships(&community_id)
                 .next()
                 .ok_or(Error::<T>::CommunityAtCapacity)?;
 
-            T::MemberMgmt::assign(&community_id, &membership_id, &who)?;
+            T::MemberMgmt::assign(&community_id, &membership_id, &who)
+                .map_err(Self::membership_error)?;
 
             Self::deposit_event(Event::MemberAdded { who, membership_id });
             Ok(())
@@ -444,6 +497,9 @@ pub mod pallet {
         /// arbitrarily by any community member. Also, it shouldn't be possible
         /// to arbitrarily remove the community admin, as some privileged calls
         /// would be impossible to execute thereafter.
+        ///
+        /// Fails with `NotAMember` unless `who` holds `membership_id` in the
+        /// community.
         #[pallet::call_index(4)]
         pub fn remove_member(
             origin: OriginFor<T>,
@@ -454,11 +510,12 @@ pub mod pallet {
             let who = T::Lookup::lookup(who)?;
 
             ensure!(
-                T::MemberMgmt::is_member_of(&community_id, &who),
+                T::MemberMgmt::holds(&community_id, &who, &membership_id),
                 Error::<T>::NotAMember
             );
 
-            T::MemberMgmt::release(&community_id, &membership_id)?;
+            T::MemberMgmt::release(&community_id, &membership_id)
+                .map_err(Self::membership_error)?;
 
             Self::deposit_event(Event::MemberRemoved { who, membership_id });
             Ok(())
@@ -610,6 +667,55 @@ pub mod pallet {
         ) -> DispatchResult {
             let community_id = T::MemberMgmtOrigin::ensure_origin(origin)?;
             Self::do_dispatch_as_community_account(&community_id, *call)
+        }
+
+        /// Hand a membership the caller holds on to another account, as the
+        /// community's transfer policy allows.
+        ///
+        /// Fails with `NotAMember` if the caller does not hold `membership_id`,
+        /// `TransferDisabled` if the community's policy allows no transfers, and
+        /// `NotSameGroup` if the policy does not allow `to` to receive it, or `to`
+        /// is the community account.
+        #[pallet::call_index(12)]
+        pub fn transfer_membership(
+            origin: OriginFor<T>,
+            membership_id: MembershipIdOf<T>,
+            to: AccountIdLookupOf<T>,
+        ) -> DispatchResult {
+            let from = T::MemberOrigin::ensure_origin(origin)?;
+            let to = T::Lookup::lookup(to)?;
+
+            let community_id = T::MemberMgmt::check_membership(&from, &membership_id)
+                .ok_or(Error::<T>::NotAMember)?;
+            T::MemberMgmt::transfer(&community_id, &membership_id, &to)
+                .map_err(Self::membership_error)?;
+
+            Self::deposit_event(Event::MembershipTransferred {
+                id: community_id,
+                membership_id,
+                from,
+                to,
+            });
+            Ok(())
+        }
+
+        /// Decide whether and how the community's memberships may be
+        /// transferred. Until a community sets one, its policy allows no
+        /// transfers.
+        #[pallet::call_index(13)]
+        pub fn set_transfer_policy(
+            origin: OriginFor<T>,
+            policy: membership::TransferPolicy,
+        ) -> DispatchResult {
+            let community_id = T::AdminOrigin::ensure_origin(origin)?;
+
+            T::MemberMgmt::set_transfer_policy(&community_id, policy)?;
+
+            Self::deposit_event(Event::TransferPolicySet {
+                id: community_id,
+                policy,
+            });
+            Ok(())
         }
     }
 }
