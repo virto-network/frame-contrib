@@ -1,13 +1,11 @@
-#[allow(deprecated)]
-use frame_contrib_traits::memberships::NonFungiblesMemberships;
+use frame_contrib_traits::memberships::{GroupCollectionMemberships, Issue};
 use frame_support::{
     derive_impl,
     dispatch::DispatchResult,
     parameter_types,
     traits::{
-        fungible::HoldConsideration, tokens::nonfungible_v2::ItemOf, AsEnsureOriginWithArg,
-        ConstU32, ConstU64, EitherOf, EnsureOriginWithArg, EqualPrivilegeOnly, Footprint,
-        VariantCountOf,
+        fungible::HoldConsideration, AsEnsureOriginWithArg, ConstU32, ConstU64, EitherOf,
+        EnsureOriginWithArg, EqualPrivilegeOnly, Footprint, VariantCountOf,
     },
     weights::{
         constants::{WEIGHT_REF_TIME_PER_NANOS, WEIGHT_REF_TIME_PER_SECOND},
@@ -19,7 +17,7 @@ use frame_system::{EnsureRoot, EnsureRootWithSuccess, EnsureSigned};
 use pallet_referenda::{TrackIdOf, TrackInfoOf, TracksInfo};
 use sp_io::TestExternalities;
 use sp_runtime::{
-    traits::{Convert, IdentifyAccount, IdentityLookup, Verify},
+    traits::{AccountIdConversion, Convert, IdentifyAccount, IdentityLookup, Verify},
     BuildStorage, MultiSignature, Perbill,
 };
 
@@ -29,7 +27,7 @@ pub type MembershipId = u64;
 use crate::{
     self as pallet_communities,
     origin::{EnsureCommunity, EnsureSignedPays},
-    types::{Tally, VoteWeight},
+    types::{CommunityAccount, Tally, VoteWeight},
     Config, DecisionMethod,
 };
 
@@ -251,7 +249,7 @@ impl EnsureOriginWithArg<RuntimeOrigin, TrackIdOf<Test, ()>> for EnsureOriginToT
 
     #[cfg(feature = "runtime-benchmarks")]
     fn try_successful_origin(id: &TrackIdOf<Test, ()>) -> Result<RuntimeOrigin, ()> {
-        Ok(pallet_communities::Origin::<Test>::new(id.clone()).into())
+        Ok(pallet_communities::Origin::<Test>::new(*id).into())
     }
 }
 
@@ -310,12 +308,12 @@ impl pallet_referenda::Config for Test {
 
 parameter_types! {
     pub const CommunitiesPalletId: PalletId = PalletId(*b"kv/comms");
-    pub const MembershipsManagerCollectionId: CommunityId = 0;
-    pub const MembershipNftAttr: &'static [u8; 10] = b"membership";
     pub const TestCommunity: CommunityId = COMMUNITY;
+    /// The keyless account that owns and administers every membership collection.
+    pub MembershipsManagerAccount: AccountId = PalletId(*b"kv/mbmgr").into_account_truncating();
+    /// Holds the memberships a community retires, until they are burnt.
+    pub MembershipsRetirementHolder: Option<AccountId> = Some(RETIREMENT_HOLDER);
 }
-
-type MembershipCollection = ItemOf<Nfts, MembershipsManagerCollectionId, AccountId>;
 
 #[cfg(feature = "runtime-benchmarks")]
 use crate::{
@@ -350,7 +348,6 @@ impl BenchmarkHelper<Test> for CommunityBenchmarkHelper {
     }
 
     fn initialize_memberships_collection() -> Result<(), frame_benchmarking::BenchmarkError> {
-        TestEnvBuilder::initialize_memberships_manager_collection()?;
         TestEnvBuilder::initialize_community_memberships_collection(&Self::community_id())?;
         Ok(())
     }
@@ -359,16 +356,7 @@ impl BenchmarkHelper<Test> for CommunityBenchmarkHelper {
         community_id: CommunityIdOf<Test>,
         membership_id: MembershipIdOf<Test>,
     ) -> Result<(), frame_benchmarking::BenchmarkError> {
-        use frame_support::traits::tokens::nonfungible_v2::Mutate;
-
-        let community_account = Communities::community_account(&community_id);
-        MembershipCollection::mint_into(
-            &membership_id,
-            &community_account,
-            &Default::default(),
-            true,
-        )?;
-
+        MembershipsManager::issue(&community_id, &membership_id)?;
         Ok(())
     }
 
@@ -445,8 +433,18 @@ parameter_types! {
 type RootCreatesCommunitiesForFree = EnsureRootWithSuccess<AccountId, NoPay>;
 type AnyoneElsePays = EnsureSignedPays<Test, ConstU64<10>, RootAccount>;
 
-#[allow(deprecated)]
-pub type MembershipsManager = NonFungiblesMemberships<Nfts, pallet_nfts::ItemConfig>;
+/// The account that holds retiring memberships.
+pub const RETIREMENT_HOLDER: AccountId = AccountId::new([0xdd; 32]);
+
+/// Memberships live in each community's collection; the community account holds the stock, and
+/// retired memberships go to [`RETIREMENT_HOLDER`].
+pub type MembershipsManager = GroupCollectionMemberships<
+    Nfts,
+    pallet_nfts::ItemConfig,
+    CommunityAccount<Test>,
+    MembershipsManagerAccount,
+    MembershipsRetirementHolder,
+>;
 
 impl Config for Test {
     type RuntimeFreezeReason = RuntimeFreezeReason;
@@ -455,6 +453,7 @@ impl Config for Test {
     type CreateOrigin = EitherOf<RootCreatesCommunitiesForFree, AnyoneElsePays>;
     type AdminOrigin = EnsureCommunity<Self>;
     type MemberMgmtOrigin = EnsureCommunity<Self>;
+    type MemberOrigin = EnsureSigned<AccountId>;
 
     type CommunityId = CommunityId;
     type MembershipId = MembershipId;
@@ -588,8 +587,6 @@ impl TestEnvBuilder {
         ext.execute_with(|| {
             System::set_block_number(1);
 
-            Self::initialize_memberships_manager_collection().expect("collection is initialized");
-
             for community_id in &self.communities {
                 Self::initialize_community_memberships_collection(community_id)
                     .expect("collection is initialized");
@@ -626,16 +623,8 @@ impl TestEnvBuilder {
                 );
 
                 for (_, membership) in memberships {
-                    use frame_support::traits::tokens::nonfungible_v2::Mutate;
-
-                    let account = Communities::community_account(community_id);
-                    MembershipCollection::mint_into(
-                        membership,
-                        &account,
-                        &Default::default(),
-                        true,
-                    )
-                    .expect("can mint membership");
+                    MembershipsManager::issue(community_id, membership)
+                        .expect("can issue membership");
 
                     if let Some((_, who)) = members.next() {
                         Communities::add_member(community_origin.clone(), who.clone())
@@ -658,33 +647,21 @@ impl TestEnvBuilder {
         ext
     }
 
-    pub(crate) fn initialize_memberships_manager_collection() -> DispatchResult {
-        Nfts::do_create_collection(
-            MembershipsManagerCollectionId::get(),
-            RootAccount::get(),
-            RootAccount::get(),
-            Default::default(),
-            0,
-            pallet_nfts::Event::ForceCreated {
-                collection: MembershipsManagerCollectionId::get(),
-                owner: RootAccount::get(),
-            },
-        )
-    }
-
+    /// Creates the community's memberships collection, owned and administered by the
+    /// memberships manager account.
     pub(crate) fn initialize_community_memberships_collection(
         community_id: &CommunityId,
     ) -> DispatchResult {
-        let account = Communities::community_account(community_id);
+        let manager = MembershipsManagerAccount::get();
         Nfts::do_create_collection(
             *community_id,
-            account.clone(),
-            account.clone(),
+            manager.clone(),
+            manager.clone(),
             Default::default(),
             0,
             pallet_nfts::Event::ForceCreated {
                 collection: *community_id,
-                owner: account,
+                owner: manager,
             },
         )
     }

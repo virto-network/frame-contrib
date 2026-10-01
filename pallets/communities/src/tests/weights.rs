@@ -43,6 +43,14 @@ fn weights() {
             "dispatch_as_account",
             SubstrateWeight::<Test>::dispatch_as_account(),
         ),
+        (
+            "transfer_membership",
+            SubstrateWeight::<Test>::transfer_membership(),
+        ),
+        (
+            "set_transfer_policy",
+            SubstrateWeight::<Test>::set_transfer_policy(),
+        ),
     ] {
         println!("{function}: {weight:?}",);
         println!(
