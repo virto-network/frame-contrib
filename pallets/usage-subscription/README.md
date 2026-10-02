@@ -17,7 +17,7 @@ into them.
 |---|---|---|
 | The **collective** | Its referendum origins: `StandardOfferOrigin`, `CustomOfferOrigin`, `TerminateOrigin`, and the dedicated `AmendOrigin` | Publish and withdraw offers, agree custom terms with one group, amend a custom contract or a standard offer, terminate a contract |
 | A **group** | Its administrative origin, `GroupOrigin` | Subscribe (optionally naming a trial's conversion), cancel, switch offer, cancel a switch or conversion |
-| A **member** | A signed transaction | Draw on its group's pool |
+| A **member** | A signed transaction | Draw on its group's pool; name its paying group (`set_paying_group`) |
 | The **configured payee** | Passive | Receive every charge |
 | **Anyone** | A signed transaction | Trigger a charge that is due (in the subscriptions system) |
 
@@ -127,6 +127,43 @@ charged at its start. Usage window *k* covers `[anchor + k·U, anchor + (k+1)·U
 and the weight used in it; the current window is computed from the anchor and the clock, and the stored usage counts
 only if it belongs to that window. Nothing is reset by a write, and a boundary passing needs no processing (`DEC-3`).
 
+## Admission, metering and charging
+
+The payment step, `ChargeUsageSubscription<T, S>`, wraps the runtime's fee extension `S`. For each signed
+transaction it asks the pool meter whether the transaction takes the **pool path**. It does if, and only if, all of
+these hold when it is validated (`REQ-PL-7`):
+
+1. its origin is a signed account A;
+2. a paying group P is resolved for A (see below);
+3. A holds a valid membership of P (one of P's memberships, A not being P's group account);
+4. P is usable (`UsableGroup`);
+5. P has an *Active* contract, and now is before its `paid through`;
+6. in both components, the current usage window's usage plus the transaction's **estimate** is at most the
+   allowance. A pool is never partly applied: a transaction it cannot cover takes the fee path.
+
+Admission writes nothing (`INV-1`) and yields a **ticket**: the member, the group, the membership, the contract (its
+offer and anchor), the usage window and the estimate. Preparation checks again and must find the same ticket, or the transaction is invalid
+(`PATH_MISMATCH`). After dispatch, the pool of the ticket's contract is charged the transaction's **actual** metered
+weight, capped at the estimate, in the ticket's window, whatever the call changed (`INV-3`, `INV-13`), and
+`UsageCharged` is the transaction's only event. The single exception is a transaction during whose own dispatch the collective terminates its contract: that
+transaction is charged nothing (`INV-6` as amended by `0009-A19.4`). A pool-path transaction costs its signer nothing, tip included, and
+gets the default priority. Every other transaction takes the **fee path**: `S` validates, prepares and charges it
+exactly as it would alone (`INV-12`).
+
+The **metered weight** is what the block books for the transaction, as `CheckWeight` counts it: the call's and every
+extension's declared weight, plus the base extrinsic weight of its class, plus its length as proof size. The estimate
+uses the declared weights; the actual, the weights left after refunds.
+
+### Paying groups
+
+A member of several groups chooses which pays with `set_paying_group(Some(group))`, and clears its choice with
+`None`. Admission resolves the paying group as: the named group, if the member still holds a valid membership of it;
+otherwise the only group among the member's memberships, reading at most `MaxMembershipScan` of them; otherwise none,
+and the fee path (`REQ-PC-2`, `REQ-PC-3`). A name that became invalid is ignored, never deleted. Naming a group the
+member holds no valid membership of is refused (`NotAMember`). Naming or clearing is feeless while the member holds a
+valid membership of the group it names (or had named) and has made fewer than `MaxPayingGroupChanges` changes in the
+current rate window of `PayingGroupChangeWindow` ticks, counted from tick 0 (`REQ-PC-5`).
+
 ## Configuration
 
 | Item | What it is | Constraint |
@@ -147,6 +184,9 @@ only if it belongs to that window. Nothing is reset by a write, and a boundary p
 | `MinUsagePeriod` | The shortest usage period | Non-zero |
 | `MinBillingPeriod` | The shortest billing period | Non-zero, longer than the subscriptions system's lead |
 | `MaxTrialPeriods` | The longest trial, in billing periods | Non-zero |
+| `MaxMembershipScan` | The most memberships admission reads to find a member's only group | Small: every signed transaction pays for the reads |
+| `MaxPayingGroupChanges` | The free paying-group changes per rate window | — |
+| `PayingGroupChangeWindow` | The rate window of paying-group changes, in ticks | Non-zero; the deployment's minimum usage period |
 
 ## Calls
 
@@ -158,6 +198,7 @@ only if it belongs to that window. Nothing is reset by a write, and a boundary p
 | 3 | `cancel()` | `GroupOrigin` | Cancels the group's contract, effective at the later of `paid through` and the commitment end |
 | 4 | `switch_offer(offer)` | `GroupOrigin` | Schedules a switch of the group's *Active* contract |
 | 5 | `terminate_contract(group)` | `TerminateOrigin` | Ends a contract at once |
+| 6 | `set_paying_group(group)` | Signed | Names or clears the signer's paying group; feeless within the rate limit |
 | 7 | `amend_contract(group, terms)` | `AmendOrigin` | Amends a custom contract, with notice |
 | 8 | `cancel_switch()` | `GroupOrigin` | Drops the group's pending switch or conversion |
 | 9 | `amend_offer(offer, terms)` | `AmendOrigin` | Amends a standard offer and its contracts, with notice |
@@ -171,13 +212,16 @@ One per state change (`CTR-EVT-1`): `OfferPublished`, `OfferWithdrawn` (also whe
 `CancellationRequested`, `ContractEnded` (with its `EndReason`), `SwitchScheduled`, `SwitchCancelled`,
 `SwitchDropped` (with the reason), `ConversionScheduled`, `ConversionCancelled`, `ConversionDropped` (with the
 reason), `OfferAmended` (with its last boundary), `ContractAmended` (with its effective boundary),
-`ContractAmendmentInForce`.
+`ContractAmendmentInForce`, `PayingGroupSet`; and `UsageCharged`, a pool-path transaction's only event
+(`CTR-EVT-2`).
 
 ## Errors
 
 `InvalidTerms`, `UnknownOffer`, `OfferWithdrawn`, `NotEligible`, `AlreadyContracted`, `ChargeFailed`, `NoContract`,
 `SwitchPending`, `ChangePending`, `NoPendingSwitch`, `InvalidConversion`, `GroupUnusable`, `TrialUsed`, `NotAMember`,
-and `BadOrigin`: SPEC §10's names (`CTR-CALL-2`). The subscriptions system's refusals are mapped to them.
+and `BadOrigin`: SPEC §10's names (`CTR-CALL-2`). The subscriptions system's refusals are mapped to them. In the
+payment step, a preparation that disagrees with validation is `InvalidTransaction::Custom(PATH_MISMATCH)`
+(`ERR-PathMismatch`); a failing fee path is the fee extension's own error (`ERR-Payment`).
 
 ## Wiring it
 
@@ -192,3 +236,7 @@ and `BadOrigin`: SPEC §10's names (`CTR-CALL-2`). The subscriptions system's re
    (`fc_traits_payments::DirectPayment`, implemented by `fc-pallet-payments`). The payments system's fee policy should
    take no fee from either side when the beneficiary is the configured payee (`REQ-BL-3`).
 4. **Memberships.** Each group's memberships are issued and managed outside this pallet; it only reads them.
+5. **The payment step.** Put `ChargeUsageSubscription<Runtime, S>` in place of the fee extension `S`, after
+   `CheckWeight`, inside `SkipCheckIfFeeless` if the runtime uses it (so `set_paying_group` can be feeless). Give
+   every member account a provider or a sufficient reference (pass accounts have one): `CheckNonce` refuses a signer
+   with neither before the payment step is asked, and a membership gives none.

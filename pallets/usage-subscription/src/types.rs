@@ -329,3 +329,86 @@ pub enum EndReason {
     /// The collective terminated it.
     Terminated,
 }
+
+/// A member's choice of paying group, and how often it changed it (`REQ-PC-2`, `REQ-PC-5`).
+#[derive(
+    Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Clone, PartialEq, Eq, Debug,
+)]
+pub struct PayingGroupChoice<Group, Moment> {
+    /// The named group, or none.
+    pub group: Option<Group>,
+    /// The rate window of the last change: the tick of the change divided by
+    /// `PayingGroupChangeWindow`.
+    pub window: Moment,
+    /// How many changes were made in that rate window.
+    pub changes: u32,
+}
+
+/// The paying group of a member, and how it was found (`REQ-PC-2`).
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+)]
+pub enum PayingGroupResolution<Group> {
+    /// The group the member named, of which it still holds a valid membership.
+    Named(Group),
+    /// The only group the member holds valid memberships of.
+    Only(Group),
+    /// None: the member holds no valid membership.
+    NoMembership,
+    /// None: the member holds valid memberships of several groups and named none of them (or
+    /// named one it no longer holds a membership of).
+    SeveralGroups,
+    /// None: the member holds more memberships than admission reads (`REQ-PC-3`).
+    TooManyMemberships,
+}
+
+impl<Group: Copy> PayingGroupResolution<Group> {
+    /// The resolved group, if any.
+    pub fn group(&self) -> Option<Group> {
+        match self {
+            Self::Named(group) | Self::Only(group) => Some(*group),
+            _ => None,
+        }
+    }
+}
+
+/// Why a transaction takes the fee path: the first condition of admission (`REQ-PL-7`) that
+/// fails.
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+)]
+pub enum FeePathReason {
+    /// 1. The origin is not a signed account.
+    NotSigned,
+    /// 2. No paying group is resolved for the account.
+    NoPayingGroup,
+    /// 3. The account holds no valid membership of its paying group.
+    NotAMember,
+    /// 4. The paying group is not usable.
+    GroupUnusable,
+    /// 5. The paying group has no contract.
+    NoContract,
+    /// 5. The contract is not *Active*, or not paid now (`now ≥ paid through`).
+    NotPaid,
+    /// 6. The current usage window's usage plus the estimate exceeds the allowance in some
+    ///    component.
+    AllowanceExceeded,
+}
