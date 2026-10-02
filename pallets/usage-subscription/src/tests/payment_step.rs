@@ -567,6 +567,74 @@ mod charging {
         });
     }
 
+    // CTR-FEE-5, CTR-FEE-6
+    #[test]
+    fn fee_path_is_charged_the_check_only_up_to_where_it_stopped() {
+        new_test_ext().execute_with(|| {
+            setup();
+            let call = remark();
+            let inner = ChargeTransactionPayment::<Test>::from(0).weight(&call);
+            // BOB holds no membership: the check stops at the paying group. CHARLIE's only group
+            // has no contract: it stops there.
+            add_member(GROUP_C, 40, &CHARLIE);
+            let info = declared(Weight::from_parts(1_000, 0));
+            let post = PostDispatchInfo {
+                actual_weight: Some(Weight::from_parts(400, 0)),
+                pays_fee: Pays::Yes,
+            };
+
+            for (who, check) in [
+                (BOB, TestWeights::fee_path_no_paying_group()),
+                (CHARLIE, TestWeights::fee_path_no_contract()),
+            ] {
+                // No more than the worst case the payment step declares in any component (two
+                // paths may prove the same storage maps), and strictly less in time.
+                assert!(check.all_lte(TestWeights::fee_path_check()));
+                assert!(check.ref_time() < TestWeights::fee_path_check().ref_time());
+
+                let before = Balances::free_balance(&who);
+                let result = usage_ext()
+                    .test_run(
+                        RuntimeOrigin::signed(who.clone()),
+                        &call,
+                        &info,
+                        10,
+                        0,
+                        |_| Ok(post),
+                    )
+                    .expect("valid; qed")
+                    .expect("dispatched; qed");
+                let wrapped = before - Balances::free_balance(&who);
+                // The block keeps the call's actual weight, the check up to where it stopped,
+                // and the fee extension's.
+                assert_eq!(
+                    result.actual_weight,
+                    Some(
+                        Weight::from_parts(400, 0)
+                            .saturating_add(check)
+                            .saturating_add(inner)
+                    )
+                );
+
+                // The fee extension alone, declaring that much, charges the same.
+                let alone_info = DispatchInfo {
+                    extension_weight: check.saturating_add(inner),
+                    ..info
+                };
+                let before = Balances::free_balance(&who);
+                assert_ok!(ChargeTransactionPayment::<Test>::from(0).test_run(
+                    RuntimeOrigin::signed(who.clone()),
+                    &call,
+                    &alone_info,
+                    10,
+                    0,
+                    |_| Ok(post)
+                ));
+                assert_eq!(wrapped, before - Balances::free_balance(&who));
+            }
+        });
+    }
+
     // CTR-FEE-6
     #[test]
     fn declared_weight_covers_both_paths() {
