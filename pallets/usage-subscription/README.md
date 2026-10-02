@@ -15,8 +15,8 @@ into them.
 
 | Party | Acts through | May |
 |---|---|---|
-| The **collective** | Its referendum origins: `StandardOfferOrigin`, `CustomOfferOrigin`, `TerminateOrigin` | Publish and withdraw offers, agree custom terms with one group, terminate a contract |
-| A **group** | Its administrative origin, `GroupOrigin` | Subscribe, cancel, switch offer, cancel a switch |
+| The **collective** | Its referendum origins: `StandardOfferOrigin`, `CustomOfferOrigin`, `TerminateOrigin`, and the dedicated `AmendOrigin` | Publish and withdraw offers, agree custom terms with one group, amend a custom contract or a standard offer, terminate a contract |
+| A **group** | Its administrative origin, `GroupOrigin` | Subscribe (optionally naming a trial's conversion), cancel, switch offer, cancel a switch or conversion |
 | A **member** | A signed transaction | Draw on its group's pool |
 | The **configured payee** | Passive | Receive every charge |
 | **Anyone** | A signed transaction | Trigger a charge that is due (in the subscriptions system) |
@@ -33,14 +33,16 @@ An **offer** is a set of terms the collective makes available:
 |---|---|
 | allowance | Both components non-zero, per usage period |
 | usage period | At least `MinUsagePeriod` |
-| price | An asset and an amount: a non-zero amount, at least the asset's minimum |
+| price | An asset and an amount: at least the asset's minimum, and non-zero except for a trial |
 | billing period | At least `MinBillingPeriod`, and longer than the subscriptions system's lead |
-| term limit, minimum commitment | Standard: none. Custom: optional, the commitment at most the term limit |
+| term limit, minimum commitment | Standard: none. Trial: a term limit of 1 to `MaxTrialPeriods` periods, no commitment. Custom: optional, the commitment at most the term limit |
 | grace | Shorter than the billing period |
 
 Offers come in kinds:
 
 - **Standard**: open-ended, with no commitment, for any usable group.
+- **Trial**: a few billing periods, free or discounted, that a group may start once, ever, across all trials
+  (`TrialUsed`). It never renews.
 - **Custom**: agreed with exactly one group through a referendum (`CustomOfferOrigin`), optionally with a minimum
   commitment and a term limit. Only its group may accept it, once; once accepted, it reads as withdrawn.
 
@@ -72,6 +74,9 @@ this pallet follows every transition through its `OnSubscriptionChanged` hooks, 
 | *Active* | *Ended* (*cancelled*) | The group cancelled, at the later of `paid through` and the commitment end |
 | *Suspended* | *Ended* (*cancelled*) | The group cancels outside its commitment: at once |
 | *Active* | *Ended* (*switched*) | A switch is pending, at the first billing boundary past the commitment end, and the new contract's first charge succeeds |
+| *Active* (trial) | *Ended* (*converted*) | At the trial's end, a conversion is pending, its target is open and eligible, and the new contract's first charge succeeds |
+| *Active*, *Suspended* | (same) | An amendment is enacted: it is pending until the contract's effective boundary, and the free exit is open |
+| *Active* | *Ended* (*cancelled*) | The group cancelled while an amendment was pending: at `paid through`, the commitment waived |
 | any | *Ended* (*terminated*) | The collective terminates it: at once, nothing refunded |
 
 An ended contract's record is removed in the same block, and its event names the reason (`REQ-CT-12`). `subscribe`
@@ -83,6 +88,33 @@ A switch (`switch_offer`) takes effect at the first billing boundary at or after
 commitment end, and only if the new contract's first charge succeeds then; otherwise it is dropped and the old
 contract goes on (`REQ-CT-7`). It is also dropped if, by then, the target was withdrawn or the group is no longer
 usable or eligible for it, and the event says why. A group may cancel a pending switch (`cancel_switch`).
+
+### Trials and conversions
+
+A group subscribing to a trial may name, in `subscribe`, an offer the trial **converts** into: an open offer, not a
+trial, that the group is eligible for (otherwise `InvalidConversion`, and nothing is created). The conversion is the
+trial's pending switch. At the trial's end, if the target is still open and the group still usable and eligible, the
+target's first charge is attempted, and on success a contract to it starts there, with the target's terms as they
+stand then (*converted*). Otherwise the trial completes, and the event says why. A trial with no conversion never
+converts, and a switch scheduled during a trial also waits for its end (`REQ-CT-9`, `REQ-CT-13`).
+
+### Amendments, notice and the free exit
+
+The collective may amend, through `AmendOrigin` only, either one *Active* or *Suspended* **custom** contract
+(`amend_contract`), or an open **standard** offer together with every contract made from it (`amend_offer`). No
+group is asked. An amendment may change the allowance, price, grace, minimum commitment and term limit, keeps the
+kind's rules, and never changes the usage or billing period (`InvalidTerms` otherwise). For each contract it takes
+effect at that contract's **effective boundary** `b`: the first billing boundary at least one full billing period
+after the enactment (`REQ-CT-14`). The new price is charged for the billing period starting at `b`, never earlier;
+the new allowance applies from the first usage window starting at or after `b` (`INV-20`). The anchor never moves.
+
+Until `b`, the group has a **free exit**: cancelling ends the contract at its `paid through` (at once, if
+*Suspended*) with any minimum commitment waived. An amendment drops a pending switch, and while one is pending no
+switch and no second amendment may be made (`ChangePending`).
+
+An offer amendment is lazy (`DEC-34`): the offer's terms change at once for new contracts, its amendment is recorded
+once (`OfferAmendment`), and each contract made from it before takes it at its own boundary, as its billing reaches
+it. Nothing loops over contracts.
 
 ## Usage windows and billing periods
 
@@ -105,10 +137,12 @@ only if it belongs to that window. Nothing is reset by a write, and a boundary p
 | `StandardOfferOrigin` | Publishes and withdraws standard offers | The collective's administrative origin |
 | `CustomOfferOrigin` | Publishes and withdraws custom offers | The outcome of a collective referendum |
 | `TerminateOrigin` | Terminates contracts | The collective's |
+| `AmendOrigin` | Amends custom contracts and standard offers, and nothing else | A collective referendum whose shortest path to enactment is at least the deployment's minimum notice, distinct from the origins above (`REQ-OF-8`) |
 | `GroupOrigin` | A group's administrative origin, resolving to the group | — |
 | `BlockNumberProvider` | The chain clock | The same clock as `Subscriptions` |
 | `MinUsagePeriod` | The shortest usage period | Non-zero |
 | `MinBillingPeriod` | The shortest billing period | Non-zero, longer than the subscriptions system's lead |
+| `MaxTrialPeriods` | The longest trial, in billing periods | Non-zero |
 
 ## Calls
 
@@ -120,7 +154,9 @@ only if it belongs to that window. Nothing is reset by a write, and a boundary p
 | 3 | `cancel()` | `GroupOrigin` | Cancels the group's contract, effective at the later of `paid through` and the commitment end |
 | 4 | `switch_offer(offer)` | `GroupOrigin` | Schedules a switch of the group's *Active* contract |
 | 5 | `terminate_contract(group)` | `TerminateOrigin` | Ends a contract at once |
-| 8 | `cancel_switch()` | `GroupOrigin` | Drops the group's pending switch |
+| 7 | `amend_contract(group, terms)` | `AmendOrigin` | Amends a custom contract, with notice |
+| 8 | `cancel_switch()` | `GroupOrigin` | Drops the group's pending switch or conversion |
+| 9 | `amend_offer(offer, terms)` | `AmendOrigin` | Amends a standard offer and its contracts, with notice |
 
 Due charges are not a call of this pallet: the subscriptions system processes them, and anyone may trigger one there.
 
@@ -129,7 +165,9 @@ Due charges are not a call of this pallet: the subscriptions system processes th
 One per state change (`CTR-EVT-1`): `OfferPublished`, `OfferWithdrawn` (also when a custom offer is accepted),
 `ContractStarted`, `ContractCharged`, `ContractSuspended`, `ContractRestored`, `ContractDefaulted`,
 `CancellationRequested`, `ContractEnded` (with its `EndReason`), `SwitchScheduled`, `SwitchCancelled`,
-`SwitchDropped` (with the reason).
+`SwitchDropped` (with the reason), `ConversionScheduled`, `ConversionCancelled`, `ConversionDropped` (with the
+reason), `OfferAmended` (with its last boundary), `ContractAmended` (with its effective boundary),
+`ContractAmendmentInForce`.
 
 ## Errors
 

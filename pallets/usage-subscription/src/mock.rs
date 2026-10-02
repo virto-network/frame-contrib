@@ -469,10 +469,12 @@ impl EnsureOrigin<RuntimeOrigin> for EnsureGroup {
 }
 
 pub const ADMIN: AccountId = AccountId::new([0xAD; 32]);
+pub const AMENDER: AccountId = AccountId::new([0xA3; 32]);
 pub const PAYEE: AccountId = AccountId::new([0xBE; 32]);
 
 ord_parameter_types! {
     pub const Admin: AccountId = ADMIN;
+    pub const Amender: AccountId = AMENDER;
 }
 
 parameter_types! {
@@ -480,6 +482,7 @@ parameter_types! {
     pub const OfferInventory: (u32, u32) = (0, 0);
     pub const MinUsagePeriod: u64 = HOURS;
     pub const MinBillingPeriod: u64 = DAYS;
+    pub const MaxTrialPeriods: u32 = 3;
 }
 
 impl fc_pallet_usage_subscription::Config for Test {
@@ -493,10 +496,12 @@ impl fc_pallet_usage_subscription::Config for Test {
     type StandardOfferOrigin = EnsureSignedBy<Admin, AccountId>;
     type CustomOfferOrigin = EnsureRoot<AccountId>;
     type TerminateOrigin = EnsureRoot<AccountId>;
+    type AmendOrigin = EnsureSignedBy<Amender, AccountId>;
     type GroupOrigin = EnsureGroup;
     type BlockNumberProvider = Clock;
     type MinUsagePeriod = MinUsagePeriod;
     type MinBillingPeriod = MinBillingPeriod;
+    type MaxTrialPeriods = MaxTrialPeriods;
 }
 
 // Accounts, groups and assets of the tests.
