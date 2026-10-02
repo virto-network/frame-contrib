@@ -343,7 +343,17 @@ fn direct_subscription_to_the_collective_inventory_is_closed() {
 #[test]
 fn every_offer_lets_the_collective_amend_and_terminate() {
     new_test_ext().execute_with(|| {
-        for offer in [standard(), custom(GROUP_A, Some(2), None)] {
+        for offer in [
+            standard(),
+            custom(GROUP_A, Some(2), None),
+            publish(
+                OfferKind::Trial,
+                Terms {
+                    term: Some(1),
+                    ..terms()
+                },
+            ),
+        ] {
             assert_eq!(
                 <Listings as SubscriptionsInspect<AccountId>>::policy(&(0, 0), &offer),
                 Some(offer_policy())
