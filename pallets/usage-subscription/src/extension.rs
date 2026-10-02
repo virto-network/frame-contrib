@@ -1,4 +1,8 @@
 //! The payment step of usage subscriptions: [`ChargeUsageSubscription`] (`DEC-24`).
+//!
+//! Its integration guide (the check and the charge, the ticket, placement, declared weight and
+//! benchmarks, what is metered, and the pitfalls it avoids) is in the
+//! [crate documentation](crate), section "The payment step: integration guide".
 
 use super::*;
 use codec::{Decode, DecodeWithMemTracking, Encode};
