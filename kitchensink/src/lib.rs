@@ -174,6 +174,8 @@ mod runtime {
     pub type Payments = fc_pallet_payments;
     #[runtime::pallet_index(43)]
     pub type Orders = fc_pallet_orders;
+    #[runtime::pallet_index(44)]
+    pub type UsageSubscription = fc_pallet_usage_subscription;
 }
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -187,5 +189,6 @@ mod benches {
         [fc_pallet_pass, Pass]
         [fc_pallet_payments, Payments]
         [fc_pallet_referenda_tracks, CommunityTracks]
+        [fc_pallet_usage_subscription, UsageSubscription]
     );
 }
