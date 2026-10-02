@@ -232,8 +232,34 @@ impl fc_pallet_listings::Config for Test {
     type Nonfungibles = ListingsCatalog;
     type NonfungiblesKeyLimit = ();
     type NonfungiblesValueLimit = ();
+    type SubscribeOrigin = frame_support::traits::AsEnsureOriginWithArg<EnsureSigned<AccountId>>;
+    type Payments = Payments;
+    type BlockNumberProvider = System;
+    type RenewalLead = ConstU64<10>;
+    type DueBucketSize = ConstU64<5>;
+    type MaxDuePerBucket = ConstU32<8>;
+    type MaxChargesPerBlock = ConstU32<4>;
+    type OnSubscriptionChanged = ();
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = Self;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+impl fc_pallet_listings::SubscriptionsBenchmarkHelper<AccountId, AssetId, Balance> for Test {
+    fn price() -> (AssetId, Balance) {
+        use frame_support::traits::fungibles::{Create, Inspect};
+        if !Assets::asset_exists(ASSET_B) {
+            assert!(
+                <Assets as Create<AccountId>>::create(ASSET_B, RootAccount::get(), true, 5).is_ok()
+            );
+        }
+        (ASSET_B, 10)
+    }
+
+    fn fund(who: &AccountId, asset: &AssetId, amount: Balance) {
+        use frame_support::traits::fungibles::Mutate;
+        assert!(Assets::mint_into(*asset, who, amount.saturating_mul(1_000)).is_ok());
+    }
 }
 
 #[cfg(feature = "runtime-benchmarks")]

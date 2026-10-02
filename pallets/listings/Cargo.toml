@@ -14,6 +14,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 codec.workspace = true
 scale-info.workspace = true
 fc-traits-listings.workspace = true
+fc-traits-payments.workspace = true
 frame-benchmarking.workspace = true
 frame-support.workspace = true
 frame-system.workspace = true
@@ -25,30 +26,44 @@ serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 mock-helpers = { package = "fc-mock-helpers", path = "../../mock-helpers", default-features = false, features = ["pallet-assets", "pallet-balances"] }
+fc-pallet-payments.workspace = true
 pallet-assets.workspace = true
+pallet-assets-holder.workspace = true
 pallet-balances.workspace = true
+pallet-preimage.workspace = true
+pallet-scheduler.workspace = true
 
 [features]
 default = ["std"]
 runtime-benchmarks = [
+  "fc-pallet-payments/runtime-benchmarks",
+  "fc-traits-payments/runtime-benchmarks",
   "frame-benchmarking/runtime-benchmarks",
   "frame-support/runtime-benchmarks",
   "frame-system/runtime-benchmarks",
   "pallet-assets/runtime-benchmarks",
+  "pallet-assets-holder/runtime-benchmarks",
   "pallet-balances/runtime-benchmarks",
   "pallet-nfts/runtime-benchmarks",
+  "pallet-preimage/runtime-benchmarks",
+  "pallet-scheduler/runtime-benchmarks",
   "sp-runtime/runtime-benchmarks",
 ]
 std = [
   "codec/std",
+  "fc-pallet-payments/std",
   "fc-traits-listings/std",
+  "fc-traits-payments/std",
   "frame-benchmarking/std",
   "frame-support/std",
   "frame-system/std",
   "mock-helpers/std",
   "pallet-assets/std",
+  "pallet-assets-holder/std",
   "pallet-balances/std",
   "pallet-nfts/std",
+  "pallet-preimage/std",
+  "pallet-scheduler/std",
   "scale-info/std",
   "sp-core/std",
   "sp-io/std",
@@ -56,10 +71,14 @@ std = [
   "serde/std",
 ]
 try-runtime = [
+  "fc-pallet-payments/try-runtime",
   "frame-support/try-runtime",
   "frame-system/try-runtime",
   "pallet-assets/try-runtime",
+  "pallet-assets-holder/try-runtime",
   "pallet-balances/try-runtime",
   "pallet-nfts/try-runtime",
+  "pallet-preimage/try-runtime",
+  "pallet-scheduler/try-runtime",
   "sp-runtime/try-runtime",
 ]
