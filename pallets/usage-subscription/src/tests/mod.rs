@@ -15,8 +15,10 @@ use frame_support::{
 };
 use sp_runtime::DispatchError;
 
+mod amendments;
 mod contracts;
 mod offers;
+mod trials;
 
 /// The allowance of the offers in the tests.
 pub const ALLOWANCE: Weight = Weight::from_parts(1_000_000, 100_000);
