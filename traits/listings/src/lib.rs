@@ -20,6 +20,6 @@ pub use inventory::{
     InspectInventory, InventoryInspectEnumerable, InventoryLifecycle, MutateInventory,
 };
 pub use item::{
-    subscriptions::{InspectSubscription, MutateSubscription},
+    subscriptions::{InspectSubscription, MutateSubscription, OnSubscriptionChanged},
     InspectItem, ItemInspectEnumerable, MutateItem,
 };
