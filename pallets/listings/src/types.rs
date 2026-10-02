@@ -1,4 +1,8 @@
 use super::*;
+pub use fc_traits_listings::item::subscriptions::{
+    Cancellation, Eligibility, EndReason, ItemAmendment, PendingConditions, ReplacementDropReason,
+    Subscription, SubscriptionConditions, SubscriptionState,
+};
 use frame_support::traits::{fungibles::Inspect, Incrementable};
 pub use item::ItemPrice;
 
@@ -35,6 +39,64 @@ pub(crate) type ItemKeyOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::Nonfungi
 
 /// A `BoundedVec` limited by the overarching `ValueLimit`.
 pub(crate) type ItemValueOf<T, I = ()> = BoundedVec<u8, <T as Config<I>>::NonfungiblesValueLimit>;
+
+/// The `(MerchantId, InventoryId)` tuple the listings traits use to name an inventory.
+pub type InventoryIdTuple<T, I = ()> =
+    (<T as Config<I>>::MerchantId, <T as Config<I>>::InventoryId);
+
+/// A tick of the chain clock bound to the pallet instance.
+pub type MomentOf<T, I = ()> =
+    <<T as Config<I>>::BlockNumberProvider as sp_runtime::traits::BlockNumberProvider>::BlockNumber;
+
+/// The [`SubscriptionConditions`] type bound to the pallet instance.
+pub type SubscriptionConditionsOf<T, I = ()> =
+    SubscriptionConditions<ItemPriceOf<T, I>, MomentOf<T, I>>;
+
+/// The [`Subscription`] type bound to the pallet instance.
+pub type SubscriptionOf<T, I = ()> =
+    Subscription<ItemPriceOf<T, I>, MomentOf<T, I>, ItemIdOf<T, I>>;
+
+/// The [`ItemAmendment`] type bound to the pallet instance.
+pub type ItemAmendmentOf<T, I = ()> = ItemAmendment<ItemPriceOf<T, I>, MomentOf<T, I>>;
+
+/// The [`PendingConditions`] type bound to the pallet instance.
+pub type PendingConditionsOf<T, I = ()> = PendingConditions<ItemPriceOf<T, I>, MomentOf<T, I>>;
+
+/// The key of a subscription: inventory, item and subscriber.
+pub type SubscriptionKeyOf<T, I = ()> = (InventoryIdFor<T, I>, ItemIdOf<T, I>, AccountIdOf<T>);
+
+/// The [`ItemSubscription`] type bound to the pallet instance.
+pub type ItemSubscriptionOf<T, I = ()> =
+    ItemSubscription<SubscriptionConditionsOf<T, I>, AccountIdOf<T>>;
+
+/// The [`SubscriptionRecord`] type bound to the pallet instance.
+pub type SubscriptionRecordOf<T, I = ()> = SubscriptionRecord<SubscriptionOf<T, I>, MomentOf<T, I>>;
+
+/// An item's subscription conditions, for new subscriptions, and who may subscribe to it.
+#[derive(
+    Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Clone, PartialEq, Eq, Debug,
+)]
+pub struct ItemSubscription<Conditions, AccountId> {
+    /// The conditions new subscriptions take.
+    pub conditions: Conditions,
+    /// Who may subscribe.
+    pub eligibility: Eligibility<AccountId>,
+}
+
+/// A stored subscription, with the pallet's bookkeeping for it.
+#[derive(
+    Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Clone, PartialEq, Eq, Debug,
+)]
+pub struct SubscriptionRecord<Subscription, Moment> {
+    /// The subscription.
+    pub subscription: Subscription,
+    /// The bucket of the due queue that holds the subscription's one entry, in the bucket or in
+    /// its overflow. Every live subscription has one.
+    pub queued_at: Option<Moment>,
+    /// While suspended: the total length of the migration pauses that ended at or before the
+    /// unpaid charge's due tick. Pauses beyond it extend the grace end.
+    pub paused_before: Moment,
+}
 
 #[cfg(feature = "runtime-benchmarks")]
 pub(crate) type NativeBalanceOf<T, I = ()> = <
@@ -122,6 +184,17 @@ impl<MerchantId: Copy + Incrementable, Id: Copy + Incrementable> Incrementable
 #[cfg(feature = "runtime-benchmarks")]
 pub trait BenchmarkHelper<InventoryId> {
     fn inventory_id() -> InventoryId;
+}
+
+/// Prices and funds subscriptions in the benchmarks.
+#[cfg(feature = "runtime-benchmarks")]
+pub trait SubscriptionsBenchmarkHelper<AccountId, AssetId, Balance> {
+    /// An asset subscriptions can be priced in, created if needed, and a non-zero amount of it
+    /// that is a valid price (at least the asset's minimum balance).
+    fn price() -> (AssetId, Balance);
+
+    /// Gives `who` enough of `asset` to pay `amount` many times over, fees included.
+    fn fund(who: &AccountId, asset: &AssetId, amount: Balance);
 }
 
 pub mod test_utils {
