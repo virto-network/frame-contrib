@@ -1625,6 +1625,7 @@ dependencies = [
  "pallet-balances",
  "pallet-nfts",
  "pallet-scheduler",
+ "pallet-skip-feeless-payment",
  "pallet-transaction-payment",
  "parity-scale-codec",
  "scale-info",
@@ -3254,6 +3255,19 @@ dependencies = [
  "sp-staking",
  "sp-state-machine",
  "sp-trie",
+]
+
+[[package]]
+name = "pallet-skip-feeless-payment"
+version = "23.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439af918725b7e2e449a7fb0a84a212153f78953e684210ae07de2c1f9a5759c"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-runtime",
 ]
 
 [[package]]
