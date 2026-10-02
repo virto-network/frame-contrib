@@ -20,6 +20,7 @@ mod contracts;
 mod offers;
 mod payment_step;
 mod trials;
+mod view_functions;
 
 /// The allowance of the offers in the tests.
 pub const ALLOWANCE: Weight = Weight::from_parts(10_000_000_000, 1_000_000);
