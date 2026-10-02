@@ -77,7 +77,7 @@ struct Item<T: Config<I>, I: 'static = ()> {
     attributes: AttributesMapOf<T, I>,
 }
 
-/// The inventories, grouped by [`MerchantId`][T::MerchantId]
+/// The inventories, grouped by `MerchantId`.
 #[frame_support::storage_alias(dynamic)]
 pub type Inventories<T: Config<I>, I: 'static> = StorageDoubleMap<
     MockListings<T, I>,
