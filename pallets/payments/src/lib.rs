@@ -211,6 +211,17 @@ pub mod pallet {
         PaymentRequestCompleted { payment_id: T::PaymentId },
         /// Payment disputed resolved
         PaymentDisputeResolved { payment_id: T::PaymentId },
+        /// A direct payment was made: the amount moved from the sender to the beneficiary at
+        /// once, never held, and no payment record was kept. `fees` is the total charged as fees,
+        /// on both sides.
+        PaymentDirect {
+            id: T::PaymentId,
+            sender: T::AccountId,
+            beneficiary: T::AccountId,
+            asset: AssetIdOf<T>,
+            amount: BalanceOf<T>,
+            fees: BalanceOf<T>,
+        },
     }
 
     #[pallet::error]
@@ -385,7 +396,12 @@ pub mod pallet {
                         total_beneficiary_fee_amount_optional,
                     ) = payment.fees.summary_for(Role::Beneficiary, IS_DISPUTE)?;
 
-                    Self::try_transfer_fees(&sender, payment, fee_sender_recipients, IS_DISPUTE)?;
+                    Self::try_transfer_fees(
+                        &sender,
+                        &payment.asset,
+                        fee_sender_recipients,
+                        IS_DISPUTE,
+                    )?;
 
                     T::Assets::transfer(
                         payment.asset.clone(),
@@ -398,7 +414,7 @@ pub mod pallet {
 
                     Self::try_transfer_fees(
                         &beneficiary,
-                        payment,
+                        &payment.asset,
                         fee_beneficiary_recipients,
                         IS_DISPUTE,
                     )?;
@@ -741,9 +757,14 @@ impl<T: Config> Pallet<T> {
             )
             .map_err(|_| Error::<T>::ReleaseFailed)?;
 
-            Self::try_transfer_fees(sender, payment, fee_sender_recipients, is_dispute)?;
+            Self::try_transfer_fees(sender, &payment.asset, fee_sender_recipients, is_dispute)?;
 
-            Self::try_transfer_fees(beneficiary, payment, fee_beneficiary_recipients, is_dispute)?;
+            Self::try_transfer_fees(
+                beneficiary,
+                &payment.asset,
+                fee_beneficiary_recipients,
+                is_dispute,
+            )?;
 
             if let Some((dispute_result, resolver)) = maybe_dispute {
                 match dispute_result.in_favor_of {
@@ -818,14 +839,14 @@ impl<T: Config> Pallet<T> {
 
     fn try_transfer_fees(
         account: &T::AccountId,
-        payment: &PaymentDetail<T>,
+        asset: &AssetIdOf<T>,
         fee_recipients: Vec<Fee<T>>,
         is_dispute: bool,
     ) -> DispatchResult {
         for (recipient_account, fee_amount, mandatory) in fee_recipients.iter() {
             if !is_dispute || *mandatory {
                 T::Assets::transfer(
-                    payment.asset.clone(),
+                    asset.clone(),
                     account,
                     recipient_account,
                     *fee_amount,
@@ -835,5 +856,60 @@ impl<T: Config> Pallet<T> {
             }
         }
         Ok(())
+    }
+
+    /// Makes a direct payment (`DEC-5`): `accept_and_pay`'s steps in one call, with no payment
+    /// record and nothing held. The caller runs it inside a storage layer, so a failure moves
+    /// nothing.
+    fn do_direct_payment(
+        sender: &T::AccountId,
+        asset: AssetIdOf<T>,
+        amount: BalanceOf<T>,
+        beneficiary: &T::AccountId,
+        remark: Option<&[u8]>,
+    ) -> Result<T::PaymentId, DispatchError> {
+        let id = T::GeneratePaymentId::generate(sender, beneficiary)
+            .ok_or(Error::<T>::NoPaymentIdAvailable)?;
+        let fees = T::FeeHandler::apply_fees(&asset, sender, beneficiary, &amount, remark);
+
+        const IS_DISPUTE: bool = false;
+        let (sender_fee_recipients, sender_fees_mandatory, sender_fees_optional) =
+            fees.summary_for(Role::Sender, IS_DISPUTE)?;
+        let (beneficiary_fee_recipients, beneficiary_fees_mandatory, beneficiary_fees_optional) =
+            fees.summary_for(Role::Beneficiary, IS_DISPUTE)?;
+
+        Self::try_transfer_fees(sender, &asset, sender_fee_recipients, IS_DISPUTE)?;
+        T::Assets::transfer(asset.clone(), sender, beneficiary, amount, Preserve)
+            .map_err(|_| Error::<T>::TransferFailed)?;
+        Self::try_transfer_fees(beneficiary, &asset, beneficiary_fee_recipients, IS_DISPUTE)?;
+
+        let beneficiary_fees = beneficiary_fees_mandatory
+            .checked_add(&beneficiary_fees_optional)
+            .ok_or(DispatchError::Arithmetic(ArithmeticError::Overflow))?;
+        let beneficiary_amount = amount
+            .checked_sub(&beneficiary_fees)
+            .ok_or(DispatchError::Arithmetic(ArithmeticError::Underflow))?;
+        let total_fees = sender_fees_mandatory
+            .checked_add(&sender_fees_optional)
+            .and_then(|fees| fees.checked_add(&beneficiary_fees))
+            .ok_or(DispatchError::Arithmetic(ArithmeticError::Overflow))?;
+
+        T::OnPaymentStatusChanged::on_payment_charge_success(
+            &id,
+            beneficiary_fees,
+            beneficiary_amount,
+        );
+        T::OnPaymentStatusChanged::on_payment_released(&id, beneficiary_fees, beneficiary_amount);
+
+        Self::deposit_event(Event::PaymentDirect {
+            id,
+            sender: sender.clone(),
+            beneficiary: beneficiary.clone(),
+            asset,
+            amount,
+            fees: total_fees,
+        });
+
+        Ok(id)
     }
 }
