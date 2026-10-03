@@ -1609,6 +1609,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-pallet-usage-subscription"
+version = "2.3.1"
+dependencies = [
+ "fc-mock-helpers",
+ "fc-pallet-listings",
+ "fc-pallet-payments",
+ "fc-traits-listings",
+ "fc-traits-memberships",
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "pallet-assets",
+ "pallet-assets-holder",
+ "pallet-balances",
+ "pallet-nfts",
+ "pallet-scheduler",
+ "pallet-transaction-payment",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "fc-traits-authn"
 version = "2.3.1"
 dependencies = [
