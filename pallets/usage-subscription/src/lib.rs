@@ -22,11 +22,15 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+mod admission;
+pub mod extension;
 mod functions;
 mod hooks;
 mod types;
 pub mod weights;
 
+pub use admission::Ticket;
+pub use extension::{ChargeUsageSubscription, Path, PATH_MISMATCH};
 pub use pallet::*;
 pub use types::*;
 pub use weights::*;
@@ -119,6 +123,17 @@ pub mod pallet {
         /// The most billing periods a trial may run. Non-zero.
         #[pallet::constant]
         type MaxTrialPeriods: Get<u32>;
+        /// The most memberships admission reads to find a member's only group, when it named
+        /// none (`REQ-PC-3`, `NFR-1`). Every signed transaction pays for reading them.
+        #[pallet::constant]
+        type MaxMembershipScan: Get<u32>;
+        /// The most free changes of paying group a member makes per rate window (`REQ-PC-5`).
+        #[pallet::constant]
+        type MaxPayingGroupChanges: Get<u32>;
+        /// The rate window of paying-group changes, in ticks, counted from tick 0: the
+        /// deployment's minimum usage period (`REQ-PC-5`). Non-zero.
+        #[pallet::constant]
+        type PayingGroupChangeWindow: Get<MomentOf<Self>>;
     }
 
     #[pallet::pallet]
@@ -140,6 +155,12 @@ pub mod pallet {
     /// [`Config::GroupAccount`], for the subscription hooks. Kept while the contract exists.
     #[pallet::storage]
     pub type GroupOfAccount<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, GroupOf<T>>;
+
+    /// Each member's named paying group, and its changes in the current rate window (`DEC-7`,
+    /// `DEC-21`). A name that becomes invalid is ignored by admission, never deleted by it.
+    #[pallet::storage]
+    pub type PayingGroup<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, PayingGroupChoice<GroupOf<T>, MomentOf<T>>>;
 
     /// The groups that have started a trial (`REQ-OF-7`). Never removed.
     #[pallet::storage]
@@ -243,6 +264,20 @@ pub mod pallet {
         ContractAmendmentInForce {
             group: GroupOf<T>,
             effective_at: MomentOf<T>,
+        },
+        /// A member named (or, with `None`, cleared) its paying group.
+        PayingGroupSet {
+            who: T::AccountId,
+            group: Option<GroupOf<T>>,
+        },
+        /// A pool-path transaction of `who` was charged `weight` to its group's pool, which has
+        /// `remaining` left in the current usage window. The only event of a pool-path
+        /// transaction (`CTR-EVT-2`).
+        UsageCharged {
+            group: GroupOf<T>,
+            who: T::AccountId,
+            weight: Weight,
+            remaining: Weight,
         },
     }
 
@@ -562,6 +597,43 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Names the signer's paying group, or clears it with `None` (`REQ-PC-2`, `REQ-PC-4`).
+        ///
+        /// Naming a group the signer holds no valid membership of is refused with
+        /// [`Error::NotAMember`]. The call is feeless when the signer holds a valid membership of
+        /// the group it names (or, clearing, of the group it had named) and has made fewer than
+        /// [`Config::MaxPayingGroupChanges`] changes in the current rate window
+        /// (`REQ-PC-5`, `DEC-21`); otherwise it is an ordinary transaction.
+        #[pallet::call_index(6)]
+        #[pallet::feeless_if(|origin: &OriginFor<T>, group: &Option<GroupOf<T>>| -> bool {
+            Pallet::<T>::is_free_naming(origin, group)
+        })]
+        pub fn set_paying_group(origin: OriginFor<T>, group: Option<GroupOf<T>>) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            if let Some(group) = group {
+                ensure!(
+                    Self::holds_valid_membership(&who, &group),
+                    Error::<T>::NotAMember
+                );
+            }
+
+            let window = Self::rate_window(Self::now());
+            PayingGroup::<T>::mutate(&who, |choice| {
+                let changes = match choice {
+                    Some(choice) if choice.window == window => choice.changes.saturating_add(1),
+                    _ => 1,
+                };
+                *choice = Some(PayingGroupChoice {
+                    group,
+                    window,
+                    changes,
+                });
+            });
+
+            Self::deposit_event(Event::<T>::PayingGroupSet { who, group });
+            Ok(())
+        }
+
         /// Amends a group's *Active* or *Suspended* custom contract, without the group's
         /// acceptance (`REQ-CT-8`). Only [`Config::AmendOrigin`] may.
         ///
@@ -740,6 +812,10 @@ pub mod pallet {
             assert!(
                 T::MaxTrialPeriods::get() > 0,
                 "`MaxTrialPeriods` must be non-zero"
+            );
+            assert!(
+                !T::PayingGroupChangeWindow::get().is_zero(),
+                "`PayingGroupChangeWindow` must be non-zero"
             );
         }
     }
