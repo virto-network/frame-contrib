@@ -25,6 +25,7 @@ fc-pallet-orders.workspace = true
 fc-pallet-pass.workspace = true
 fc-pallet-payments.workspace = true
 fc-pallet-referenda-tracks.workspace = true
+fc-pallet-usage-subscription.workspace = true
 frame-contrib-traits.workspace = true
 
 # Polkadot SDK
@@ -73,6 +74,7 @@ std = [
 	"fc-pallet-pass/std",
 	"fc-pallet-payments/std",
 	"fc-pallet-referenda-tracks/std",
+	"fc-pallet-usage-subscription/std",
 	"frame-benchmarking?/std",
 	"frame-contrib-traits/std",
 	"frame-executive/std",
@@ -116,6 +118,7 @@ runtime-benchmarks = [
 	"fc-pallet-pass/runtime-benchmarks",
 	"fc-pallet-payments/runtime-benchmarks",
 	"fc-pallet-referenda-tracks/runtime-benchmarks",
+	"fc-pallet-usage-subscription/runtime-benchmarks",
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-contrib-traits/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
@@ -141,6 +144,7 @@ try-runtime = [
 	"fc-pallet-pass/try-runtime",
 	"fc-pallet-payments/try-runtime",
 	"fc-pallet-referenda-tracks/try-runtime",
+	"fc-pallet-usage-subscription/try-runtime",
 	"frame-executive/try-runtime",
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
