@@ -321,6 +321,8 @@ mod vote {
 
         #[test]
         fn transferring_memberships_does_not_lead_to_double_voting() {
+            use frame_contrib_traits::memberships::{RankOnTransfer, Receivers, TransferPolicy};
+
             new_test_ext().execute_with(|| {
                 assert_ok!(Communities::vote(
                     RuntimeOrigin::signed(ALICE),
@@ -338,9 +340,15 @@ mod vote {
                     .into(),
                 );
 
-                assert_ok!(Nfts::transfer(
+                assert_ok!(Communities::set_transfer_policy(
+                    TestEnvBuilder::create_community_origin(&COMMUNITY_A),
+                    TransferPolicy {
+                        receivers: Receivers::ToAnyAccount,
+                        rank: RankOnTransfer::Reset,
+                    }
+                ));
+                assert_ok!(Communities::transfer_membership(
                     RuntimeOrigin::signed(ALICE),
-                    COMMUNITY_A,
                     membership(COMMUNITY_A, 1),
                     BOB
                 ));
@@ -379,7 +387,7 @@ mod vote {
     }
 
     mod membership {
-        use frame_contrib_traits::memberships::Inspect;
+        use frame_contrib_traits::memberships::InspectEnumerable;
 
         use super::*;
 
@@ -427,11 +435,9 @@ mod vote {
                     .into(),
                 );
 
-                let community_account = Communities::community_account(&COMMUNITY_A);
-                let (_, membership_id) =
-                    MembershipsManager::user_memberships(&community_account, None)
-                        .next()
-                        .expect("CommunityA should still have memberships");
+                let membership_id = MembershipsManager::group_available_memberships(&COMMUNITY_A)
+                    .next()
+                    .expect("CommunityA should still have memberships in stock");
 
                 tick_block();
 
@@ -1064,6 +1070,169 @@ mod vote {
                         ..Default::default()
                     }
                 )
+            });
+        }
+
+        fn tally_of_poll_3() -> Tally<Test> {
+            Referenda::as_ongoing(3)
+                .expect("the poll was initiated; qed")
+                .0
+        }
+
+        fn d_admin() -> RuntimeOrigin {
+            Into::<RuntimeOrigin>::into(*OriginForCommunityD::get())
+        }
+
+        // REQ-MI-15
+        #[test]
+        fn a_rank_reset_on_transfer_does_not_strand_the_vote_weight() {
+            use frame_contrib_traits::memberships::{RankOnTransfer, Receivers, TransferPolicy};
+
+            new_test_ext().execute_with(|| {
+                // ALICE votes aye with rank 2.
+                assert_ok!(Communities::promote(d_admin(), membership(COMMUNITY_D, 1)));
+                assert_ok!(Communities::vote(
+                    RuntimeOrigin::signed(ALICE),
+                    membership(COMMUNITY_D, 1),
+                    3,
+                    Vote::Standard(true)
+                ));
+                assert_eq!(
+                    tally_of_poll_3(),
+                    Tally {
+                        ayes: 2,
+                        bare_ayes: 1,
+                        ..Default::default()
+                    }
+                );
+
+                // She hands the membership to BOB, a member, and the rank is reset.
+                assert_ok!(Communities::set_transfer_policy(
+                    d_admin(),
+                    TransferPolicy {
+                        receivers: Receivers::ToExistingMembers,
+                        rank: RankOnTransfer::Reset,
+                    }
+                ));
+                assert_ok!(Communities::transfer_membership(
+                    RuntimeOrigin::signed(ALICE),
+                    membership(COMMUNITY_D, 1),
+                    BOB
+                ));
+
+                // BOB replaces the vote, then removes it: nothing is left in the tally.
+                assert_ok!(Communities::vote(
+                    RuntimeOrigin::signed(BOB),
+                    membership(COMMUNITY_D, 1),
+                    3,
+                    Vote::Standard(false)
+                ));
+                assert_ok!(Communities::remove_vote(
+                    RuntimeOrigin::signed(BOB),
+                    membership(COMMUNITY_D, 1),
+                    3
+                ));
+                assert_eq!(tally_of_poll_3(), Tally::default());
+                assert_eq!(
+                    crate::CommunityVoteWeights::<Test>::get(3, membership(COMMUNITY_D, 1)),
+                    None
+                );
+            });
+        }
+
+        #[test]
+        fn removing_a_vote_after_a_promotion_subtracts_the_weight_it_was_cast_with() {
+            new_test_ext().execute_with(|| {
+                // ALICE and BOB vote aye with rank 1 each.
+                for (who, m) in [(ALICE, 1), (BOB, 2)] {
+                    assert_ok!(Communities::vote(
+                        RuntimeOrigin::signed(who),
+                        membership(COMMUNITY_D, m),
+                        3,
+                        Vote::Standard(true)
+                    ));
+                }
+                assert_ok!(Communities::promote(d_admin(), membership(COMMUNITY_D, 1)));
+
+                assert_ok!(Communities::remove_vote(
+                    RuntimeOrigin::signed(ALICE),
+                    membership(COMMUNITY_D, 1),
+                    3
+                ));
+
+                // BOB's aye is still counted.
+                assert_eq!(
+                    tally_of_poll_3(),
+                    Tally {
+                        ayes: 1,
+                        bare_ayes: 1,
+                        ..Default::default()
+                    }
+                );
+            });
+        }
+
+        #[test]
+        fn removing_a_vote_after_a_demotion_subtracts_the_weight_it_was_cast_with() {
+            new_test_ext().execute_with(|| {
+                // ALICE votes aye with rank 2, CHARLIE with rank 1.
+                assert_ok!(Communities::promote(d_admin(), membership(COMMUNITY_D, 1)));
+                for (who, m) in [(ALICE, 1), (CHARLIE, 3)] {
+                    assert_ok!(Communities::vote(
+                        RuntimeOrigin::signed(who),
+                        membership(COMMUNITY_D, m),
+                        3,
+                        Vote::Standard(true)
+                    ));
+                }
+                assert_ok!(Communities::demote(d_admin(), membership(COMMUNITY_D, 1)));
+
+                assert_ok!(Communities::remove_vote(
+                    RuntimeOrigin::signed(ALICE),
+                    membership(COMMUNITY_D, 1),
+                    3
+                ));
+
+                // Only CHARLIE's aye is left.
+                assert_eq!(
+                    tally_of_poll_3(),
+                    Tally {
+                        ayes: 1,
+                        bare_ayes: 1,
+                        ..Default::default()
+                    }
+                );
+            });
+        }
+
+        #[test]
+        fn a_vote_with_no_recorded_weight_is_removed_with_the_current_rank() {
+            new_test_ext().execute_with(|| {
+                assert_ok!(Communities::promote(d_admin(), membership(COMMUNITY_D, 1)));
+                assert_ok!(Communities::vote(
+                    RuntimeOrigin::signed(ALICE),
+                    membership(COMMUNITY_D, 1),
+                    3,
+                    Vote::Standard(true)
+                ));
+                assert_eq!(
+                    crate::CommunityVoteWeights::<Test>::get(3, membership(COMMUNITY_D, 1)),
+                    Some(2)
+                );
+                // A vote cast before the record existed.
+                crate::CommunityVoteWeights::<Test>::remove(3, membership(COMMUNITY_D, 1));
+
+                assert_ok!(Communities::remove_vote(
+                    RuntimeOrigin::signed(ALICE),
+                    membership(COMMUNITY_D, 1),
+                    3
+                ));
+
+                assert_eq!(tally_of_poll_3(), Tally::default());
+                assert!(!crate::CommunityVotes::<Test>::contains_key(
+                    3,
+                    membership(COMMUNITY_D, 1)
+                ));
             });
         }
     }
