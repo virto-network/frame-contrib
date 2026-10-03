@@ -31,6 +31,10 @@ where
         T::check_membership(who, m)
     }
 
+    fn holds(group: &Self::Group, who: &AccountId, m: &Self::Membership) -> bool {
+        T::holds(group, who, m)
+    }
+
     fn members_total(group: &Self::Group) -> u32 {
         T::members_total(group)
     }
@@ -107,6 +111,35 @@ where
         T::release(group, m)?;
         MR::get().on_membership_released(group.clone(), m.clone())?;
         Ok(())
+    }
+}
+
+/// Transfers are forwarded as they are: no hook is triggered by a transfer, even when it resets
+/// the rank.
+impl<T, MA, MR, RS, AccountId> Transfer<AccountId> for WithHooks<T, MA, MR, RS>
+where
+    AccountId: Clone,
+    T: Transfer<AccountId>,
+    MA: Get<Box<dyn OnMembershipAssigned<AccountId, T::Group, T::Membership>>>,
+    MR: Get<Box<dyn OnMembershipReleased<T::Group, T::Membership>>>,
+{
+    fn transfer_policy(group: &Self::Group) -> TransferPolicy {
+        T::transfer_policy(group)
+    }
+
+    fn set_transfer_policy(
+        group: &Self::Group,
+        policy: TransferPolicy,
+    ) -> Result<(), DispatchError> {
+        T::set_transfer_policy(group, policy)
+    }
+
+    fn transfer(
+        group: &Self::Group,
+        m: &Self::Membership,
+        to: &AccountId,
+    ) -> Result<(), DispatchError> {
+        T::transfer(group, m, to)
     }
 }
 
