@@ -93,6 +93,11 @@ pub mod pallet {
         type CustomOfferOrigin: EnsureOrigin<Self::RuntimeOrigin>;
         /// The collective's origin to terminate a contract (`REQ-CT-6`).
         type TerminateOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+        /// The only origin that amends a custom contract, or a standard offer and its contracts
+        /// (`REQ-OF-8`, `DEC-28`). Distinct from the origins above: the outcome of a collective
+        /// referendum whose shortest path to enactment is at least the deployment's minimum
+        /// notice.
+        type AmendOrigin: EnsureOrigin<Self::RuntimeOrigin>;
         /// A group's administrative origin, resolving to the group.
         type GroupOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = GroupOf<Self>>;
 
@@ -111,6 +116,9 @@ pub mod pallet {
         /// lead of [`Config::Subscriptions`].
         #[pallet::constant]
         type MinBillingPeriod: Get<MomentOf<Self>>;
+        /// The most billing periods a trial may run. Non-zero.
+        #[pallet::constant]
+        type MaxTrialPeriods: Get<u32>;
     }
 
     #[pallet::pallet]
@@ -132,6 +140,16 @@ pub mod pallet {
     /// [`Config::GroupAccount`], for the subscription hooks. Kept while the contract exists.
     #[pallet::storage]
     pub type GroupOfAccount<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, GroupOf<T>>;
+
+    /// The groups that have started a trial (`REQ-OF-7`). Never removed.
+    #[pallet::storage]
+    pub type TrialUsed<T: Config> = StorageMap<_, Blake2_128Concat, GroupOf<T>, ()>;
+
+    /// The last amendment of each standard offer, applied lazily: each contract made from the
+    /// offer before it takes it at its own effective boundary (`DEC-34`).
+    #[pallet::storage]
+    pub type OfferAmendment<T: Config> =
+        StorageMap<_, Blake2_128Concat, OfferIdOf<T>, OfferAmendmentOf<T>>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -190,6 +208,41 @@ pub mod pallet {
             group: GroupOf<T>,
             offer: OfferIdOf<T>,
             reason: subs::ReplacementDropReason,
+        },
+        /// The group's trial converts into `offer` at its end, if its first charge succeeds then.
+        ConversionScheduled {
+            group: GroupOf<T>,
+            offer: OfferIdOf<T>,
+        },
+        /// The group cancelled its trial's conversion into `offer`.
+        ConversionCancelled {
+            group: GroupOf<T>,
+            offer: OfferIdOf<T>,
+        },
+        /// The trial's conversion into `offer` did not take effect, for `reason`.
+        ConversionDropped {
+            group: GroupOf<T>,
+            offer: OfferIdOf<T>,
+            reason: subs::ReplacementDropReason,
+        },
+        /// A standard offer was amended: at once for new contracts, and for each contract made
+        /// from it at its own effective boundary, every one before `last_boundary`.
+        OfferAmended {
+            offer: OfferIdOf<T>,
+            enacted_at: MomentOf<T>,
+            last_boundary: MomentOf<T>,
+        },
+        /// An amendment of a group's custom contract was enacted. It applies from
+        /// `effective_at`, and until then the group may cancel with its commitment waived.
+        ContractAmended {
+            group: GroupOf<T>,
+            effective_at: MomentOf<T>,
+        },
+        /// An amendment came into force for a group's contract at `effective_at`: the new price
+        /// from there, the new allowance from the first usage window starting at or after it.
+        ContractAmendmentInForce {
+            group: GroupOf<T>,
+            effective_at: MomentOf<T>,
         },
     }
 
@@ -339,10 +392,42 @@ pub mod pallet {
             let account = T::GroupAccount::convert(group);
             let now = Self::now();
             Self::ensure_no_contract(&group, &account, now)?;
-            // Only a trial converts, and there are no trials yet.
-            ensure!(converts_into.is_none(), Error::<T>::InvalidConversion);
+            let trial = target.kind == OfferKind::Trial;
+            ensure!(
+                !trial || !TrialUsed::<T>::contains_key(group),
+                Error::<T>::TrialUsed
+            );
+            if let Some(conversion) = converts_into {
+                ensure!(
+                    trial && Self::is_valid_conversion(&conversion, &group),
+                    Error::<T>::InvalidConversion
+                );
+            }
 
-            Self::start_contract(group, &account, offer, &target, now)
+            Self::start_contract(group, &account, offer, &target, now)?;
+
+            if trial {
+                TrialUsed::<T>::insert(group, ());
+            }
+            if let Some(conversion) = converts_into {
+                <T::Subscriptions as subs::Mutate<T::AccountId>>::schedule_replacement_at_term_end(
+                    &T::OfferInventory::get(),
+                    &offer,
+                    &account,
+                    &conversion,
+                )
+                .map_err(|_| Error::<T>::InvalidConversion)?;
+                Contracts::<T>::mutate(group, |maybe_contract| {
+                    if let Some(contract) = maybe_contract {
+                        contract.pending = Some(PendingChange::Convert(conversion));
+                    }
+                });
+                Self::deposit_event(Event::<T>::ConversionScheduled {
+                    group,
+                    offer: conversion,
+                });
+            }
+            Ok(())
         }
 
         /// Cancels the origin's group's contract: at the later of its `paid through` and its
@@ -400,6 +485,10 @@ pub mod pallet {
                 Error::<T>::NotEligible
             );
             ensure!(offer != contract.offer, Error::<T>::AlreadyContracted);
+            ensure!(
+                target.kind != OfferKind::Trial || !TrialUsed::<T>::contains_key(group),
+                Error::<T>::TrialUsed
+            );
 
             match contract.pending {
                 Some(PendingChange::Switch(_) | PendingChange::Convert(_)) => {
@@ -419,12 +508,23 @@ pub mod pallet {
                 Error::<T>::ChangePending
             );
 
-            <T::Subscriptions as subs::Mutate<T::AccountId>>::schedule_replacement(
-                &inventory,
-                &contract.offer,
-                &account,
-                &offer,
-            )
+            // A trial does not renew: a switch scheduled during it takes effect at its end
+            // (`REQ-CT-9`).
+            if contract.kind == OfferKind::Trial {
+                <T::Subscriptions as subs::Mutate<T::AccountId>>::schedule_replacement_at_term_end(
+                    &inventory,
+                    &contract.offer,
+                    &account,
+                    &offer,
+                )
+            } else {
+                <T::Subscriptions as subs::Mutate<T::AccountId>>::schedule_replacement(
+                    &inventory,
+                    &contract.offer,
+                    &account,
+                    &offer,
+                )
+            }
             .map_err(|e| Self::listings_error(e, Error::<T>::NotEligible))?;
 
             contract.pending = Some(PendingChange::Switch(offer));
@@ -462,6 +562,87 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Amends a group's *Active* or *Suspended* custom contract, without the group's
+        /// acceptance (`REQ-CT-8`). Only [`Config::AmendOrigin`] may.
+        ///
+        /// The terms must keep the rules of a custom offer and the contract's usage and billing
+        /// periods. They take effect at the contract's effective boundary: the first billing
+        /// boundary at least one billing period from now (`REQ-CT-14`), for the price, and the
+        /// first usage window starting at or after it, for the allowance. Until then the group may
+        /// cancel with its commitment waived (`REQ-CT-15`). A pending switch is dropped.
+        #[pallet::call_index(7)]
+        pub fn amend_contract(
+            origin: OriginFor<T>,
+            group: GroupOf<T>,
+            terms: TermsOf<T>,
+        ) -> DispatchResult {
+            T::AmendOrigin::ensure_origin(origin)?;
+            let contract = Contracts::<T>::get(group).ok_or(Error::<T>::NoContract)?;
+            let account = T::GroupAccount::convert(group);
+            let inventory = T::OfferInventory::get();
+            let now = Self::now();
+
+            let subscription = <T::Subscriptions as subs::Inspect<T::AccountId>>::subscription(
+                &inventory,
+                &contract.offer,
+                &account,
+            )
+            .ok_or(Error::<T>::NoContract)?;
+            ensure!(
+                !matches!(
+                    subscription.state,
+                    subs::SubscriptionState::Defaulted { .. }
+                ),
+                Error::<T>::NoContract
+            );
+            // Only a custom contract is amended on its own.
+            ensure!(
+                matches!(contract.kind, OfferKind::Custom(_)),
+                Error::<T>::InvalidTerms
+            );
+            Self::validate_terms(&contract.kind, &terms)?;
+            ensure!(
+                terms.usage_period == contract.usage_period
+                    && terms.billing_period == subscription.conditions.period,
+                Error::<T>::InvalidTerms
+            );
+            ensure!(
+                !matches!(contract.pending, Some(PendingChange::Amend { .. }))
+                    && <T::Subscriptions as subs::Inspect<T::AccountId>>::pending_amendment(
+                        &inventory,
+                        &contract.offer,
+                        &account,
+                        now,
+                    )
+                    .is_none(),
+                Error::<T>::ChangePending
+            );
+
+            // Listings drops a pending switch, and reports the enactment.
+            let effective_at = <T::Subscriptions as subs::Mutate<T::AccountId>>::amend(
+                &inventory,
+                &contract.offer,
+                &account,
+                terms.conditions(),
+            )
+            .map_err(|e| Self::listings_error(e, Error::<T>::InvalidTerms))?;
+
+            Contracts::<T>::mutate(group, |maybe_contract| {
+                if let Some(contract) = maybe_contract {
+                    contract.pending = Some(PendingChange::Amend {
+                        allowance: terms.allowance,
+                        effective_at,
+                        from_window: first_window_from(
+                            contract.anchor,
+                            contract.usage_period,
+                            effective_at,
+                        ),
+                    });
+                }
+            });
+            Ok(())
+        }
+
         /// Cancels the origin's group's pending switch (or conversion) before it takes effect.
         #[pallet::call_index(8)]
         pub fn cancel_switch(origin: OriginFor<T>) -> DispatchResult {
@@ -482,6 +663,67 @@ pub mod pallet {
             )
             .map_err(|e| Self::listings_error(e, Error::<T>::NoPendingSwitch))
         }
+
+        /// Amends an open standard offer, without any group's acceptance (`DEC-34`). Only
+        /// [`Config::AmendOrigin`] may.
+        ///
+        /// The terms must keep the rules of a standard offer and the offer's usage and billing
+        /// periods. Contracts made from the offer from now on take them at once. Every *Active* or
+        /// *Suspended* contract made from it before takes them at its own effective boundary,
+        /// with the free exit until then (`REQ-CT-8`, `REQ-CT-14`, `REQ-CT-15`): lazily, with no
+        /// loop over contracts. A second amendment waits until every contract has passed the
+        /// first one's boundary (`ChangePending`).
+        #[pallet::call_index(9)]
+        pub fn amend_offer(
+            origin: OriginFor<T>,
+            offer: OfferIdOf<T>,
+            terms: TermsOf<T>,
+        ) -> DispatchResult {
+            T::AmendOrigin::ensure_origin(origin)?;
+            let mut record = Offers::<T>::get(offer).ok_or(Error::<T>::UnknownOffer)?;
+            ensure!(
+                record.status == OfferStatus::Open,
+                Error::<T>::OfferWithdrawn
+            );
+            // Only a standard offer is amended with its contracts.
+            ensure!(record.kind == OfferKind::Standard, Error::<T>::InvalidTerms);
+            Self::validate_terms(&record.kind, &terms)?;
+            let inventory = T::OfferInventory::get();
+            let conditions =
+                <T::Subscriptions as subs::Inspect<T::AccountId>>::subscription_conditions(
+                    &inventory, &offer,
+                )
+                .ok_or(Error::<T>::UnknownOffer)?;
+            ensure!(
+                terms.usage_period == record.usage_period
+                    && terms.billing_period == conditions.period,
+                Error::<T>::InvalidTerms
+            );
+
+            let amendment = <T::Subscriptions as subs::Mutate<T::AccountId>>::amend_item(
+                &inventory,
+                &offer,
+                terms.conditions(),
+            )
+            .map_err(|e| Self::listings_error(e, Error::<T>::InvalidTerms))?;
+
+            record.allowance = terms.allowance;
+            Offers::<T>::insert(offer, record);
+            OfferAmendment::<T>::insert(
+                offer,
+                OfferAmendmentRecord {
+                    seq: amendment.seq,
+                    terms,
+                    enacted_at: amendment.enacted_at,
+                },
+            );
+            Self::deposit_event(Event::<T>::OfferAmended {
+                offer,
+                enacted_at: amendment.enacted_at,
+                last_boundary: amendment.last_boundary(),
+            });
+            Ok(())
+        }
     }
 
     #[pallet::hooks]
@@ -494,6 +736,10 @@ pub mod pallet {
             assert!(
                 !T::MinBillingPeriod::get().is_zero(),
                 "`MinBillingPeriod` must be non-zero"
+            );
+            assert!(
+                T::MaxTrialPeriods::get() > 0,
+                "`MaxTrialPeriods` must be non-zero"
             );
         }
     }

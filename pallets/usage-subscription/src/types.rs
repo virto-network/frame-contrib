@@ -39,6 +39,8 @@ pub type OfferOf<T> = Offer<GroupOf<T>, MomentOf<T>>;
 pub type ContractOf<T> = Contract<OfferIdOf<T>, GroupOf<T>, MomentOf<T>>;
 /// [`PendingChange`] of the pallet.
 pub type PendingChangeOf<T> = PendingChange<OfferIdOf<T>, MomentOf<T>>;
+/// [`OfferAmendmentRecord`] of the pallet.
+pub type OfferAmendmentOf<T> = OfferAmendmentRecord<PriceOf<T>, MomentOf<T>>;
 
 /// What kind of offer it is (SPEC §5.1).
 #[derive(
@@ -132,6 +134,20 @@ pub struct Offer<Group, Moment> {
     pub usage_period: Moment,
     /// Whether new contracts may be made from it.
     pub status: OfferStatus,
+}
+
+/// The last amendment of a standard offer (`DEC-34`).
+#[derive(
+    Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Clone, PartialEq, Eq, Debug,
+)]
+pub struct OfferAmendmentRecord<Price, Moment> {
+    /// The amendment's sequence number for the offer: its listings item amendment's. A contract
+    /// has applied it when its `amendment_seq` reaches it.
+    pub seq: u32,
+    /// The amended terms.
+    pub terms: Terms<Price, Moment>,
+    /// The tick at which it was enacted.
+    pub enacted_at: Moment,
 }
 
 /// A change pending for a contract.
