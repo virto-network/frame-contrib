@@ -27,6 +27,7 @@ pub mod extension;
 mod functions;
 mod hooks;
 mod types;
+mod views;
 pub mod weights;
 
 pub use admission::Ticket;
@@ -134,6 +135,10 @@ pub mod pallet {
         /// deployment's minimum usage period (`REQ-PC-5`). Non-zero.
         #[pallet::constant]
         type PayingGroupChangeWindow: Get<MomentOf<Self>>;
+        /// The most offers one page of the `open_offers` view function examines (0008-A1).
+        /// Non-zero.
+        #[pallet::constant]
+        type MaxOffersPerPage: Get<u32>;
     }
 
     #[pallet::pallet]
@@ -798,6 +803,64 @@ pub mod pallet {
         }
     }
 
+    /// The queries of usage subscriptions (`CTR-QRY-1`, SPEC §8.3). Each answers from one state,
+    /// and writes nothing (`REQ-OB-1`).
+    #[pallet::view_functions]
+    impl<T: Config> Pallet<T> {
+        /// An offer: its kind, terms, status, and any amendment pending for its contracts.
+        pub fn offer(offer: OfferIdOf<T>) -> Option<OfferInfoOf<T>> {
+            Self::offer_info(&offer)
+        }
+
+        /// The open offers after `start_after` (from the first when `None`), in ascending id
+        /// order. A page examines at most `min(limit, MaxOffersPerPage)` offers, skipping withdrawn
+        /// ones; pass its `next` as `start_after` for the following page (`None`: no more). A zero
+        /// limit examines nothing and gives `start_after` back as `next`.
+        pub fn open_offers(start_after: Option<OfferIdOf<T>>, limit: u32) -> OffersPageOf<T> {
+            Self::offers_page(start_after, limit)
+        }
+
+        /// A group's contract: state, kind, terms, anchor, `paid through`, next due, grace end,
+        /// commitment end, periods charged, and any pending cancellation, switch, conversion or
+        /// amendment (with its effective boundary, and whether the free exit is open).
+        ///
+        /// Between an amendment's effective boundary and the charge that brings it into force,
+        /// the terms may show the amended allowance (once its usage window has begun) with the
+        /// pre-amendment price.
+        pub fn contract(group: GroupOf<T>) -> Option<ContractInfoOf<T>> {
+            Self::contract_info(&group)
+        }
+
+        /// A group's pool: the allowance, the current window's start and end, its usage and
+        /// remainder, and whether it is usable now, with the reason when it is not.
+        pub fn pool(group: GroupOf<T>) -> Option<PoolInfo<MomentOf<T>>> {
+            Self::pool_info(&group)
+        }
+
+        /// An account's resolved paying group, or none, with the reason (`REQ-PC-2`).
+        pub fn paying_group(account: T::AccountId) -> PayingGroupResolution<GroupOf<T>> {
+            Self::resolve_paying_group(&account)
+        }
+
+        /// Whether a group has started a trial (`REQ-OF-7`).
+        pub fn trial_used(group: GroupOf<T>) -> bool {
+            TrialUsed::<T>::contains_key(group)
+        }
+
+        /// A group's transfer policy, as its memberships manager keeps it (`REQ-MI-15`).
+        pub fn transfer_policy(group: GroupOf<T>) -> fc_traits_memberships::TransferPolicy {
+            <T::Memberships as fc_traits_memberships::Transfer<T::AccountId>>::transfer_policy(
+                &group,
+            )
+        }
+
+        /// Whether a transaction of `account` with metered weight `estimate` would take the pool
+        /// path now, or the first condition of admission that fails (`REQ-PL-7`).
+        pub fn would_waive(account: T::AccountId, estimate: Weight) -> Waiver<GroupOf<T>> {
+            Self::waiver(&account, estimate)
+        }
+    }
+
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn integrity_test() {
@@ -816,6 +879,10 @@ pub mod pallet {
             assert!(
                 !T::PayingGroupChangeWindow::get().is_zero(),
                 "`PayingGroupChangeWindow` must be non-zero"
+            );
+            assert!(
+                T::MaxOffersPerPage::get() > 0,
+                "`MaxOffersPerPage` must be non-zero"
             );
         }
     }

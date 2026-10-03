@@ -1,8 +1,9 @@
 //! The types of usage subscriptions: offers, terms, contracts and their pending changes.
 
 use super::*;
+use alloc::vec::Vec;
 use fc_traits_listings::item::{
-    subscriptions::{ItemPriceOf, SubscriptionConditions},
+    subscriptions::{Cancellation, ItemPriceOf, SubscriptionConditions, SubscriptionState},
     InspectItem,
 };
 use sp_runtime::traits::{AtLeast32BitUnsigned, One};
@@ -39,6 +40,12 @@ pub type OfferOf<T> = Offer<GroupOf<T>, MomentOf<T>>;
 pub type ContractOf<T> = Contract<OfferIdOf<T>, GroupOf<T>, MomentOf<T>>;
 /// [`PendingChange`] of the pallet.
 pub type PendingChangeOf<T> = PendingChange<OfferIdOf<T>, MomentOf<T>>;
+/// [`OfferInfo`] of the pallet.
+pub type OfferInfoOf<T> = OfferInfo<GroupOf<T>, PriceOf<T>, MomentOf<T>>;
+/// [`ContractInfo`] of the pallet.
+pub type ContractInfoOf<T> = ContractInfo<OfferIdOf<T>, GroupOf<T>, PriceOf<T>, MomentOf<T>>;
+/// [`OffersPage`] of the pallet.
+pub type OffersPageOf<T> = OffersPage<OfferIdOf<T>, OfferInfoOf<T>>;
 /// [`OfferAmendmentRecord`] of the pallet.
 pub type OfferAmendmentOf<T> = OfferAmendmentRecord<PriceOf<T>, MomentOf<T>>;
 
@@ -395,4 +402,107 @@ pub enum FeePathReason {
     /// 6. The current usage window's usage plus the estimate exceeds the allowance in some
     ///    component.
     AllowanceExceeded,
+}
+
+/// An offer, as the `offer` and `open_offers` view functions answer it (SPEC §8.3).
+#[derive(Encode, Decode, TypeInfo, Clone, PartialEq, Eq, Debug)]
+pub struct OfferInfo<Group, Price, Moment> {
+    /// Its kind, and for a custom offer, its group.
+    pub kind: OfferKind<Group>,
+    /// The terms a contract made from it now takes.
+    pub terms: Terms<Price, Moment>,
+    /// Whether new contracts may be made from it.
+    pub status: OfferStatus,
+    /// Its last amendment, while it may still be pending for some contract made from it: until
+    /// every contract's effective boundary has passed.
+    pub amendment: Option<OfferAmendmentRecord<Price, Moment>>,
+}
+
+/// An amendment pending for a contract.
+#[derive(Encode, Decode, TypeInfo, Clone, PartialEq, Eq, Debug)]
+pub struct PendingAmendmentInfo<Price, Moment> {
+    /// The amended terms.
+    pub terms: Terms<Price, Moment>,
+    /// The contract's effective boundary.
+    pub effective_at: Moment,
+    /// Whether the free exit is open: cancelling now waives the commitment (`REQ-CT-15`). Always
+    /// `true` while an amendment is pending, since the free exit is open for as long as one is.
+    pub free_exit: bool,
+}
+
+/// A group's contract, as the `contract` view function answers it (SPEC §8.3).
+#[derive(Encode, Decode, TypeInfo, Clone, PartialEq, Eq, Debug)]
+pub struct ContractInfo<OfferId, Group, Price, Moment> {
+    /// The offer it was made from.
+    pub offer: OfferId,
+    /// Its kind.
+    pub kind: OfferKind<Group>,
+    /// Its state.
+    pub state: SubscriptionState<Moment>,
+    /// The terms in force. Between an amendment's effective boundary and the charge that brings
+    /// it into force, `allowance` may already show the amended allowance (its usage window has
+    /// begun) while `price` is still the pre-amendment price.
+    pub terms: Terms<Price, Moment>,
+    /// The tick it started at.
+    pub anchor: Moment,
+    /// The tick up to which it is paid.
+    pub paid_through: Moment,
+    /// The due tick of its next (or unpaid) charge, if one is due.
+    pub next_due: Option<Moment>,
+    /// The grace end of that charge, if one is due.
+    pub grace_end: Option<Moment>,
+    /// Its commitment end, if it has a minimum commitment.
+    pub commitment_end: Option<Moment>,
+    /// How many billing periods were charged.
+    pub periods_charged: u32,
+    /// A cancellation the group requested, if any.
+    pub cancel_requested: Option<Cancellation>,
+    /// A switch or conversion pending, if any.
+    pub pending_switch: Option<PendingChange<OfferId, Moment>>,
+    /// An amendment pending, if any, with its effective boundary and whether the free exit is
+    /// open.
+    pub pending_amendment: Option<PendingAmendmentInfo<Price, Moment>>,
+}
+
+/// A group's pool, as the `pool` view function answers it (SPEC §8.3).
+#[derive(Encode, Decode, TypeInfo, Clone, PartialEq, Eq, Debug)]
+pub struct PoolInfo<Moment> {
+    /// The allowance of the current usage window.
+    pub allowance: Weight,
+    /// The start of the current usage window.
+    pub window_start: Moment,
+    /// The end of the current usage window (exclusive).
+    pub window_end: Moment,
+    /// The weight used in the current usage window.
+    pub used: Weight,
+    /// The allowance left in the current usage window.
+    pub remaining: Weight,
+    /// Whether the pool is usable now, or why not.
+    pub usable: Result<(), FeePathReason>,
+}
+
+/// The admission decision for an account and an estimate (`would_waive`, `CTR-QRY-1`): never a
+/// bare boolean.
+#[derive(Encode, Decode, TypeInfo, Clone, PartialEq, Eq, Debug)]
+pub enum Waiver<Group> {
+    /// The pool of `group` would pay, and have `remaining` left in the current usage window.
+    Pool {
+        /// The paying group.
+        group: Group,
+        /// What the pool would have left after the estimate.
+        remaining: Weight,
+    },
+    /// The fee path, with the first condition of admission that fails.
+    Fee(FeePathReason),
+}
+
+/// One page of open offers, and the cursor to the next (`open_offers`).
+#[derive(Encode, Decode, TypeInfo, Clone, PartialEq, Eq, Debug)]
+pub struct OffersPage<OfferId, Info> {
+    /// The open offers of the page, in ascending id order.
+    pub offers: Vec<(OfferId, Info)>,
+    /// The last id the page examined, to pass as `start_after` for the next page; `None` when
+    /// there are no more offers. A page with a zero limit examines nothing, and its `next` is the
+    /// `start_after` it was given.
+    pub next: Option<OfferId>,
 }
