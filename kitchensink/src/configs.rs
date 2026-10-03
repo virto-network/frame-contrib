@@ -484,6 +484,14 @@ impl fc_pallet_listings::Config for Runtime {
     type Nonfungibles = ListingsCatalog;
     type NonfungiblesKeyLimit = <Runtime as pallet_nfts::Config<ListingsInstance>>::KeyLimit;
     type NonfungiblesValueLimit = <Runtime as pallet_nfts::Config<ListingsInstance>>::ValueLimit;
+    type SubscribeOrigin = AsEnsureOriginWithArg<EnsureSigned<AccountId>>;
+    type Payments = Payments;
+    type BlockNumberProvider = System;
+    type RenewalLead = ConstU32<DAYS>;
+    type DueBucketSize = ConstU32<HOURS>;
+    type MaxDuePerBucket = ConstU32<64>;
+    type MaxChargesPerBlock = ConstU32<16>;
+    type OnSubscriptionChanged = ();
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = benchmark_helpers::ListingsBenchmarkHelper;
 }
@@ -873,6 +881,30 @@ pub mod benchmark_helpers {
     impl fc_pallet_listings::BenchmarkHelper<InventoryIdFor<Runtime>> for ListingsBenchmarkHelper {
         fn inventory_id() -> InventoryIdFor<Runtime> {
             InventoryId(1, 1)
+        }
+    }
+
+    /// The asset subscription benchmarks price their items in.
+    const SUBSCRIPTION_ASSET: AssetId = 1;
+
+    impl fc_pallet_listings::SubscriptionsBenchmarkHelper<AccountId, AssetId, Balance>
+        for ListingsBenchmarkHelper
+    {
+        fn price() -> (AssetId, Balance) {
+            use frame_support::traits::fungibles::{Create, Inspect};
+            if !Assets::asset_exists(SUBSCRIPTION_ASSET) {
+                let admin = TreasuryAccount::get();
+                assert!(
+                    <Assets as Create<AccountId>>::create(SUBSCRIPTION_ASSET, admin, true, 1)
+                        .is_ok()
+                );
+            }
+            (SUBSCRIPTION_ASSET, 1_000_000)
+        }
+
+        fn fund(who: &AccountId, asset: &AssetId, amount: Balance) {
+            use frame_support::traits::fungibles::Mutate;
+            assert!(Assets::mint_into(*asset, who, amount.saturating_mul(1_000)).is_ok());
         }
     }
 
