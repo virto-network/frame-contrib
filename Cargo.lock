@@ -1581,6 +1581,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-pallet-pitch"
+version = "0.1.0"
+dependencies = [
+ "pallet-balances",
+ "parity-scale-codec",
+ "polkadot-sdk-frame",
+ "scale-info",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "fc-pallet-referenda-tracks"
 version = "3.0.0-pre.2"
 dependencies = [
