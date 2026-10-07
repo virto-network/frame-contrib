@@ -4,11 +4,52 @@
 //!
 //! This pallet allows commerces to publish listings of items that can be exchanged using the `Pay`
 //! trait.
+//!
+//! ## Subscriptions
+//!
+//! An item can also be given subscription conditions ([`SubscriptionConditions`]): a price per
+//! billing period, the billing period, and optionally a term limit, a minimum commitment and a
+//! grace. A subscriber subscribes, paying billing period 0 up front, and then each billing period
+//! at its start, as a direct payment ([`fc_traits_payments::DirectPayment`]) to the inventory
+//! owner. Due charges are processed automatically in `on_idle`, a bounded number per block,
+//! oldest first, from a queue of time buckets, and anyone may trigger a due charge, or settle a
+//! lapse or a default that is due. A full bucket overflows into the next ones, then into its own
+//! overflow, so nothing is ever refused for a full queue. A missed charge suspends the
+//! subscription; grace restores it; a lapse ends it, or keeps it *Defaulted* until its commitment
+//! end. Subscriptions can be cancelled and replaced at a due tick by a subscription to another
+//! item. Each item has a [`SubscriptionPolicy`], set by its merchant and copied into every
+//! subscription when it starts: whether the merchant may terminate a subscription, and whether it
+//! may amend them, one by one or for every subscription to the item, and with how many billing
+//! periods of notice (at least one). The default allows neither. A merchant can also withdraw an
+//! item's conditions: no new subscription, while existing ones renew. Migration pauses
+//! ([`frame_support::migrations::MigrationStatusHandler`]) never count against grace, and the
+//! charges they held up are processed first, in `on_poll`, when they end.
+//!
+//! A pause lasts from `started()` to `completed()`, and every grace end keeps growing while it is
+//! open. `pallet-migrations` calls neither `completed()` when a migration fails nor when it is
+//! force-unstuck. A runtime whose `FailedMigrationHandler` does not freeze the chain must close
+//! the pause itself, calling this pallet's `MigrationStatusHandler::completed()` from that
+//! handler (or from whatever resumes the chain).
+//!
+//! A direct subscription (call `subscribe`) to an item priced at zero is refused, so the shared due
+//! queue cannot be filled with free subscriptions; a consumer subscribing through
+//! [`fc_traits_listings::item::subscriptions::Mutate::subscribe`] may offer a zero price (a free
+//! trial, say), and decides who may subscribe.
+//!
+//! Each charge is a direct payment of exactly the price to the inventory owner (`REQ-BL-3`), which
+//! holds only if the runtime's payments system charges no fee on it: its fee handler must exempt
+//! payments whose beneficiary is the inventory owner (see [`Config::Payments`]).
+//!
+//! Every transition calls [`Config::OnSubscriptionChanged`] in the same block. Its
+//! [`max_hook_weight`](OnSubscriptionChanged::max_hook_weight) is added to the weight of every call
+//! that can notify, and to that of every entry the due queue processes. The capability is exposed
+//! through [`fc_traits_listings::item::subscriptions`].
 
 extern crate alloc;
 extern crate core;
 
 use alloc::{borrow::ToOwned, vec::Vec};
+use fc_traits_listings::item::subscriptions::{self as subs, OnSubscriptionChanged};
 use fc_traits_listings::*;
 use frame_support::{
     pallet_prelude::*,
@@ -17,8 +58,10 @@ use frame_support::{
         nonfungibles_v2::{self, Inspect as _},
         EnsureOriginWithArg,
     },
+    weights::WeightMeter,
 };
 use frame_system::pallet_prelude::*;
+use sp_runtime::traits::{BlockNumberProvider, Zero};
 
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
@@ -26,12 +69,16 @@ pub mod benchmarking;
 mod mock;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_subscriptions;
 
 mod impls;
+mod subscriptions;
 mod types;
 pub mod weights;
 
 pub use pallet::*;
+pub use subscriptions::MAX_QUEUE_PROBES;
 pub use types::test_utils;
 pub use types::*;
 pub use weights::*;
@@ -124,11 +171,66 @@ pub mod pallet {
         #[pallet::constant]
         type NonfungiblesValueLimit: Get<u32>;
 
+        // Subscriptions.
+
+        /// An origin authorized to subscribe to items of an inventory directly, and to cancel or
+        /// replace its own subscriptions there. Resolves to the subscriber.
+        type SubscribeOrigin: EnsureOriginWithArg<
+            Self::RuntimeOrigin,
+            InventoryIdFor<Self, I>,
+            Success = Self::AccountId,
+        >;
+        /// The payments system each subscription charge goes through, as a direct payment from the
+        /// subscriber to the inventory owner. Its assets are the ones items are priced in.
+        ///
+        /// A charge must move exactly the price (`REQ-BL-3`): the payments system's fee handler must
+        /// take no fee from either side of a payment whose beneficiary is the inventory owner.
+        /// `fc-pallet-payments` applies its `FeeHandler` to direct payments too, so a runtime binds
+        /// one that exempts inventory owners (or, as with usage subscriptions, the configured payee
+        /// that owns the inventory).
+        type Payments: fc_traits_payments::DirectPayment<
+            Self::AccountId,
+            AssetId = AssetIdOf<Self, I>,
+            Balance = AssetBalanceOf<Self, I>,
+        >;
+        /// The chain clock. Every billing period, anchor, due tick, lead and grace is counted in
+        /// its ticks.
+        type BlockNumberProvider: BlockNumberProvider<
+            BlockNumber: DecodeWithMemTracking + MaybeSerializeDeserialize,
+        >;
+        /// How long before a charge is due it may first be attempted. Every billing period must be
+        /// longer, and so must [`Config::DueBucketSize`] not be.
+        #[pallet::constant]
+        type RenewalLead: Get<MomentOf<Self, I>>;
+        /// The width, in ticks, of a bucket of the due queue. Must be non-zero, and no longer than
+        /// [`Config::RenewalLead`]: a bucket is processed up to its width late, and a renewal queued
+        /// at its lead must still be attempted before its due tick.
+        #[pallet::constant]
+        type DueBucketSize: Get<MomentOf<Self, I>>;
+        /// The maximum number of subscriptions queued in one bucket of the due queue.
+        #[pallet::constant]
+        type MaxDuePerBucket: Get<u32>;
+        /// The maximum number of queued subscriptions processed in one block.
+        #[pallet::constant]
+        type MaxChargesPerBlock: Get<u32>;
+        /// The dependants notified of every subscription transition, in the same block.
+        type OnSubscriptionChanged: OnSubscriptionChanged<
+            InventoryIdTuple<Self, I>,
+            ItemIdOf<Self, I>,
+            Self::AccountId,
+            MomentOf<Self, I>,
+        >;
+
         // Benchmarking: Types to handle benchmarks.
 
         #[cfg(feature = "runtime-benchmarks")]
         /// Helper for executing pallet benchmarks
-        type BenchmarkHelper: BenchmarkHelper<InventoryIdFor<Self, I>>;
+        type BenchmarkHelper: BenchmarkHelper<InventoryIdFor<Self, I>>
+            + SubscriptionsBenchmarkHelper<
+                Self::AccountId,
+                AssetIdOf<Self, I>,
+                AssetBalanceOf<Self, I>,
+            >;
     }
 
     pub type GenesisConfigInventories<T, I = ()> =
@@ -187,6 +289,90 @@ pub mod pallet {
     #[pallet::pallet]
     pub struct Pallet<T, I = ()>(_);
 
+    /// The subscription conditions of an item, who may subscribe to it, its subscription policy,
+    /// and whether its conditions were withdrawn.
+    #[pallet::storage]
+    pub type ItemConditions<T: Config<I>, I: 'static = ()> = StorageMap<
+        _,
+        Blake2_128Concat,
+        (InventoryIdFor<T, I>, ItemIdOf<T, I>),
+        ItemSubscriptionOf<T, I>,
+    >;
+
+    /// The last amendment of an item's conditions for every subscription to it.
+    #[pallet::storage]
+    pub type ItemAmendments<T: Config<I>, I: 'static = ()> = StorageMap<
+        _,
+        Blake2_128Concat,
+        (InventoryIdFor<T, I>, ItemIdOf<T, I>),
+        ItemAmendmentOf<T, I>,
+    >;
+
+    /// Live subscriptions, keyed by inventory, item and subscriber.
+    #[pallet::storage]
+    pub type Subscriptions<T: Config<I>, I: 'static = ()> = StorageNMap<
+        _,
+        (
+            NMapKey<Blake2_128Concat, InventoryIdFor<T, I>>,
+            NMapKey<Blake2_128Concat, ItemIdOf<T, I>>,
+            NMapKey<Blake2_128Concat, T::AccountId>,
+        ),
+        SubscriptionRecordOf<T, I>,
+    >;
+
+    /// The due queue: for each bucket of [`Config::DueBucketSize`] ticks, the subscriptions whose
+    /// next action falls in it.
+    #[pallet::storage]
+    pub type DueQueue<T: Config<I>, I: 'static = ()> = StorageMap<
+        _,
+        Twox64Concat,
+        MomentOf<T, I>,
+        BoundedVec<SubscriptionKeyOf<T, I>, T::MaxDuePerBucket>,
+        ValueQuery,
+    >;
+
+    /// The next bucket of the due queue to process. Every bucket before it is empty.
+    #[pallet::storage]
+    pub type DueCursor<T: Config<I>, I: 'static = ()> = StorageValue<_, MomentOf<T, I>>;
+
+    /// The tick at which the ongoing migration pause started, if any.
+    #[pallet::storage]
+    pub type PauseStartedAt<T: Config<I>, I: 'static = ()> = StorageValue<_, MomentOf<T, I>>;
+
+    /// The total length of every completed migration pause.
+    #[pallet::storage]
+    pub type PausedTicks<T: Config<I>, I: 'static = ()> =
+        StorageValue<_, MomentOf<T, I>, ValueQuery>;
+
+    /// The start and end of the last completed migration pause.
+    #[pallet::storage]
+    pub type LastPause<T: Config<I>, I: 'static = ()> =
+        StorageValue<_, (MomentOf<T, I>, MomentOf<T, I>)>;
+
+    /// The next bucket of the catch-up after a migration pause, while one is open.
+    #[pallet::storage]
+    pub type CatchUpFrom<T: Config<I>, I: 'static = ()> = StorageValue<_, MomentOf<T, I>>;
+
+    /// The overflow of each bucket of the due queue: the entries that found the bucket, and the
+    /// ones after it, full, one record each. Processed with the bucket. Nothing is refused for a
+    /// full queue, so every live subscription has an entry.
+    #[pallet::storage]
+    pub type DueOverflow<T: Config<I>, I: 'static = ()> = StorageDoubleMap<
+        _,
+        Twox64Concat,
+        MomentOf<T, I>,
+        Blake2_128Concat,
+        SubscriptionKeyOf<T, I>,
+        (),
+    >;
+
+    /// For each item, how many of its subscriptions are live and not *Defaulted*, and how many of
+    /// those live when its last item amendment was enacted have not yet applied it, been skipped
+    /// by it, or ended. A new item amendment waits until none is behind.
+    #[pallet::storage]
+    pub type ItemSubscriptionCounts<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, (InventoryIdFor<T, I>, ItemIdOf<T, I>), ItemCounts>;
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config<I>, I: 'static = ()> {
@@ -225,6 +411,128 @@ pub mod pallet {
             id: ItemIdOf<T, I>,
             not_for_resale: bool,
         },
+        /// The subscription conditions of an item were set, for new subscriptions.
+        SubscriptionConditionsSet {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            conditions: SubscriptionConditionsOf<T, I>,
+        },
+        /// An item was made subscribable by exactly one subscriber, once.
+        SubscriptionExclusiveSet {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+        },
+        /// An item's conditions were amended for every live subscription to it, each from its own
+        /// effective boundary, which falls before `last_boundary`.
+        ItemAmended {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            seq: u32,
+            enacted_at: MomentOf<T, I>,
+            last_boundary: MomentOf<T, I>,
+        },
+        /// A subscription started, with billing period 0 charged.
+        SubscriptionStarted {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            anchor: MomentOf<T, I>,
+            paid_through: MomentOf<T, I>,
+        },
+        /// A billing period of a subscription was charged.
+        SubscriptionCharged {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            period: u32,
+            amount: AssetBalanceOf<T, I>,
+            paid_through: MomentOf<T, I>,
+        },
+        /// A charge failed at or after its due tick; the subscription is suspended.
+        SubscriptionSuspended {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            grace_end: MomentOf<T, I>,
+        },
+        /// A suspended subscription was restored.
+        SubscriptionRestored {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+        },
+        /// A subscription lapsed within its commitment, and is kept until `until`.
+        SubscriptionDefaulted {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            until: MomentOf<T, I>,
+        },
+        /// The subscriber cancelled a subscription. It ends at a later due tick.
+        CancellationRequested {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            cancellation: Cancellation,
+        },
+        /// A subscription ended, and its record was removed.
+        SubscriptionEnded {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            reason: EndReason,
+        },
+        /// A replacement was scheduled for a subscription.
+        ReplacementScheduled {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            new_id: ItemIdOf<T, I>,
+        },
+        /// A scheduled replacement was dropped.
+        ReplacementDropped {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            new_id: ItemIdOf<T, I>,
+            reason: ReplacementDropReason,
+        },
+        /// A subscription was replaced by a subscription to `new_id`, anchored at `new_anchor`,
+        /// with its billing period 0 charged.
+        SubscriptionReplaced {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            new_id: ItemIdOf<T, I>,
+            new_anchor: MomentOf<T, I>,
+        },
+        /// An amendment of a subscription was enacted. It applies from `effective_at`.
+        AmendmentEnacted {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            effective_at: MomentOf<T, I>,
+        },
+        /// An amendment came into force for a subscription.
+        AmendmentInForce {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            effective_at: MomentOf<T, I>,
+        },
+        /// The subscription policy of an item was set, for new subscriptions.
+        SubscriptionPolicySet {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            policy: SubscriptionPolicy,
+        },
+        /// The subscription conditions of an item were withdrawn: no new subscription until they
+        /// are set again.
+        SubscriptionConditionsWithdrawn {
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+        },
     }
 
     #[pallet::error]
@@ -243,6 +551,37 @@ pub mod pallet {
         NotForResale,
         /// The specified item is not transferable.
         ItemNonTransferable,
+        /// The item has no subscription conditions, or cannot be subscribed to.
+        NotSubscribable,
+        /// The subscription conditions, or the subscription policy, are not valid.
+        InvalidConditions,
+        /// The subscriber is not eligible for the item.
+        NotEligible,
+        /// The subscriber already has a live subscription to the item.
+        AlreadySubscribed,
+        /// There is no subscription in a state the call accepts.
+        NoSubscription,
+        /// No charge is due, within lead, or within grace.
+        NothingDue,
+        /// The subscription's grace has elapsed: it has lapsed or defaulted.
+        GraceElapsed,
+        /// The charge could not be made.
+        ChargeFailed,
+        /// A replacement is already scheduled.
+        ReplacementPending,
+        /// An amendment is pending, so no replacement and no second amendment may be made; or, for
+        /// an item amendment, a subscription has not yet applied the previous one.
+        ChangePending,
+        /// There is no scheduled replacement to cancel.
+        NoPendingReplacement,
+        /// A cancellation is pending, so no replacement may be scheduled.
+        CancelPending,
+        /// The item is priced at zero, so it cannot be subscribed to directly.
+        ZeroPriceDirectSubscription,
+        /// The subscription policy (of the subscription, or of the item) allows no amendment.
+        AmendmentsDisabled,
+        /// The subscription policy does not let the merchant terminate the subscription.
+        NotTerminable,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -296,7 +635,7 @@ pub mod pallet {
         }
 
         /// Publishes an item in an existing inventory. The caller must be a valid
-        /// [`InventoryAdminOrigin`][T::InventoryAdminOrigin] for the given inventory.
+        /// [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
         ///
         /// - `inventory_id`: The identification of the inventory under which the item will be
         ///    published.
@@ -338,7 +677,7 @@ pub mod pallet {
         /// enables it to be purchased by an external system.
         ///
         /// - `origin`: can be either
-        ///   - A valid [`InventoryAdminOrigin`][T::InventoryAdminOrigin] for the given inventory,
+        ///   - A valid [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory,
         ///     after which the owner of the item must be the same owner of the inventory, or
         ///   - A signed origin, where the caller must be the owner of the item, and the item must be
         ///     transferable and enabled for resale.
@@ -393,7 +732,7 @@ pub mod pallet {
         /// disables it to be purchased by an external system.
         ///
         /// - `origin`: can be either
-        ///   - A valid [`InventoryAdminOrigin`][T::InventoryAdminOrigin] for the given inventory,
+        ///   - A valid [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory,
         ///     after which the owner of the item must be the same owner of the inventory, or
         ///   - A signed origin, where the caller must be the owner of the item, and the item must be
         ///     transferable and enabled for resale.
@@ -438,7 +777,7 @@ pub mod pallet {
         }
 
         /// Marks whether an item can be transferred or not. The caller must be a valid
-        /// [`InventoryAdminOrigin`][T::InventoryAdminOrigin] for the given inventory.
+        /// [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
         ///
         /// - `inventory_id`: The identification of the inventory under which the item will be
         ///    marked as transferable or not.
@@ -464,7 +803,7 @@ pub mod pallet {
         }
 
         /// Marks whether an item is marked as _"not for resale"_ or not. The caller must be a valid
-        /// [`InventoryAdminOrigin`][T::InventoryAdminOrigin] for the given inventory.
+        /// [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
         ///
         /// The item must be in possession of the inventory owner to be mutate (i.e. it's not
         /// possible to mark an item as _"not for sale"_ once you sold it.
@@ -500,7 +839,7 @@ pub mod pallet {
         }
 
         /// Sets an attribute on an item. The `origin` must be a valid
-        /// [`InventoryAdminOrigin`][T::InventoryAdminOrigin] for the given inventory.
+        /// [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
         ///
         /// - `inventory_id`: The identification of the inventory under which the item will be
         ///    mutated.
@@ -541,6 +880,257 @@ pub mod pallet {
             } else {
                 Self::clear_attribute(&inventory_id.into(), &id, &key)
             }
+        }
+
+        /// Sets the subscription conditions new subscriptions to an existing item take. Existing
+        /// subscriptions are not touched. The caller must be a valid
+        /// [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
+        ///
+        /// - `conditions`: The price per billing period, the billing period, and optionally a term
+        ///   limit, a minimum commitment, and the grace.
+        /// - `exclusive_to`: If `Some`, the item becomes subscribable by that account only, once.
+        #[pallet::call_index(8)]
+        pub fn set_subscription_conditions(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            conditions: SubscriptionConditionsOf<T, I>,
+            exclusive_to: Option<T::AccountId>,
+        ) -> DispatchResult {
+            Self::ensure_active_inventory(&inventory_id)?;
+            T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
+
+            Self::set_conditions(&inventory_id.into(), &id, conditions)?;
+            if let Some(who) = exclusive_to {
+                Self::set_exclusive(&inventory_id.into(), &id, &who)?;
+            }
+            Ok(())
+        }
+
+        /// Subscribes the caller to an item with subscription conditions. Billing period 0 is
+        /// charged first, as a direct payment to the inventory owner; if it fails, nothing is
+        /// created. An item priced at zero is refused
+        /// ([`ZeroPriceDirectSubscription`](Error::ZeroPriceDirectSubscription)). The caller must
+        /// be a valid [`SubscribeOrigin`][Config::SubscribeOrigin] for the given inventory.
+        #[pallet::call_index(9)]
+        #[pallet::weight(Pallet::<T, I>::with_hooks(<T as Config<I>>::WeightInfo::subscribe()))]
+        pub fn subscribe(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+        ) -> DispatchResult {
+            let who = T::SubscribeOrigin::ensure_origin(origin, &inventory_id)?;
+            Self::do_subscribe(&inventory_id.into(), &id, &who, false)
+        }
+
+        /// Attempts a subscription's charge that is due, within its lead, or unpaid within its
+        /// grace. Any signed origin may call it.
+        #[pallet::call_index(10)]
+        #[pallet::weight(Pallet::<T, I>::with_hooks(
+            <T as Config<I>>::WeightInfo::charge_due()
+                .max(<T as Config<I>>::WeightInfo::process_due_replacement())
+                .max(<T as Config<I>>::WeightInfo::process_due_overflow())
+        ))]
+        pub fn charge_due(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+            <Self as subs::Mutate<T::AccountId>>::charge_due(&inventory_id.into(), &id, &who)
+        }
+
+        /// Cancels the caller's subscription to an item: at the later of its `paid_through` and
+        /// its commitment end, or, while an amendment is pending, at its `paid_through` with the
+        /// commitment waived. The caller must be a valid [`SubscribeOrigin`][Config::SubscribeOrigin]
+        /// for the given inventory.
+        #[pallet::call_index(11)]
+        #[pallet::weight(Pallet::<T, I>::with_hooks(<T as Config<I>>::WeightInfo::cancel_subscription()))]
+        pub fn cancel_subscription(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+        ) -> DispatchResult {
+            let who = T::SubscribeOrigin::ensure_origin(origin, &inventory_id)?;
+            <Self as subs::Mutate<T::AccountId>>::cancel(&inventory_id.into(), &id, &who)
+        }
+
+        /// Terminates a subscription at once, whatever its state, if its policy lets the merchant
+        /// terminate it. Nothing is refunded. The caller must be a valid
+        /// [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
+        #[pallet::call_index(12)]
+        #[pallet::weight(Pallet::<T, I>::with_hooks(<T as Config<I>>::WeightInfo::terminate_subscription()))]
+        pub fn terminate_subscription(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+        ) -> DispatchResult {
+            T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
+            <Self as subs::Mutate<T::AccountId>>::terminate(&inventory_id.into(), &id, &who)
+        }
+
+        /// Schedules a subscription to `new_id` to replace the caller's subscription to `id` at
+        /// the first due tick at or after both its `paid_through` and its commitment end, if the
+        /// new subscription's first charge succeeds then. The new subscription takes `new_id`'s
+        /// conditions and policy as they stand at that tick, not as they stood when it was
+        /// scheduled. A `new_id` priced at zero is refused
+        /// ([`ZeroPriceDirectSubscription`](Error::ZeroPriceDirectSubscription)), as in
+        /// [`subscribe`](Pallet::subscribe). The caller must be a valid
+        /// [`SubscribeOrigin`][Config::SubscribeOrigin] for the given inventory.
+        #[pallet::call_index(13)]
+        #[pallet::weight(Pallet::<T, I>::with_hooks(<T as Config<I>>::WeightInfo::schedule_replacement()))]
+        pub fn schedule_replacement(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            new_id: ItemIdOf<T, I>,
+        ) -> DispatchResult {
+            let who = T::SubscribeOrigin::ensure_origin(origin, &inventory_id)?;
+            Self::schedule(&inventory_id.into(), &id, &who, &new_id, false, false)
+        }
+
+        /// Amends one subscription's conditions, without its subscriber's acceptance, if its policy
+        /// allows amendments. They apply from its effective boundary: the first due tick at least
+        /// the policy's notice (in billing periods) from now. The caller must be a valid
+        /// [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
+        #[pallet::call_index(14)]
+        #[pallet::weight(Pallet::<T, I>::with_hooks(<T as Config<I>>::WeightInfo::amend_subscription()))]
+        pub fn amend_subscription(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+            conditions: SubscriptionConditionsOf<T, I>,
+        ) -> DispatchResult {
+            T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
+            <Self as subs::Mutate<T::AccountId>>::amend(&inventory_id.into(), &id, &who, conditions)
+                .map(|_| ())
+        }
+
+        /// Drops the replacement scheduled for the caller's subscription to an item. The caller
+        /// must be a valid [`SubscribeOrigin`][Config::SubscribeOrigin] for the given inventory.
+        #[pallet::call_index(15)]
+        #[pallet::weight(Pallet::<T, I>::with_hooks(
+            <T as Config<I>>::WeightInfo::cancel_replacement()
+                .max(<T as Config<I>>::WeightInfo::process_due_overflow())
+        ))]
+        pub fn cancel_replacement(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+        ) -> DispatchResult {
+            let who = T::SubscribeOrigin::ensure_origin(origin, &inventory_id)?;
+            <Self as subs::Mutate<T::AccountId>>::cancel_replacement(
+                &inventory_id.into(),
+                &id,
+                &who,
+            )
+        }
+
+        /// Amends an item's conditions: at once for new subscriptions, and for every live
+        /// subscription to it whose policy allows amendments from that subscription's own
+        /// effective boundary. Refused if the item's policy allows no amendment, and while a
+        /// subscription has not yet applied the item's previous amendment. The caller must be a
+        /// valid [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
+        #[pallet::call_index(16)]
+        #[pallet::weight(Pallet::<T, I>::with_hooks(<T as Config<I>>::WeightInfo::amend_item_subscriptions()))]
+        pub fn amend_item_subscriptions(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            conditions: SubscriptionConditionsOf<T, I>,
+        ) -> DispatchResult {
+            Self::ensure_active_inventory(&inventory_id)?;
+            T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
+            <Self as subs::Mutate<T::AccountId>>::amend_item(&inventory_id.into(), &id, conditions)
+                .map(|_| ())
+        }
+
+        /// Applies the transitions due for a subscription that need no charge: a lapse past
+        /// grace, *Defaulted* within its commitment or ended otherwise, and the end of a
+        /// *Defaulted* subscription at its commitment end. Nothing happens when none is due. Any
+        /// signed origin may call it, so a subscription the due queue has not reached yet never
+        /// blocks its subscriber.
+        #[pallet::call_index(17)]
+        #[pallet::weight(Pallet::<T, I>::with_hooks(
+            <T as Config<I>>::WeightInfo::settle_subscription()
+                .max(<T as Config<I>>::WeightInfo::process_due_overflow())
+        ))]
+        pub fn settle_subscription(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            who: T::AccountId,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+            <Self as subs::Mutate<T::AccountId>>::settle(&inventory_id.into(), &id, &who)
+        }
+
+        /// Sets the subscription policy of an item with subscription conditions, for new
+        /// subscriptions: whether its merchant may amend them (and with how many billing periods
+        /// of notice, at least one), and whether it may terminate them. Existing subscriptions keep
+        /// the policy they started with. The caller must be a valid
+        /// [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
+        #[pallet::call_index(18)]
+        pub fn set_subscription_policy(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+            policy: SubscriptionPolicy,
+        ) -> DispatchResult {
+            Self::ensure_active_inventory(&inventory_id)?;
+            T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
+            <Self as subs::Mutate<T::AccountId>>::set_policy(&inventory_id.into(), &id, policy)
+        }
+
+        /// Withdraws an item's subscription conditions: new subscriptions, and replacements into
+        /// the item, are refused until conditions are set again. Existing subscriptions keep their
+        /// conditions and renew. The caller must be a valid
+        /// [`InventoryAdminOrigin`][Config::InventoryAdminOrigin] for the given inventory.
+        #[pallet::call_index(19)]
+        pub fn withdraw_subscription_conditions(
+            origin: OriginFor<T>,
+            inventory_id: InventoryIdFor<T, I>,
+            id: ItemIdOf<T, I>,
+        ) -> DispatchResult {
+            T::InventoryAdminOrigin::ensure_origin(origin, &inventory_id)?;
+            <Self as subs::Mutate<T::AccountId>>::withdraw_conditions(&inventory_id.into(), &id)
+        }
+    }
+
+    #[pallet::hooks]
+    impl<T: Config<I>, I: 'static> Hooks<BlockNumberFor<T>> for Pallet<T, I> {
+        /// Processes the charges a migration pause held up, before the block's transactions.
+        fn on_poll(_n: BlockNumberFor<T>, meter: &mut WeightMeter) {
+            Self::process_catch_up(meter);
+        }
+
+        /// Processes the due queue with the block's remaining weight.
+        fn on_idle(_n: BlockNumberFor<T>, remaining_weight: Weight) -> Weight {
+            let mut meter = WeightMeter::with_limit(remaining_weight);
+            Self::process_due_queue(&mut meter);
+            meter.consumed()
+        }
+
+        fn integrity_test() {
+            assert!(
+                !T::DueBucketSize::get().is_zero(),
+                "`DueBucketSize` must be non-zero"
+            );
+            assert!(
+                T::MaxDuePerBucket::get() > 0,
+                "`MaxDuePerBucket` must be non-zero"
+            );
+            assert!(
+                T::MaxChargesPerBlock::get() > 0,
+                "`MaxChargesPerBlock` must be non-zero"
+            );
+            assert!(
+                T::DueBucketSize::get() <= T::RenewalLead::get(),
+                "`DueBucketSize` must not be longer than `RenewalLead`"
+            );
         }
     }
 }
