@@ -7,7 +7,10 @@
 use super::*;
 
 use alloc::boxed::Box;
-use fc_pallet_communities::origin::{EnsureCommunity, EnsureSignedPays};
+use fc_pallet_communities::{
+    origin::{EnsureCommunity, EnsureSignedPays},
+    types::{CommunityAccount, CommunityState},
+};
 use fc_pallet_listings::{InventoryId, InventoryIdFor, ItemIdOf};
 use fc_pallet_pass::FirstItemIsFree;
 use frame_contrib_traits::{
@@ -21,8 +24,8 @@ use frame_support::{
     parameter_types,
     traits::{
         fungible::HoldConsideration, tokens::imbalance::ResolveTo, AsEnsureOriginWithArg,
-        ConstU128, ConstU32, EitherOf, EnsureOrigin, EnsureOriginWithArg, EqualPrivilegeOnly, Get,
-        LinearStoragePrice, VariantCountOf,
+        ConstU128, ConstU32, Contains, EitherOf, EnsureOrigin, EnsureOriginWithArg,
+        EqualPrivilegeOnly, Get, LinearStoragePrice, VariantCountOf,
     },
     weights::{
         constants::{RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND},
@@ -329,7 +332,7 @@ parameter_types! {
 pub type MembershipsManager = GroupCollectionMemberships<
     Memberships,
     pallet_nfts::ItemConfig,
-    fc_pallet_communities::types::CommunityAccount<Runtime>,
+    CommunityAccount<Runtime>,
     MembershipsManagerAccount,
 >;
 
@@ -480,6 +483,38 @@ impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<MerchantId, Id>> for Ens
     }
 }
 
+/// The collective's merchant: its inventory holds the usage-subscription offers.
+pub const COLLECTIVE_MERCHANT: MerchantId = 0;
+
+/// Any signed account may subscribe to a listings item directly, except to the collective's:
+/// usage contracts are made only through the usage-subscription pallet (`DEC-8`).
+pub struct EnsureSubscriberOutsideCollective;
+impl<Id> EnsureOriginWithArg<RuntimeOrigin, InventoryId<MerchantId, Id>>
+    for EnsureSubscriberOutsideCollective
+{
+    type Success = AccountId;
+
+    fn try_origin(
+        o: RuntimeOrigin,
+        InventoryId(merchant, _): &InventoryId<MerchantId, Id>,
+    ) -> Result<Self::Success, RuntimeOrigin> {
+        if *merchant == COLLECTIVE_MERCHANT {
+            return Err(o);
+        }
+        <EnsureSigned<AccountId> as EnsureOrigin<RuntimeOrigin>>::try_origin(o)
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin(
+        InventoryId(merchant, _): &InventoryId<MerchantId, Id>,
+    ) -> Result<RuntimeOrigin, ()> {
+        if *merchant == COLLECTIVE_MERCHANT {
+            return Err(());
+        }
+        <EnsureSigned<AccountId> as EnsureOrigin<RuntimeOrigin>>::try_successful_origin()
+    }
+}
+
 impl fc_pallet_listings::Config for Runtime {
     type WeightInfo = ();
     type CreateInventoryOrigin = EnsureMerchantAccount;
@@ -495,14 +530,14 @@ impl fc_pallet_listings::Config for Runtime {
     type Nonfungibles = ListingsCatalog;
     type NonfungiblesKeyLimit = <Runtime as pallet_nfts::Config<ListingsInstance>>::KeyLimit;
     type NonfungiblesValueLimit = <Runtime as pallet_nfts::Config<ListingsInstance>>::ValueLimit;
-    type SubscribeOrigin = AsEnsureOriginWithArg<EnsureSigned<AccountId>>;
+    type SubscribeOrigin = EnsureSubscriberOutsideCollective;
     type Payments = Payments;
     type BlockNumberProvider = System;
     type RenewalLead = ConstU32<DAYS>;
     type DueBucketSize = ConstU32<HOURS>;
     type MaxDuePerBucket = ConstU32<64>;
     type MaxChargesPerBlock = ConstU32<16>;
-    type OnSubscriptionChanged = ();
+    type OnSubscriptionChanged = UsageSubscription;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = benchmark_helpers::ListingsBenchmarkHelper;
 }
@@ -534,16 +569,24 @@ parameter_types! {
     pub const MarketplaceFee: Percent = Percent::from_percent(1);
 }
 
-/// Both parties pay a fee (a percentage of the amount) to the treasury.
+/// Both parties pay a fee (a percentage of the amount) to the treasury, except on a payment to
+/// the treasury itself: a usage-subscription charge to the configured payee carries no fee on
+/// either side (`REQ-BL-3`).
 pub struct MarketplaceFeeHandler;
 impl fc_pallet_payments::FeeHandler<Runtime> for MarketplaceFeeHandler {
     fn apply_fees(
         _: &fc_pallet_payments::AssetIdOf<Runtime>,
         _: &AccountId,
-        _: &AccountId,
+        beneficiary: &AccountId,
         amount: &fc_pallet_payments::BalanceOf<Runtime>,
         _: Option<&[u8]>,
     ) -> fc_pallet_payments::Fees<Runtime> {
+        if *beneficiary == TreasuryAccount::get() {
+            return fc_pallet_payments::Fees {
+                sender_pays: Default::default(),
+                beneficiary_pays: Default::default(),
+            };
+        }
         let fee = MarketplaceFee::get().mul_floor(*amount);
         let fees = || {
             frame_support::BoundedVec::truncate_from(alloc::vec![(
@@ -621,6 +664,53 @@ impl fc_pallet_orders::Config for Runtime {
     type MaxItemLen = MaxItemLen;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = benchmark_helpers::OrdersBenchmarkHelper;
+}
+
+// Usage subscriptions
+
+/// The communities that may subscribe to usage, and whose pools may admit transactions: every
+/// active community but community 0, which stands for the collective (`REQ-GR-4`). One read.
+pub struct ActiveCommunity;
+impl Contains<CommunityId> for ActiveCommunity {
+    fn contains(id: &CommunityId) -> bool {
+        *id != 0 && Communities::community_state(id) == Some(CommunityState::Active)
+    }
+}
+
+parameter_types! {
+    /// The collective's inventory: every usage-subscription offer is one of its items.
+    pub const UsageOfferInventory: (MerchantId, u32) = (COLLECTIVE_MERCHANT, 0);
+}
+
+impl fc_pallet_usage_subscription::Config for Runtime {
+    type WeightInfo = ();
+    type Memberships = MembershipsManager;
+    type GroupAccount = CommunityAccount<Runtime>;
+    type UsableGroup = ActiveCommunity;
+    type Subscriptions = Listings;
+    type OfferInventory = UsageOfferInventory;
+    type Payee = TreasuryAccount;
+    // Benchmark bindings: the kitchensink has no collective. A deployment binds the four
+    // collective origins to its collective's origins, keeping `AmendOrigin` distinct from the
+    // others (a referendum with at least the minimum notice, `REQ-OF-8`), and binds `GroupOrigin`
+    // to its group admin origin, the group's account included.
+    type StandardOfferOrigin = EnsureRoot<AccountId>;
+    type CustomOfferOrigin = EnsureRoot<AccountId>;
+    type TerminateOrigin = EnsureRoot<AccountId>;
+    type AmendOrigin = EnsureRoot<AccountId>;
+    type GroupOrigin = EnsureCommunity<Self>;
+    type BlockNumberProvider = System;
+    type MinUsagePeriod = ConstU32<HOURS>;
+    // Must exceed listings' `RenewalLead` (a day): a billing period no longer than the lead would
+    // be renewed before it starts.
+    type MinBillingPeriod = ConstU32<{ 2 * DAYS }>;
+    type MaxTrialPeriods = ConstU32<3>;
+    type MaxMembershipScan = ConstU32<4>;
+    type MaxPayingGroupChanges = ConstU32<3>;
+    type PayingGroupChangeWindow = ConstU32<HOURS>;
+    type MaxOffersPerPage = ConstU32<50>;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = benchmark_helpers::UsageSubscriptionBenchmarkHelper;
 }
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -901,6 +991,87 @@ pub mod benchmark_helpers {
         fn fund(who: &AccountId, asset: &AssetId, amount: Balance) {
             use frame_support::traits::fungibles::Mutate;
             assert!(Assets::mint_into(*asset, who, amount.saturating_mul(1_000)).is_ok());
+        }
+    }
+
+    // Usage subscriptions
+
+    /// The community the usage-subscription benchmarks contract for.
+    const USAGE_GROUP: CommunityId = 1;
+
+    pub struct UsageSubscriptionBenchmarkHelper;
+    impl fc_pallet_usage_subscription::BenchmarkHelper<Runtime> for UsageSubscriptionBenchmarkHelper {
+        /// An active community with its memberships collection, whose account holds a thousand
+        /// billing periods of the subscription price.
+        fn group() -> CommunityId {
+            use fc_pallet_listings::SubscriptionsBenchmarkHelper;
+            use sp_runtime::traits::Convert;
+
+            if !Communities::community_exists(&USAGE_GROUP) {
+                let admin =
+                    OriginCaller::from(fc_pallet_communities::Origin::<Runtime>::new(USAGE_GROUP));
+                assert!(Communities::register(&admin, &USAGE_GROUP, None).is_ok());
+                assert!(create_memberships_collection(USAGE_GROUP).is_ok());
+                let (asset, amount) = ListingsBenchmarkHelper::price();
+                ListingsBenchmarkHelper::fund(
+                    &CommunityAccount::<Runtime>::convert(USAGE_GROUP),
+                    &asset,
+                    amount,
+                );
+            }
+            USAGE_GROUP
+        }
+
+        fn group_origin(group: &CommunityId) -> RuntimeOrigin {
+            fc_pallet_communities::Origin::<Runtime>::new(*group).into()
+        }
+
+        /// Issues a new membership of the community into its stock, and assigns it to `who`. Ids
+        /// come from a counter kept for the benchmarks, skipping any id in use, so they never
+        /// collide, even after memberships are burnt.
+        fn add_member(group: &CommunityId, who: &AccountId) -> MembershipId {
+            use frame_contrib_traits::memberships::Manager;
+            use frame_support::storage::unhashed;
+
+            let counter = (b"usage-subscription:bench:next-membership", group).encode();
+            let mut next: u32 = unhashed::get_or_default(&counter);
+            let membership = loop {
+                let id = (MembershipId::from(*group) << 32) | MembershipId::from(next);
+                next = next.saturating_add(1);
+                if !pallet_nfts::Item::<Runtime, MembershipsInstance>::contains_key(group, id) {
+                    break id;
+                }
+            };
+            unhashed::put(&counter, &next);
+            assert!(MembershipsManager::issue(group, &membership).is_ok());
+            assert!(MembershipsManager::assign(group, &membership, who).is_ok());
+            membership
+        }
+
+        /// Listings' subscription price. Every offer is priced first, so this also funds the
+        /// configured payee, which owns the collective's inventory and pays its catalog deposits.
+        fn price() -> frame_contrib_traits::listings::item::ItemPrice<AssetId, Balance> {
+            use fc_pallet_listings::SubscriptionsBenchmarkHelper;
+            use frame_support::traits::fungible::Mutate;
+
+            let payee = TreasuryAccount::get();
+            if Balances::free_balance(&payee) < UNITS {
+                assert!(Balances::mint_into(&payee, 1_000 * UNITS).is_ok());
+            }
+
+            let (asset, amount) = ListingsBenchmarkHelper::price();
+            frame_contrib_traits::listings::item::ItemPrice { asset, amount }
+        }
+
+        /// Another community, whose memberships the benchmarks never assign. Looking for one
+        /// reads the same storage prefix whether the community exists or not.
+        fn stale_group() -> CommunityId {
+            USAGE_GROUP + 1
+        }
+
+        fn due_queue_capacity() -> u32 {
+            fc_pallet_listings::MAX_QUEUE_PROBES
+                * <<Runtime as fc_pallet_listings::Config>::MaxDuePerBucket as Get<u32>>::get()
         }
     }
 
