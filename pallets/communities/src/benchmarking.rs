@@ -10,7 +10,9 @@ use self::{
 };
 use alloc::{vec, vec::Vec};
 use frame_benchmarking::v2::*;
-use frame_contrib_traits::memberships::{Inspect, Rank};
+use frame_contrib_traits::memberships::{
+    Inspect, Rank, RankOnTransfer, Receivers, Transfer, TransferPolicy,
+};
 use frame_support::traits::{
     fungible::{InspectFreeze, Mutate},
     fungibles::Mutate as FunsMutate,
@@ -385,6 +387,8 @@ mod benchmarks {
             }
             .into(),
         );
+        // Replacing the vote read the weight it was cast with, and recorded the new one.
+        assert_eq!(CommunityVoteWeights::<T>::get(0u32, membership_id), Some(2));
 
         Ok(())
     }
@@ -408,6 +412,7 @@ mod benchmarks {
             0u32,
             Vote::Standard(true),
         )?;
+        assert!(CommunityVoteWeights::<T>::contains_key(0u32, membership_id));
 
         #[extrinsic_call]
         _(RawOrigin::Signed(who.clone()), membership_id, 0u32);
@@ -420,6 +425,10 @@ mod benchmarks {
             }
             .into(),
         );
+        assert!(!CommunityVoteWeights::<T>::contains_key(
+            0u32,
+            membership_id
+        ));
 
         Ok(())
     }
@@ -487,6 +496,78 @@ mod benchmarks {
         let hash = <T as frame_system::Config>::Hashing::hash(&remark);
 
         assert_has_event::<T>(frame_system::Event::<T>::Remarked { sender, hash }.into());
+
+        Ok(())
+    }
+
+    #[benchmark]
+    fn transfer_membership() -> Result<(), BenchmarkError> {
+        // setup code: the worst case reads the policy, checks the recipient is a member, and
+        // resets a non-zero rank, around the item's unlock and relock. Finding the membership's
+        // community is two reads (its index entry and its holder), whatever the holder holds.
+        let (id, origin) = create_community::<T>(RawOrigin::Root.into(), None)?;
+
+        let member_origin =
+            T::MemberOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
+        let from = T::MemberOrigin::ensure_origin(member_origin.clone())
+            .map_err(|_| BenchmarkError::Weightless)?;
+        let to: AccountIdOf<T> = frame_benchmarking::account("community_benchmarking", 1, 0);
+
+        T::BenchmarkHelper::issue_membership(id, MembershipIdOf::<T>::from(0))?;
+        T::BenchmarkHelper::issue_membership(id, MembershipIdOf::<T>::from(1))?;
+        Communities::<T>::add_member(origin.clone(), T::Lookup::unlookup(from.clone()))?;
+        Communities::<T>::add_member(origin.clone(), T::Lookup::unlookup(to.clone()))?;
+
+        let (_, membership_id) = T::MemberMgmt::user_memberships(&from, Some(id))
+            .next()
+            .ok_or(BenchmarkError::Stop("the member holds a membership"))?;
+        Communities::<T>::promote(origin.clone(), membership_id)?;
+        Communities::<T>::set_transfer_policy(
+            origin,
+            TransferPolicy {
+                receivers: Receivers::ToExistingMembers,
+                rank: RankOnTransfer::Reset,
+            },
+        )?;
+
+        #[extrinsic_call]
+        _(
+            member_origin as T::RuntimeOrigin,
+            membership_id,
+            T::Lookup::unlookup(to.clone()),
+        );
+
+        // verification code
+        assert_has_event::<T>(
+            Event::MembershipTransferred {
+                id,
+                membership_id,
+                from,
+                to: to.clone(),
+            }
+            .into(),
+        );
+        assert!(T::MemberMgmt::holds(&id, &to, &membership_id));
+        assert_eq!(Communities::<T>::member_rank(&id, &membership_id), 0.into());
+
+        Ok(())
+    }
+
+    #[benchmark]
+    fn set_transfer_policy() -> Result<(), BenchmarkError> {
+        // setup code
+        let (id, origin) = create_community::<T>(RawOrigin::Root.into(), None)?;
+        let policy = TransferPolicy {
+            receivers: Receivers::ToAnyAccount,
+            rank: RankOnTransfer::Keep,
+        };
+
+        #[extrinsic_call]
+        _(origin.into_caller(), policy);
+
+        // verification code
+        assert_has_event::<T>(Event::TransferPolicySet { id, policy }.into());
+        assert_eq!(T::MemberMgmt::transfer_policy(&id), policy);
 
         Ok(())
     }

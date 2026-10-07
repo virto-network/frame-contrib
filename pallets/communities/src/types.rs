@@ -8,7 +8,7 @@ use frame_support::traits::{
     fungibles::{self, Inspect as FunsInspect},
     Polling,
 };
-use sp_runtime::traits::{StaticLookup, UniqueSaturatedInto};
+use sp_runtime::traits::{Convert, StaticLookup, UniqueSaturatedInto};
 use sp_runtime::{Deserialize, SaturatedConversion, Serialize};
 
 pub type AssetIdOf<T> = <<T as Config>::Assets as fungibles::Inspect<AccountIdOf<T>>>::AssetId;
@@ -32,6 +32,19 @@ pub type BlockNumberFor<T> =
 #[cfg(feature = "runtime-benchmarks")]
 pub type BenchmarkHelperOf<T> = <T as Config>::BenchmarkHelper;
 
+/// Names the account of each community, with no read: [`Pallet::community_account`][1].
+///
+/// A runtime binds it as the group account of its memberships manager, so the community account
+/// holds the community's stock.
+///
+/// [1]: `crate::Pallet::community_account`
+pub struct CommunityAccount<T>(PhantomData<T>);
+impl<T: Config> Convert<CommunityIdOf<T>, AccountIdOf<T>> for CommunityAccount<T> {
+    fn convert(community_id: CommunityIdOf<T>) -> AccountIdOf<T> {
+        crate::Pallet::<T>::community_account(&community_id)
+    }
+}
+
 /// The Community struct holds the basic definition of a community. It includes
 /// the current state of a community, the [`AccountId`][1] for the community
 /// admin, and (if any) the ID of the community-issued asset the community has
@@ -48,7 +61,7 @@ pub struct CommunityInfo {
 /// is awaiting to prove their contribution to the network, is active
 /// and can operate, blocked due to a violation of network norms, or
 /// it's being frozen by the community administrators.
-#[derive(Decode, Default, Encode, MaxEncodedLen, PartialEq, TypeInfo)]
+#[derive(Clone, Copy, Debug, Decode, Default, Encode, Eq, MaxEncodedLen, PartialEq, TypeInfo)]
 pub enum CommunityState {
     /// The community is opperating normally.
     #[default]
