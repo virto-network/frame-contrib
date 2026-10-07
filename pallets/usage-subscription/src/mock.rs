@@ -29,12 +29,23 @@ pub type AccountId = <AccountPublic as IdentifyAccount>::AccountId;
 pub type Balance = u128;
 pub type AssetId = u32;
 
-pub type TxExtensions = (
+/// The payment step under test: the usage-subscription extension around the transaction-payment
+/// pallet's fee extension.
+pub type UsageExtension = crate::ChargeUsageSubscription<
+    Test,
+    pallet_transaction_payment::ChargeTransactionPayment<Test>,
+>;
+/// `CheckWeight`, then the payment step, as the crate guide says.
+pub type TxExtensions = (frame_system::CheckWeight<Test>, UsageExtension);
+/// The same, with the fee extension alone.
+pub type InnerTxExtensions = (
     frame_system::CheckWeight<Test>,
     pallet_transaction_payment::ChargeTransactionPayment<Test>,
 );
 pub type UncheckedExtrinsic =
     sp_runtime::generic::UncheckedExtrinsic<AccountId, RuntimeCall, MultiSignature, TxExtensions>;
+pub type CheckedExtrinsic =
+    sp_runtime::generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtensions>;
 pub type Block = sp_runtime::generic::Block<
     sp_runtime::generic::Header<u64, sp_runtime::traits::BlakeTwo256>,
     UncheckedExtrinsic,
@@ -483,6 +494,9 @@ parameter_types! {
     pub const MinUsagePeriod: u64 = HOURS;
     pub const MinBillingPeriod: u64 = DAYS;
     pub const MaxTrialPeriods: u32 = 3;
+    pub const MaxMembershipScan: u32 = 4;
+    pub const MaxPayingGroupChanges: u32 = 3;
+    pub static PayingGroupChangeWindow: u64 = HOURS;
 }
 
 impl fc_pallet_usage_subscription::Config for Test {
@@ -502,6 +516,9 @@ impl fc_pallet_usage_subscription::Config for Test {
     type MinUsagePeriod = MinUsagePeriod;
     type MinBillingPeriod = MinBillingPeriod;
     type MaxTrialPeriods = MaxTrialPeriods;
+    type MaxMembershipScan = MaxMembershipScan;
+    type MaxPayingGroupChanges = MaxPayingGroupChanges;
+    type PayingGroupChangeWindow = PayingGroupChangeWindow;
 }
 
 // Accounts, groups and assets of the tests.
@@ -518,6 +535,8 @@ pub const COLLECTIVE_GROUP: u32 = 0;
 
 /// The asset offers are priced in: sufficient, with a minimum balance of 1.
 pub const ASSET: AssetId = 1;
+/// The native balance of [`ALICE`], [`BOB`] and [`CHARLIE`]: enough for fees.
+pub const MEMBER_FUNDS: Balance = 1_000_000_000_000_000;
 /// What each group account holds of [`ASSET`] at genesis.
 pub const GROUP_FUNDS: Balance = 1_000_000;
 
@@ -543,6 +562,13 @@ pub fn create_group(group: u32) {
     );
 }
 
+/// Issues `membership` into the stock of `group`, and assigns it to `who`.
+pub fn add_member(group: u32, membership: u32, who: &AccountId) {
+    use fc_traits_memberships::{Issue, Manager};
+    assert!(MembershipsManager::issue(&group, &membership).is_ok());
+    assert!(MembershipsManager::assign(&group, &membership, who).is_ok());
+}
+
 /// Moves the clock to `tick`, and lets listings process its due queue.
 pub fn advance_to(tick: u64) {
     Clock::set(tick);
@@ -559,9 +585,9 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 
     let mut balances = mock_helpers::BalancesExtBuilder::<Test>::default()
         .with_account(PAYEE, 1_000)
-        .with_account(ALICE, 1_000_000)
-        .with_account(BOB, 1_000_000)
-        .with_account(CHARLIE, 1_000_000);
+        .with_account(ALICE, MEMBER_FUNDS)
+        .with_account(BOB, MEMBER_FUNDS)
+        .with_account(CHARLIE, MEMBER_FUNDS);
     let mut asset = mock_helpers::Asset::new(ASSET, PAYEE, 1, true);
     for group in [GROUP_A, GROUP_B, GROUP_C, COLLECTIVE_GROUP] {
         balances = balances.with_account(group_account(group), 1_000);
