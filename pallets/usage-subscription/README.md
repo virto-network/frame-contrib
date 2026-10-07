@@ -187,6 +187,7 @@ current rate window of `PayingGroupChangeWindow` ticks, counted from tick 0 (`RE
 | `MaxMembershipScan` | The most memberships admission reads to find a member's only group | Small: every signed transaction pays for the reads |
 | `MaxPayingGroupChanges` | The free paying-group changes per rate window | — |
 | `PayingGroupChangeWindow` | The rate window of paying-group changes, in ticks | Non-zero; the deployment's minimum usage period |
+| `MaxOffersPerPage` | The most offers one page of `open_offers` examines | Non-zero |
 
 ## Calls
 
@@ -222,6 +223,22 @@ reason), `OfferAmended` (with its last boundary), `ContractAmended` (with its ef
 and `BadOrigin`: SPEC §10's names (`CTR-CALL-2`). The subscriptions system's refusals are mapped to them. In the
 payment step, a preparation that disagrees with validation is `InvalidTransaction::Custom(PATH_MISMATCH)`
 (`ERR-PathMismatch`); a failing fee path is the fee extension's own error (`ERR-Payment`).
+
+## View functions
+
+Every query of `CTR-QRY-1` is a view function, readable without a transaction; each answers from one state and
+writes nothing (`REQ-OB-1`):
+
+| View function | Answers |
+|---|---|
+| `offer(offer)` | Its kind, terms, status, and its last amendment while it may be pending for some contract |
+| `open_offers(start_after, limit)` | Open offers in ascending id order. A page examines at most `min(limit, MaxOffersPerPage)` offers, skipping withdrawn ones; its `next` is the cursor for the following page, `None` when there are no more. A zero limit examines nothing and gives `start_after` back |
+| `contract(group)` | State, kind, terms, anchor, `paid through`, next due, grace end, commitment end, periods charged, and any pending cancellation, switch, conversion or amendment (with its effective boundary and whether the free exit is open) |
+| `pool(group)` | The allowance, the current window's start and end, usage, remainder, and whether it is usable now, or why not |
+| `paying_group(account)` | The resolved paying group, or none, with the reason |
+| `trial_used(group)` | Whether the group has started a trial |
+| `transfer_policy(group)` | The group's transfer policy, as its memberships manager keeps it |
+| `would_waive(account, estimate)` | The pool path with the remainder, or the fee path with the first condition of admission that fails |
 
 ## Wiring it
 
