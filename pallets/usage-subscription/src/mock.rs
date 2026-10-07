@@ -166,6 +166,7 @@ thread_local! {
     static LAST_PAYMENT_ID: Cell<u32> = const { Cell::new(0) };
     static CLOCK: Cell<u64> = const { Cell::new(0) };
     static UNUSABLE: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    static NEXT_MEMBERSHIP: Cell<u32> = const { Cell::new(1_000) };
 }
 
 /// Payment ids from a counter.
@@ -521,6 +522,47 @@ impl fc_pallet_usage_subscription::Config for Test {
     type MaxPayingGroupChanges = MaxPayingGroupChanges;
     type PayingGroupChangeWindow = PayingGroupChangeWindow;
     type MaxOffersPerPage = MaxOffersPerPage;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = UsageBenchmarkHelper;
+}
+
+/// Group A, its members, the test asset, and group B as a stale paying-group name, for the
+/// benchmarks.
+#[cfg(feature = "runtime-benchmarks")]
+pub struct UsageBenchmarkHelper;
+#[cfg(feature = "runtime-benchmarks")]
+impl crate::BenchmarkHelper<Test> for UsageBenchmarkHelper {
+    fn group() -> u32 {
+        GROUP_A
+    }
+
+    fn group_origin(group: &u32) -> RuntimeOrigin {
+        group_origin(*group)
+    }
+
+    fn add_member(group: &u32, who: &AccountId) -> u32 {
+        let membership = NEXT_MEMBERSHIP.with(|next| {
+            next.set(next.get() + 1);
+            next.get()
+        });
+        add_member(*group, membership, who);
+        membership
+    }
+
+    fn price() -> fc_traits_listings::item::ItemPrice<AssetId, Balance> {
+        fc_traits_listings::item::ItemPrice {
+            asset: ASSET,
+            amount: 100,
+        }
+    }
+
+    fn stale_group() -> u32 {
+        GROUP_B
+    }
+
+    fn due_queue_capacity() -> u32 {
+        fc_pallet_listings::MAX_QUEUE_PROBES * MaxDuePerBucket::get()
+    }
 }
 
 // Accounts, groups and assets of the tests.

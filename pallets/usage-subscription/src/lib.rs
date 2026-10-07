@@ -17,6 +17,8 @@ use sp_runtime::{
     ArithmeticError,
 };
 
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmarking;
 #[cfg(test)]
 mod mock;
 #[cfg(test)]
@@ -31,6 +33,8 @@ mod views;
 pub mod weights;
 
 pub use admission::Ticket;
+#[cfg(feature = "runtime-benchmarks")]
+pub use benchmarking::BenchmarkHelper;
 pub use extension::{ChargeUsageSubscription, Path, PATH_MISMATCH};
 pub use pallet::*;
 pub use types::*;
@@ -141,6 +145,12 @@ pub mod pallet {
         /// Non-zero.
         #[pallet::constant]
         type MaxOffersPerPage: Get<u32>;
+
+        // Benchmarking.
+
+        /// Sets up a usable group, its members and a price for the benchmarks.
+        #[cfg(feature = "runtime-benchmarks")]
+        type BenchmarkHelper: BenchmarkHelper<Self>;
     }
 
     #[pallet::pallet]
