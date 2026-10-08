@@ -1601,6 +1601,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fc-pallet-spaces"
+version = "3.0.0-pre.2"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "fc-pallet-template"
 version = "3.0.0-pre.2"
 dependencies = [
