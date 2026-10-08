@@ -1,0 +1,3 @@
+[toolchain]
+# VOS's prover pin at the verifier's revision.
+channel = "nightly-2025-05-09"

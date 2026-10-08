@@ -41,6 +41,8 @@ mod tests;
 
 pub mod types;
 pub mod verifier;
+#[cfg(feature = "vos-verifier")]
+pub mod vos;
 pub mod weights;
 
 pub use pallet::*;
