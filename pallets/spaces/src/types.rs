@@ -3,12 +3,17 @@
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 
-/// The identity of the program a Space runs: the 32-byte commitment the proof verifier recognises.
+/// The program a Space runs: the 32-byte commitment the proof verifier recognises (for VOS's STARK
+/// verifier, the program's preprocessed-trace Merkle root).
 ///
-/// For VOS's STARK verifier this is the program's preprocessed-trace Merkle root, which VOS calls
-/// the program's identity. The pallet never interprets it; it hands it to
-/// [`Config::Verifier`](crate::Config::Verifier).
+/// It is an attribute of a Space, not its identity: the Space's authority can change it, and the
+/// pallet keeps every past commitment with the anchors it applied to. The pallet never interprets
+/// it; it hands it to [`Config::Verifier`](crate::Config::Verifier).
 pub type ProgramId = [u8; 32];
+
+/// The position of a program commitment in a Space's history: the registration's is `0`, and
+/// every change takes the next.
+pub type ProgramVersion = u32;
 
 /// A state root: what a Space's program commits its state to.
 pub type Root = [u8; 32];
@@ -25,11 +30,15 @@ pub type Epoch = u32;
 #[derive(
     Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Clone, PartialEq, Eq, Debug,
 )]
-pub struct SpaceInfo<AccountId> {
-    /// Who may re-found the Space while nothing is bound.
-    pub owner: AccountId,
-    /// The program every anchor of this Space must be a proof of.
+pub struct SpaceInfo<Authority> {
+    /// The origin that governs the Space: it re-founds it while nothing is bound, changes its
+    /// program and hands its authority on. Any origin the runtime has (an account, a collective,
+    /// a community's origin), as a community's admin origin is.
+    pub authority: Authority,
+    /// The program the next anchor must be a proof of.
     pub program: ProgramId,
+    /// Its position in the Space's program history ([`ProgramRecord`]).
+    pub program_version: ProgramVersion,
     /// How many binds the Space holds. While it is above zero, only the reset origin can move
     /// the head off its anchored chain.
     pub binds: u32,
@@ -77,7 +86,32 @@ pub struct AnchorRecord<BlockNumber> {
     pub root: Root,
     /// The epoch the anchor belongs to.
     pub epoch: Epoch,
+    /// The program version its proof was checked against.
+    pub program_version: ProgramVersion,
     /// The block in which it was stored.
+    pub at: BlockNumber,
+}
+
+/// A program commitment a Space has run. Never removed, so the program behind any past anchor can
+/// be found.
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+)]
+pub struct ProgramRecord<BlockNumber> {
+    /// The commitment.
+    pub program: ProgramId,
+    /// The first anchor number it applies to.
+    pub from_anchor: AnchorNumber,
+    /// The block in which it was set.
     pub at: BlockNumber,
 }
 
@@ -164,7 +198,7 @@ pub struct AnchorStatement<SpaceId> {
     pub version: u8,
     /// The chain's genesis hash.
     pub chain: [u8; 32],
-    /// The Space.
+    /// The Space: the identity a VOS network founded for it is initiated with.
     pub space: SpaceId,
     /// The head's epoch.
     pub epoch: Epoch,

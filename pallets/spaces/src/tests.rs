@@ -2,14 +2,16 @@
 
 use crate::{
     mock::*, AnchorNumber, AnchorRecord, Anchors, EpochCause, Epochs, Error, Event, Head, Heads,
-    MockVerifier, Pallet as SpacesPallet, ProgramId, Root, SpaceBinds, Spaces as SpacesStorage,
+    MockVerifier, NextSpaceId, Pallet as SpacesPallet, ProgramId, Programs, Root, SpaceBinds,
+    Spaces as SpacesStorage,
 };
 use codec::Encode;
 use frame_support::{assert_noop, assert_ok, BoundedVec};
 
 const OWNER: AccountId = 1;
 const RELAYER: AccountId = 2;
-const SPACE: u32 = 10;
+/// The first Space registered takes id 0.
+const SPACE: u32 = 0;
 const GENESIS: Root = [0u8; 32];
 
 fn root(n: u8) -> Root {
@@ -19,7 +21,7 @@ fn root(n: u8) -> Root {
 fn register() {
     assert_ok!(Spaces::register(
         RuntimeOrigin::signed(OWNER),
-        SPACE,
+        signed(OWNER),
         PROGRAM,
         GENESIS
     ));
@@ -69,7 +71,17 @@ mod register {
         new_test_ext().execute_with(|| {
             register();
             let info = SpacesStorage::<Test>::get(SPACE).unwrap();
-            assert_eq!((info.owner, info.program, info.binds), (OWNER, PROGRAM, 0));
+            assert_eq!(
+                (
+                    info.authority,
+                    info.program,
+                    info.program_version,
+                    info.binds
+                ),
+                (signed(OWNER), PROGRAM, 0, 0)
+            );
+            let program = Programs::<Test>::get(SPACE, 0).unwrap();
+            assert_eq!((program.program, program.from_anchor), (PROGRAM, 1));
             assert_eq!(
                 head(),
                 Head {
@@ -87,7 +99,7 @@ mod register {
             System::assert_last_event(
                 Event::<Test>::Registered {
                     space: SPACE,
-                    owner: OWNER,
+                    authority: signed(OWNER),
                     program: PROGRAM,
                     genesis: GENESIS,
                 }
@@ -97,12 +109,47 @@ mod register {
     }
 
     #[test]
-    fn refuses_an_existing_space() {
+    fn ids_are_assigned_in_sequence() {
         new_test_ext().execute_with(|| {
             register();
+            // Another authority, the same program and genesis: still a new Space, with the next id.
+            assert_ok!(Spaces::register(
+                RuntimeOrigin::signed(3),
+                signed(3),
+                PROGRAM,
+                GENESIS
+            ));
+            System::assert_last_event(
+                Event::<Test>::Registered {
+                    space: SPACE + 1,
+                    authority: signed(3),
+                    program: PROGRAM,
+                    genesis: GENESIS,
+                }
+                .into(),
+            );
+            assert_eq!(NextSpaceId::<Test>::get(), Some(SPACE + 2));
+            // One authority may govern several Spaces.
+            register();
+            assert_eq!(
+                SpacesStorage::<Test>::get(SPACE + 2).unwrap().authority,
+                signed(OWNER)
+            );
+        });
+    }
+
+    #[test]
+    fn ids_are_never_reused() {
+        new_test_ext().execute_with(|| {
+            NextSpaceId::<Test>::put(u32::MAX);
             assert_noop!(
-                Spaces::register(RuntimeOrigin::signed(3), SPACE, OTHER_PROGRAM, root(9)),
-                Error::<Test>::SpaceExists
+                Spaces::register(
+                    RuntimeOrigin::signed(OWNER),
+                    signed(OWNER),
+                    PROGRAM,
+                    GENESIS
+                ),
+                Error::<Test>::NoSpaceId
             );
         });
     }
@@ -111,7 +158,7 @@ mod register {
     fn needs_the_register_origin() {
         new_test_ext().execute_with(|| {
             assert_noop!(
-                Spaces::register(RuntimeOrigin::none(), SPACE, PROGRAM, GENESIS),
+                Spaces::register(RuntimeOrigin::none(), signed(OWNER), PROGRAM, GENESIS),
                 sp_runtime::DispatchError::BadOrigin
             );
         });
@@ -140,6 +187,7 @@ mod anchor {
                 Some(AnchorRecord {
                     root: root(1),
                     epoch: 0,
+                    program_version: 0,
                     at: 1
                 })
             );
@@ -251,7 +299,7 @@ mod anchor {
             register();
             assert_ok!(Spaces::register(
                 RuntimeOrigin::signed(OWNER),
-                SPACE + 1,
+                signed(OWNER),
                 PROGRAM,
                 GENESIS
             ));
@@ -358,6 +406,7 @@ mod refound {
                 Some(AnchorRecord {
                     root: root(2),
                     epoch: 0,
+                    program_version: 0,
                     at: 1
                 })
             );
@@ -365,12 +414,12 @@ mod refound {
     }
 
     #[test]
-    fn only_by_the_owner() {
+    fn only_by_the_authority() {
         new_test_ext().execute_with(|| {
             register();
             assert_noop!(
                 Spaces::refound(RuntimeOrigin::signed(RELAYER), SPACE, root(100)),
-                Error::<Test>::NotOwner
+                Error::<Test>::NotAuthority
             );
             assert_noop!(
                 Spaces::refound(RuntimeOrigin::signed(OWNER), SPACE + 1, root(100)),
@@ -573,6 +622,127 @@ mod statement {
             assert_eq!(s.chain, System::block_hash(0).0);
             assert_eq!((s.space, s.epoch, s.number), (SPACE, 0, 2));
             assert_eq!((s.prev_root, s.root), (root(1), root(2)));
+        });
+    }
+}
+
+mod set_program {
+    use super::*;
+
+    #[test]
+    fn changes_the_program_from_the_next_anchor_and_keeps_the_history() {
+        new_test_ext().execute_with(|| {
+            register();
+            anchor_next(root(1));
+            assert_ok!(Spaces::set_program(
+                RuntimeOrigin::signed(OWNER),
+                SPACE,
+                OTHER_PROGRAM
+            ));
+            System::assert_last_event(
+                Event::<Test>::ProgramSet {
+                    space: SPACE,
+                    version: 1,
+                    program: OTHER_PROGRAM,
+                    from_anchor: 2,
+                }
+                .into(),
+            );
+            let info = SpacesStorage::<Test>::get(SPACE).unwrap();
+            assert_eq!((info.program, info.program_version), (OTHER_PROGRAM, 1));
+            assert_eq!(Programs::<Test>::get(SPACE, 0).unwrap().program, PROGRAM);
+            assert_eq!(Programs::<Test>::get(SPACE, 1).unwrap().from_anchor, 2);
+
+            // A proof of the old program no longer anchors; one of the new program does.
+            assert_noop!(
+                anchor(2, root(2), prove(root(2), b"input"), b"input"),
+                Error::<Test>::WrongProgram
+            );
+            assert_ok!(anchor(
+                2,
+                root(2),
+                prove_with(&OTHER_PROGRAM, root(2), b"input"),
+                b"input"
+            ));
+            // Each anchor names the program version it was checked against.
+            assert_eq!(Anchors::<Test>::get(SPACE, 1).unwrap().program_version, 0);
+            assert_eq!(Anchors::<Test>::get(SPACE, 2).unwrap().program_version, 1);
+            // The head is untouched: the program changes, the state machine's history does not.
+            assert_eq!(head().epoch, 0);
+        });
+    }
+
+    #[test]
+    fn only_by_the_authority() {
+        new_test_ext().execute_with(|| {
+            register();
+            assert_noop!(
+                Spaces::set_program(RuntimeOrigin::signed(RELAYER), SPACE, OTHER_PROGRAM),
+                Error::<Test>::NotAuthority
+            );
+            assert_noop!(
+                Spaces::set_program(RuntimeOrigin::root(), SPACE, OTHER_PROGRAM),
+                Error::<Test>::NotAuthority
+            );
+        });
+    }
+}
+
+mod set_authority {
+    use super::*;
+
+    #[test]
+    fn the_authority_hands_the_space_on() {
+        new_test_ext().execute_with(|| {
+            register();
+            assert_ok!(Spaces::set_authority(
+                RuntimeOrigin::signed(OWNER),
+                SPACE,
+                signed(3)
+            ));
+            System::assert_last_event(
+                Event::<Test>::AuthoritySet {
+                    space: SPACE,
+                    authority: signed(3),
+                }
+                .into(),
+            );
+            assert_noop!(
+                Spaces::refound(RuntimeOrigin::signed(OWNER), SPACE, root(100)),
+                Error::<Test>::NotAuthority
+            );
+            assert_ok!(Spaces::refound(RuntimeOrigin::signed(3), SPACE, root(100)));
+        });
+    }
+
+    #[test]
+    fn the_reset_origin_recovers_a_space() {
+        new_test_ext().execute_with(|| {
+            register();
+            assert_ok!(Spaces::set_authority(
+                RuntimeOrigin::root(),
+                SPACE,
+                signed(4)
+            ));
+            assert_eq!(
+                SpacesStorage::<Test>::get(SPACE).unwrap().authority,
+                signed(4)
+            );
+        });
+    }
+
+    #[test]
+    fn nobody_else() {
+        new_test_ext().execute_with(|| {
+            register();
+            assert_noop!(
+                Spaces::set_authority(RuntimeOrigin::signed(RELAYER), SPACE, signed(RELAYER)),
+                Error::<Test>::NotAuthority
+            );
+            assert_noop!(
+                Spaces::set_authority(RuntimeOrigin::root(), SPACE + 1, signed(4)),
+                Error::<Test>::UnknownSpace
+            );
         });
     }
 }

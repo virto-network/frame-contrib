@@ -39,13 +39,6 @@ fc-pallet-orders = { path = "./pallets/orders", version = "3.0.0-pre.2", default
 fc-pallet-pass = { path = "./pallets/pass", version = "3.0.0-pre.2", default-features = false }
 fc-pallet-spaces = { path = "./pallets/spaces", version = "3.0.0-pre.2", default-features = false }
 
-# VOS's STARK verifier (`fc-pallet-spaces`, feature `vos-verifier`): Circle STARK over M31, on Stwo.
-vos-pvm-proof-verifier = { git = "https://codeberg.org/Virto/VOS", rev = "2bb78760df07a47aaa92b1fb74998815195ebab7", default-features = false }
-postcard = { version = "1", default-features = false, features = ["alloc"] }
-# stwo -> starknet-crypto -> starknet-ff pulls getrandom 0.2, which refuses `wasm32v1-none` unless the
-# embedder registers a source (`custom`). Verification never draws randomness.
-getrandom = { version = "0.2", default-features = false, features = ["custom"] }
-
 # Polkadot SDK
 frame = { version = "0.18.0", package = "polkadot-sdk-frame", default-features = false, features = ["runtime"] }
 frame-benchmarking = { version = "49.0.0", default-features = false }
@@ -98,10 +91,3 @@ members = [
   "traits/nonfungibles-helpers",
   "traits/payments",
 ]
-
-# For `fc-pallet-spaces`'s `vos-verifier` feature: Stwo at the verifier's revision with `dashmap`
-# (std-only, prover-only) made optional, so a feature-less Stwo is `no_std` and builds for
-# `wasm32v1-none`. The wasm builder copies this section into a runtime's wasm project.
-[patch."https://github.com/starkware-libs/stwo"]
-stwo = { git = "https://github.com/olanod/stwo", rev = "6df2fb305182bf9d0f77890215a5692affb8748e" }
-stwo-constraint-framework = { git = "https://github.com/olanod/stwo", rev = "6df2fb305182bf9d0f77890215a5692affb8748e" }

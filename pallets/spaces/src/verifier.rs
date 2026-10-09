@@ -1,13 +1,13 @@
 //! The seam between the pallet and a proof system.
 //!
-//! The pallet never decodes a proof. It hands the configured [`ProofVerifier`] the Space's
-//! [`ProgramId`], the submitted proof, the program's public input (opaque bytes the program
-//! decodes) and the output the pallet expects the program to have returned (an encoded
-//! [`AnchorStatement`](crate::AnchorStatement)). A backend accepts the proof only if it is a valid
-//! proof of that program whose public input/output hash binds exactly those bytes.
+//! The pallet never decodes a proof. It hands the configured [`ProofVerifier`] the program the
+//! Space currently runs ([`ProgramId`]), the submitted proof, the program's public input (opaque
+//! bytes only the program decodes) and the output the pallet expects the program to have returned
+//! (an encoded [`AnchorStatement`](crate::AnchorStatement)). A backend accepts the proof only if it
+//! is a valid proof of an execution of that program that binds exactly that input and that output.
 //!
-//! Two backends ship with the pallet: [`MockVerifier`], for tests and benchmarks only, and
-//! `vos::VosVerifier` (feature `vos-verifier`), VOS's STARK verifier.
+//! Backends for real proof systems live with those proof systems and implement this trait; this
+//! crate ships only [`MockVerifier`], for tests and benchmarks.
 
 use crate::ProgramId;
 use codec::{Decode, Encode};
@@ -45,30 +45,14 @@ pub trait ProofVerifier {
     fn weight(proof_len: u32) -> Weight;
 }
 
-/// VOS's binding of a program's public input and output (`vos::zk::compute_io_hash`): BLAKE2b-256
-/// over a domain tag and the BLAKE2b-256 of each field, each under its own tag. A VOS program
-/// leaves this hash in its registers at halt, and the proof carries it.
-pub fn vos_io_hash(public: &[u8], output: &[u8]) -> [u8; 32] {
-    fn field(bytes: &[u8]) -> [u8; 32] {
-        let mut v = alloc::vec::Vec::with_capacity(15 + bytes.len());
-        v.extend_from_slice(b"vos/zk/io-field");
-        v.extend_from_slice(bytes);
-        sp_io::hashing::blake2_256(&v)
-    }
-    let mut v = [0u8; 9 + 64];
-    v[..9].copy_from_slice(b"vos/zk/io");
-    v[9..41].copy_from_slice(&field(public));
-    v[41..].copy_from_slice(&field(output));
-    sp_io::hashing::blake2_256(&v)
-}
-
 /// A stand-in proof system, **for tests and benchmarks only**: it proves nothing.
 ///
-/// A "proof" is `program ‖ io_hash ‖ seal`, where `io_hash` is [`vos_io_hash`] of the public input
-/// and output and `seal` is BLAKE2b-256 of the first 64 bytes. It refuses the same way a real
-/// backend does: bytes of the wrong length are [`Malformed`](VerifyError::Malformed), another
-/// program is [`WrongProgram`](VerifyError::WrongProgram), another statement is
-/// [`NotBound`](VerifyError::NotBound), and a broken seal is [`Invalid`](VerifyError::Invalid).
+/// A "proof" is `program ‖ binding ‖ seal`: `binding` is BLAKE2b-256 of the SCALE encoding of
+/// `(public, output)`, and `seal` is BLAKE2b-256 of the first 64 bytes. It refuses the way a real
+/// backend does: bytes of the wrong length are [`Malformed`](VerifyError::Malformed), a broken
+/// seal is [`Invalid`](VerifyError::Invalid), another program is
+/// [`WrongProgram`](VerifyError::WrongProgram), and another input or output is
+/// [`NotBound`](VerifyError::NotBound).
 #[cfg(any(test, feature = "runtime-benchmarks"))]
 pub struct MockVerifier;
 
@@ -77,11 +61,15 @@ impl MockVerifier {
     /// The length of a mock proof.
     pub const PROOF_LEN: usize = 96;
 
+    fn binding(public: &[u8], output: &[u8]) -> [u8; 32] {
+        sp_io::hashing::blake2_256(&(public, output).encode())
+    }
+
     /// A proof `verify` accepts for `program`, `public` and `output`.
     pub fn prove(program: &ProgramId, public: &[u8], output: &[u8]) -> alloc::vec::Vec<u8> {
         let mut p = alloc::vec::Vec::with_capacity(Self::PROOF_LEN);
         p.extend_from_slice(program);
-        p.extend_from_slice(&vos_io_hash(public, output));
+        p.extend_from_slice(&Self::binding(public, output));
         let seal = sp_io::hashing::blake2_256(&p);
         p.extend_from_slice(&seal);
         p
@@ -105,7 +93,7 @@ impl ProofVerifier for MockVerifier {
         if &proof[..32] != program {
             return Err(VerifyError::WrongProgram);
         }
-        if proof[32..64] != vos_io_hash(public, output) {
+        if proof[32..64] != Self::binding(public, output) {
             return Err(VerifyError::NotBound);
         }
         Ok(())

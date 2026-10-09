@@ -15,26 +15,23 @@ fn assert_last_event<T: Config>(event: Event<T>) {
     frame_system::Pallet::<T>::assert_last_event(event.into());
 }
 
-fn register_space<T: Config>(owner: &T::AccountId) -> T::SpaceId {
-    let space = T::BenchmarkHelper::space(0);
-    Spaces::<T>::insert(
-        space,
-        SpaceInfo {
-            owner: owner.clone(),
-            program: T::BenchmarkHelper::program(),
-            binds: 0,
-        },
-    );
-    Heads::<T>::insert(
-        space,
-        Head {
-            epoch: 0,
-            number: 0,
-            root: [0u8; 32],
-            at: frame_system::Pallet::<T>::block_number(),
-        },
-    );
-    space
+/// `who`'s origin, and the authority it is.
+fn authority_of<T: Config>(who: T::AccountId) -> (T::RuntimeOrigin, PalletsOriginOf<T>) {
+    let origin: T::RuntimeOrigin = RawOrigin::Signed(who).into();
+    let caller = origin.caller().clone();
+    (origin, caller)
+}
+
+/// A Space governed by `authority`, registered through the call.
+fn register_space<T: Config>(authority: PalletsOriginOf<T>) -> Result<T::SpaceId, BenchmarkError> {
+    let origin =
+        T::CreateOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
+    let space = NextSpaceId::<T>::get()
+        .or_else(T::SpaceId::initial_value)
+        .ok_or(BenchmarkError::Weightless)?;
+    Pallet::<T>::register(origin, authority, T::BenchmarkHelper::program(), [0u8; 32])
+        .map_err(|_| BenchmarkError::Weightless)?;
+    Ok(space)
 }
 
 #[benchmarks]
@@ -44,22 +41,22 @@ mod benchmarks {
     #[benchmark]
     fn register() -> Result<(), BenchmarkError> {
         let origin =
-            T::RegisterOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
-        let space = T::BenchmarkHelper::space(0);
+            T::CreateOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
+        let (_, authority) = authority_of::<T>(whitelisted_caller());
         let program = T::BenchmarkHelper::program();
 
         #[extrinsic_call]
-        _(origin as T::RuntimeOrigin, space, program, [0u8; 32]);
+        _(origin as T::RuntimeOrigin, authority, program, [0u8; 32]);
 
-        assert!(Spaces::<T>::contains_key(space));
+        assert!(NextSpaceId::<T>::get().is_some());
         Ok(())
     }
 
     #[benchmark]
     fn anchor(q: Linear<0, { T::MaxPublicLen::get() }>) -> Result<(), BenchmarkError> {
-        let caller: T::AccountId = whitelisted_caller();
-        let space = register_space::<T>(&caller);
-        let head = Heads::<T>::get(space).expect("registered; qed");
+        let (_, authority) = authority_of::<T>(whitelisted_caller());
+        let space = register_space::<T>(authority)?;
+        let head = Heads::<T>::get(space).ok_or(BenchmarkError::Weightless)?;
         let root = [1u8; 32];
         let public = vec![0u8; q as usize];
         let statement = Pallet::<T>::anchor_statement(space, &head, root);
@@ -69,6 +66,7 @@ mod benchmarks {
             proof.try_into().map_err(|_| BenchmarkError::Weightless)?;
         let public: BoundedVec<u8, T::MaxPublicLen> =
             public.try_into().map_err(|_| BenchmarkError::Weightless)?;
+        let caller: T::AccountId = whitelisted_caller();
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), space, 1, root, proof, public);
@@ -79,8 +77,8 @@ mod benchmarks {
 
     #[benchmark]
     fn anchor_replay() -> Result<(), BenchmarkError> {
-        let caller: T::AccountId = whitelisted_caller();
-        let space = register_space::<T>(&caller);
+        let (_, authority) = authority_of::<T>(whitelisted_caller());
+        let space = register_space::<T>(authority)?;
         let root = [1u8; 32];
         Anchors::<T>::insert(
             space,
@@ -88,11 +86,13 @@ mod benchmarks {
             AnchorRecord {
                 root,
                 epoch: 0,
+                program_version: 0,
                 at: frame_system::Pallet::<T>::block_number(),
             },
         );
         let proof: BoundedVec<u8, T::MaxProofLen> = Default::default();
         let public: BoundedVec<u8, T::MaxPublicLen> = Default::default();
+        let caller: T::AccountId = whitelisted_caller();
 
         #[block]
         {
@@ -110,20 +110,21 @@ mod benchmarks {
     }
 
     #[benchmark]
-    fn refound() {
-        let caller: T::AccountId = whitelisted_caller();
-        let space = register_space::<T>(&caller);
+    fn refound() -> Result<(), BenchmarkError> {
+        let (origin, authority) = authority_of::<T>(whitelisted_caller());
+        let space = register_space::<T>(authority)?;
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(caller), space, [2u8; 32]);
+        _(origin as T::RuntimeOrigin, space, [2u8; 32]);
 
         assert_eq!(Heads::<T>::get(space).map(|h| h.epoch), Some(1));
+        Ok(())
     }
 
     #[benchmark]
     fn set_current_head() -> Result<(), BenchmarkError> {
-        let caller: T::AccountId = whitelisted_caller();
-        let space = register_space::<T>(&caller);
+        let (_, authority) = authority_of::<T>(whitelisted_caller());
+        let space = register_space::<T>(authority)?;
         let origin =
             T::ResetOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
 
@@ -137,6 +138,34 @@ mod benchmarks {
             previous: [0u8; 32],
             root: [3u8; 32],
             binds: 0,
+        });
+        Ok(())
+    }
+
+    #[benchmark]
+    fn set_program() -> Result<(), BenchmarkError> {
+        let (origin, authority) = authority_of::<T>(whitelisted_caller());
+        let space = register_space::<T>(authority)?;
+
+        #[extrinsic_call]
+        _(origin as T::RuntimeOrigin, space, [4u8; 32]);
+
+        assert!(Programs::<T>::contains_key(space, 1));
+        Ok(())
+    }
+
+    #[benchmark]
+    fn set_authority() -> Result<(), BenchmarkError> {
+        let (origin, authority) = authority_of::<T>(whitelisted_caller());
+        let space = register_space::<T>(authority)?;
+        let (_, next) = authority_of::<T>(account("next", 0, 0));
+
+        #[extrinsic_call]
+        _(origin as T::RuntimeOrigin, space, next.clone());
+
+        assert_last_event::<T>(Event::AuthoritySet {
+            space,
+            authority: next,
         });
         Ok(())
     }

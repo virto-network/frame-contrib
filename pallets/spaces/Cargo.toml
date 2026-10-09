@@ -7,7 +7,7 @@ name = "fc-pallet-spaces"
 repository.workspace = true
 readme = "README.md"
 version.workspace = true
-# Not released until the VOS verifier it can use is published as a versioned crate.
+# Not released until its weights are benchmarked (see DESIGN.md).
 publish = false
 
 [package.metadata.docs.rs]
@@ -23,14 +23,8 @@ sp-core.workspace = true
 sp-io.workspace = true
 sp-runtime.workspace = true
 
-vos-pvm-proof-verifier = { workspace = true, optional = true }
-postcard = { workspace = true, optional = true }
-getrandom = { workspace = true, optional = true }
-
 [features]
 default = ["std"]
-# VOS's STARK verifier as `vos::VosVerifier`.
-vos-verifier = ["dep:getrandom", "dep:postcard", "dep:vos-pvm-proof-verifier"]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
@@ -42,7 +36,6 @@ std = [
 	"frame-benchmarking?/std",
 	"frame-support/std",
 	"frame-system/std",
-	"getrandom?/std",
 	"scale-info/std",
 	"sp-core/std",
 	"sp-io/std",

@@ -72,7 +72,7 @@ version_group = "frame-contrib"
 
 [[package]]
 name = "fc-pallet-spaces"
-# Its Cargo.toml has `publish = false` until the VOS verifier it can use is a versioned crate.
+# Its Cargo.toml has `publish = false` until its weights are benchmarked.
 release = false
 publish = false
 

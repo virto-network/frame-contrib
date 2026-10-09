@@ -24,13 +24,15 @@ impl frame_system::Config for Test {
 pub const PROGRAM: ProgramId = [7u8; 32];
 pub const OTHER_PROGRAM: ProgramId = [8u8; 32];
 
+/// The authority origin of an account.
+pub fn signed(who: AccountId) -> OriginCaller {
+    OriginCaller::system(frame_system::RawOrigin::Signed(who))
+}
+
 #[cfg(feature = "runtime-benchmarks")]
 pub struct BenchmarkHelper;
 #[cfg(feature = "runtime-benchmarks")]
-impl crate::BenchmarkHelper<u32> for BenchmarkHelper {
-    fn space(i: u32) -> u32 {
-        i
-    }
+impl crate::BenchmarkHelper for BenchmarkHelper {
     fn program() -> ProgramId {
         PROGRAM
     }
@@ -42,7 +44,7 @@ impl crate::BenchmarkHelper<u32> for BenchmarkHelper {
 impl Config for Test {
     type SpaceId = u32;
     type BindKey = u32;
-    type RegisterOrigin = EnsureSigned<AccountId>;
+    type CreateOrigin = EnsureSigned<AccountId>;
     type ResetOrigin = EnsureRoot<AccountId>;
     type Verifier = MockVerifier;
     type MaxProofLen = ConstU32<1024>;

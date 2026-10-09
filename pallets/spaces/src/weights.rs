@@ -20,16 +20,18 @@ pub trait WeightInfo {
 	fn anchor_replay() -> Weight;
 	fn refound() -> Weight;
 	fn set_current_head() -> Weight;
+	fn set_program() -> Weight;
+	fn set_authority() -> Weight;
 }
 
 /// Placeholder weights for a runtime. TODO: generate.
 pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
-	/// Storage: `Spaces::Spaces` (r:1 w:1), `Spaces::Heads` (r:0 w:1), `Spaces::Epochs` (r:0 w:1)
+	/// Storage: `Spaces::NextSpaceId` (r:1 w:1), `Spaces::Spaces` (w:1), `Spaces::Programs` (w:1), `Spaces::Heads` (w:1), `Spaces::Epochs` (w:1)
 	fn register() -> Weight {
 		Weight::from_parts(25_000_000, 3_600)
 			.saturating_add(T::DbWeight::get().reads(1_u64))
-			.saturating_add(T::DbWeight::get().writes(3_u64))
+			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
 	/// Storage: `Spaces::Spaces` (r:1), `Spaces::Heads` (r:1 w:1), `Spaces::Anchors` (r:1 w:1).
 	/// Hashing the public input (twice, for the io-hash) grows with `q`.
@@ -56,6 +58,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(2_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
+	/// Storage: `Spaces::Spaces` (r:1 w:1), `Spaces::Heads` (r:1), `Spaces::Programs` (r:0 w:1)
+	fn set_program() -> Weight {
+		Weight::from_parts(25_000_000, 3_600)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(2_u64))
+	}
+	/// Storage: `Spaces::Spaces` (r:1 w:1)
+	fn set_authority() -> Weight {
+		Weight::from_parts(20_000_000, 3_600)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -63,7 +77,7 @@ impl WeightInfo for () {
 	fn register() -> Weight {
 		Weight::from_parts(25_000_000, 3_600)
 			.saturating_add(RocksDbWeight::get().reads(1_u64))
-			.saturating_add(RocksDbWeight::get().writes(3_u64))
+			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
 	fn anchor(q: u32) -> Weight {
 		Weight::from_parts(40_000_000, 3_600)
@@ -84,5 +98,17 @@ impl WeightInfo for () {
 		Weight::from_parts(25_000_000, 3_600)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
+	}
+	/// Storage: `Spaces::Spaces` (r:1 w:1), `Spaces::Heads` (r:1), `Spaces::Programs` (r:0 w:1)
+	fn set_program() -> Weight {
+		Weight::from_parts(25_000_000, 3_600)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(2_u64))
+	}
+	/// Storage: `Spaces::Spaces` (r:1 w:1)
+	fn set_authority() -> Weight {
+		Weight::from_parts(20_000_000, 3_600)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 }
