@@ -71,6 +71,12 @@ name = "fc-pallet-referenda-tracks"
 version_group = "frame-contrib"
 
 [[package]]
+name = "fc-pallet-spaces"
+# Its Cargo.toml has `publish = false` until its weights are benchmarked.
+release = false
+publish = false
+
+[[package]]
 name = "frame-contrib-traits"
 version_group = "frame-contrib"
 git_tag_enable = true
