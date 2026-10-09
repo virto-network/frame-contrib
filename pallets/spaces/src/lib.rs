@@ -16,8 +16,9 @@
 //!   its epoch, the anchor's number, the previous root and the new one). Anchors are numbered from
 //!   one with no gaps, never removed and never overwritten; resubmitting a stored anchor is a
 //!   no-op.
-//! - [`set_program`](Pallet::set_program): the Space's authority changes its program from the next
-//!   anchor on. Every past commitment is kept, with the anchors it applied to.
+//! - [`set_program`](Pallet::set_program) changes the Space's program from the next anchor on: by
+//!   its authority while nothing is bound, by the privileged origin otherwise. Every past
+//!   commitment is kept, with the anchors it applied to.
 //! - [`refound`](Pallet::refound) the Space on a new genesis root, by its authority, **only while
 //!   nothing is bound**. The anchor sequence continues where it stands.
 //! - [`set_current_head`](Pallet::set_current_head), by a privileged origin, sets the Space's
@@ -25,6 +26,11 @@
 //!   where they are; anchoring continues from the new root.
 //! - [`set_authority`](Pallet::set_authority): the authority (or the privileged origin) hands the
 //!   Space to another origin, as a community's admin origin is changed.
+//! - A Space has an **account**, [`space_account`](Pallet::space_account), derived from its id as
+//!   a community's is, which its authority spends from with
+//!   [`dispatch_as_account`](Pallet::dispatch_as_account); and an **origin** of its own,
+//!   [`RawOrigin`], dispatched with [`dispatch_as_space`](Pallet::dispatch_as_space) and accepted
+//!   by [`EnsureSpace`].
 //! - **Binds**, made and released by other pallets through [`SpaceBinds`], record that something
 //!   of value depends on the Space's anchored state. They are what stops a re-founding.
 //!

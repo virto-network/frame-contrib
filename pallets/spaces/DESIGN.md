@@ -37,8 +37,13 @@ other.
   the runtime has: an account, a collective, a community's own origin. One authority may govern
   several Spaces, so the authority is stored with the Space rather than as a reverse map;
 - a **program**, the 32-byte commitment the proof verifier recognises (for VOS, the program's
-  preprocessed-trace Merkle root). It is an **attribute** of the Space, not its identity: the
-  authority can change it, and every past commitment is kept with the first anchor it applied to;
+  preprocessed-trace Merkle root). It is an **attribute** of the Space, not its identity: it can be
+  switched (by the authority while nothing is bound, by the reset origin otherwise), and every past
+  commitment is kept with the first anchor it applied to;
+- an **account**, derived from the id as a community's account is (the pallet id's sub-account for
+  the Space id): deterministic, existing from registration on, so the Space can hold and spend funds;
+- an **origin** of its own, with which the Space acts as itself, and `EnsureSpace`, with which other
+  pallets accept it (as `EnsureCommunity` accepts a community's origin);
 - a **head**: the root the next transition starts from, the number of the last anchor, and the
   current epoch;
 - a gapless sequence of **anchors**, each a state root the chain accepted only with a proof that the
@@ -51,10 +56,12 @@ other.
 |---|---|---|
 | `register(authority, program, genesis)` | `CreateOrigin` | Creates the Space with the next id (in `Registered`), at `genesis`, epoch 0, program version 0 |
 | `anchor(space, number, root, proof, public)` | Any signed origin | Verifies the proof against the current program, stores anchor `number`, moves the head to `root` |
-| `set_program(space, program)` | The authority | The next anchor on must be a proof of `program`; the previous commitment stays in history |
+| `set_program(space, program)` | The authority while nothing is bound; `ResetOrigin` always | The next anchor on must be a proof of `program`; the previous commitment stays in history |
 | `refound(space, genesis)` | The authority | Only with no binds: opens a new epoch at `genesis`; the sequence continues |
 | `set_current_head(space, root)` | `ResetOrigin` | Opens a new epoch at `root` whatever the Space holds; the sequence continues |
 | `set_authority(space, authority)` | The authority, or `ResetOrigin` | Hands the Space on (the reset origin can recover a lost authority) |
+| `dispatch_as_space(space, call)` | The authority | Dispatches `call` with the Space's origin |
+| `dispatch_as_account(space, call)` | The authority | Dispatches `call` signed by the Space's account: how the Space spends its funds |
 | `SpaceBinds::{bind, unbind, is_bound}` | Other pallets (a trait, no extrinsic) | Records or releases a bind |
 
 | Storage | Key | Value |
@@ -110,7 +117,7 @@ Consequences:
 | | Anchors already stored | The anchor sequence | Proofs made against the old head | Binds |
 |---|---|---|---|---|
 | `anchor` | Unchanged | Advances by one | Fail (`NotBound`, or a no-op if it is this very anchor) | Unchanged |
-| `set_program` | Unchanged, with their program version | Unchanged | Fail (`WrongProgram`) | Unchanged |
+| `set_program` (authority, or privileged with binds) | Unchanged, with their program version | Unchanged | Fail (`WrongProgram`) | **Must be none** for the authority (`HasBinds`); carried over when the reset origin switches |
 | `refound` (authority) | Unchanged, under their epoch | Continues: the next anchor is `base + 1` | Fail | **Must be none**, or it is refused (`HasBinds`) |
 | `set_current_head` (privileged) | Unchanged, under their epoch | Continues: the next anchor is `base + 1` | Fail | **Carried over**, counted in the `HeadSet` event |
 
@@ -123,6 +130,9 @@ Consequences:
   still anchor, and it can release binds through the pallet that made them. A state machine that
   must start over after value is bound either takes a new Space (and moves its value through that
   value's own rules) or asks the reset origin.
+- **Once something is bound, the program is the rules that value depends on**, so switching it needs
+  the reset origin too. Without binds, the authority switches freely, for example to follow a new
+  proof format or a fixed program.
 - **`set_current_head` is the escape hatch**, the analogue of `Paras::set_current_head`, with which a
   relay chain's governance sets a parachain's head: the earlier heads stay in history, and the chain
   continues from the new one. Here the earlier anchors stay, a new epoch opens at the given root,
@@ -198,39 +208,36 @@ pallet is shaped to allow.
 2. **Found the VOS network** with the new Space id, running a program that imports the community's
    state (members, ranks, records) and commits to it. Its root is the Space's genesis; if the
    import must be redone, the authority re-founds the Space (`refound`) while nothing is bound.
-3. **Move value.** The community's assets move to an account the Space controls, and the pallet that
-   holds them binds them to the Space. From then on the Space's head can only move by proof, or by
-   the reset origin.
+3. **Move value.** The community, through its own account, transfers its assets to the Space's
+   account (`space_account`), and the pallet that accounts for them binds them to the Space. From
+   then on the Space's head, and its program, move only by proof or by the reset origin; the Space
+   spends with `dispatch_as_account`.
 4. **Hand over governance.** Optionally, `set_authority` moves the Space from the community's origin
    to one the Space's own members control. The community can stay as a public face, or be wound
    down by its own rules.
 
-Missing pieces: an account and an origin per Space (derived from its id, as a community's account
-is), so a Space can hold assets and act on chain; a record that a Space was migrated from a given
-community; and a decision on whether on-chain memberships are cleared once they live in the Space.
+Missing pieces: a record that a Space was migrated from a given community, and a decision on whether
+on-chain memberships are cleared once they live in the Space.
 
 ## 9. Open questions
 
-1. **Changing the program while value is bound.** The authority can change the program at any time.
-   With binds, that changes the rules value depends on. Should `set_program` need no binds (or the
-   reset origin when there are some), or a delay before it takes effect?
-2. **Who may submit anchors.** Anyone, today. Should a Space be able to restrict submission (to its
+1. **Who may submit anchors.** Anyone, today. Should a Space be able to restrict submission (to its
    authority, or to a set of keys), for example to control who pays?
-3. **Binds on reset.** `set_current_head` keeps every bind. Should it instead require none, or take an
+2. **Binds on reset.** `set_current_head` keeps every bind. Should it instead require none, or take an
    explicit list of binds to carry, or notify the pallets that made them?
-4. **Registration deposit.** Registration takes no deposit; a runtime must restrict `CreateOrigin`
+3. **Registration deposit.** Registration takes no deposit; a runtime must restrict `CreateOrigin`
    until it does. A `Consideration` (as other frame-contrib pallets hold) is the likely shape.
-5. **A Space's account and origin** (§8), and whether the reset origin's power to change a Space's
-   authority should be narrower than its power over the head.
-6. **Fees.** About 1.7 KSM per STANDARD proof at list price makes routine anchoring expensive. Fee
+4. **The reset origin's reach.** It can set a Space's head, switch its program with binds, and change
+   its authority. Should recovering an authority be a separate, narrower origin?
+5. **Fees.** About 1.7 KSM per STANDARD proof at list price makes routine anchoring expensive. Fee
    relief for Spaces (for example a gas tank that charges the bytes), batching several transitions
    into one proof, or a smaller proof system are the levers; which one is acceptable is a runtime
    decision.
-7. **The entering state.** For a program that takes a private witness, VOS does not yet pin the
+6. **The entering state.** For a program that takes a private witness, VOS does not yet pin the
    entering memory image, so the transition's starting point is bound only through the statement
    the program returns. A program must take `prev_root` from its inputs and refuse to return a
    statement whose `prev_root` it did not start from; the verifier cannot check that for it.
-8. **Soundness posture.** VOS documents its STARK at about 96 bits of conjectured security, with its
+7. **Soundness posture.** VOS documents its STARK at about 96 bits of conjectured security, with its
    own list of what a proof does not guarantee. An independent review of the verifier should come
    before a Space guards real value.
 
