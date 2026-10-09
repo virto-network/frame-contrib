@@ -22,6 +22,8 @@ pub trait WeightInfo {
 	fn set_current_head() -> Weight;
 	fn set_program() -> Weight;
 	fn set_authority() -> Weight;
+	fn dispatch_as_space() -> Weight;
+	fn dispatch_as_account() -> Weight;
 }
 
 /// Placeholder weights for a runtime. TODO: generate.
@@ -70,6 +72,16 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(1_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
+	/// Storage: `Spaces::Spaces` (r:1). The dispatched call's weight is added by the call.
+	fn dispatch_as_space() -> Weight {
+		Weight::from_parts(15_000_000, 3_600)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+	}
+	/// Storage: `Spaces::Spaces` (r:1). The dispatched call's weight is added by the call.
+	fn dispatch_as_account() -> Weight {
+		Weight::from_parts(15_000_000, 3_600)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -110,5 +122,15 @@ impl WeightInfo for () {
 		Weight::from_parts(20_000_000, 3_600)
 			.saturating_add(RocksDbWeight::get().reads(1_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// Storage: `Spaces::Spaces` (r:1). The dispatched call's weight is added by the call.
+	fn dispatch_as_space() -> Weight {
+		Weight::from_parts(15_000_000, 3_600)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+	}
+	/// Storage: `Spaces::Spaces` (r:1). The dispatched call's weight is added by the call.
+	fn dispatch_as_account() -> Weight {
+		Weight::from_parts(15_000_000, 3_600)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
 	}
 }

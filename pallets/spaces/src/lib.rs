@@ -56,9 +56,18 @@ pub use verifier::MockVerifier;
 pub use verifier::{ProofVerifier, VerifyError};
 pub use weights::*;
 
-use frame_support::{pallet_prelude::*, traits::Incrementable};
+use alloc::boxed::Box;
+use frame_support::{
+    dispatch::{GetDispatchInfo, PostDispatchInfo},
+    pallet_prelude::*,
+    traits::{Incrementable, OriginTrait},
+    PalletId,
+};
 use frame_system::pallet_prelude::*;
-use sp_runtime::traits::Zero;
+use sp_runtime::traits::{AccountIdConversion, Dispatchable, Zero};
+
+pub mod origin;
+pub use origin::{EnsureSpace, RawOrigin};
 
 /// The origin type a Space's authority is: any origin the runtime has.
 pub type PalletsOriginOf<T> =
@@ -93,7 +102,22 @@ pub mod pallet {
     use super::*;
 
     #[pallet::config]
-    pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
+    pub trait Config:
+        frame_system::Config<
+        RuntimeEvent: From<Event<Self>>,
+        RuntimeOrigin: From<Origin<Self>>,
+        RuntimeCall: From<Call<Self>>
+                         + GetDispatchInfo
+                         + Dispatchable<
+            RuntimeOrigin = Self::RuntimeOrigin,
+            PostInfo = PostDispatchInfo,
+        >,
+    >
+    {
+        /// Derives each Space's account, as a community's account is derived: the pallet id's
+        /// sub-account for the Space id.
+        #[pallet::constant]
+        type PalletId: Get<PalletId>;
         /// How Spaces are numbered. [`register`](Pallet::register) takes the next one.
         type SpaceId: Parameter + MaxEncodedLen + Copy + Incrementable;
         /// What other pallets bind to a Space (an asset id, for example).
@@ -101,7 +125,8 @@ pub mod pallet {
         /// Who may register a Space.
         type CreateOrigin: EnsureOrigin<Self::RuntimeOrigin>;
         /// Who may set a Space's head regardless of its binds (the analogue of the origin a relay
-        /// chain's governance uses for `Paras::set_current_head`), and recover its authority.
+        /// chain's governance uses for `Paras::set_current_head`), switch the program of a Space
+        /// that holds binds, and recover a Space's authority.
         type ResetOrigin: EnsureOrigin<Self::RuntimeOrigin>;
         /// The proof system anchors are checked with.
         type Verifier: ProofVerifier;
@@ -119,6 +144,11 @@ pub mod pallet {
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
+
+    /// A Space speaking as itself: what [`dispatch_as_space`](Pallet::dispatch_as_space)
+    /// dispatches with, and what [`EnsureSpace`] accepts.
+    #[pallet::origin]
+    pub type Origin<T> = RawOrigin<<T as Config>::SpaceId>;
 
     /// The id the next registered Space takes. Unset until the first registration, which takes
     /// the id type's initial value.
@@ -235,6 +265,16 @@ pub mod pallet {
         },
         /// A bind was released.
         Unbound { space: T::SpaceId, key: T::BindKey },
+        /// A call was dispatched with a Space's origin.
+        DispatchedAsSpace {
+            space: T::SpaceId,
+            result: DispatchResult,
+        },
+        /// A call was dispatched signed by a Space's account.
+        DispatchedAsAccount {
+            space: T::SpaceId,
+            result: DispatchResult,
+        },
     }
 
     #[pallet::error]
@@ -339,6 +379,9 @@ pub mod pallet {
                     cause: EpochCause::Registered,
                 },
             );
+            // The Space's account exists from registration on, as a community's does, so it can
+            // receive funds of any amount.
+            frame_system::Pallet::<T>::inc_providers(&Self::space_account(&space));
             Self::deposit_event(Event::Registered {
                 space,
                 authority,
@@ -458,8 +501,12 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Change the program `space` runs, from its next anchor on. Only its authority. The
-        /// previous commitment stays in [`Programs`], with the anchors it applied to.
+        /// Change the program `space` runs, from its next anchor on. The previous commitment stays
+        /// in [`Programs`], with the anchors it applied to.
+        ///
+        /// While nothing is bound to the Space, its authority switches freely. Once something is
+        /// bound, the program is the rules that value depends on, so only the reset origin can
+        /// switch it.
         #[pallet::call_index(4)]
         #[pallet::weight(T::WeightInfo::set_program())]
         pub fn set_program(
@@ -467,7 +514,14 @@ pub mod pallet {
             space: T::SpaceId,
             program: ProgramId,
         ) -> DispatchResult {
-            let mut info = Self::ensure_authority(origin, space)?;
+            let mut info = match T::ResetOrigin::try_origin(origin) {
+                Ok(_) => Spaces::<T>::get(space).ok_or(Error::<T>::UnknownSpace)?,
+                Err(origin) => {
+                    let info = Self::ensure_authority(origin, space)?;
+                    ensure!(info.binds == 0, Error::<T>::HasBinds);
+                    info
+                }
+            };
             let head = Heads::<T>::get(space).ok_or(Error::<T>::UnknownSpace)?;
             let version = info
                 .program_version
@@ -513,10 +567,59 @@ pub mod pallet {
             Self::deposit_event(Event::AuthoritySet { space, authority });
             Ok(())
         }
+
+        /// Dispatch `call` as `space` itself, with the Space's origin ([`RawOrigin`]), which
+        /// [`EnsureSpace`] accepts. Only its authority.
+        #[pallet::call_index(6)]
+        #[pallet::weight({
+            let di = call.get_dispatch_info();
+            (T::WeightInfo::dispatch_as_space().saturating_add(di.call_weight), di.class)
+        })]
+        pub fn dispatch_as_space(
+            origin: OriginFor<T>,
+            space: T::SpaceId,
+            call: Box<<T as frame_system::Config>::RuntimeCall>,
+        ) -> DispatchResultWithPostInfo {
+            Self::ensure_authority(origin, space)?;
+            let res = call.dispatch(RawOrigin::new(space).into());
+            Self::deposit_event(Event::DispatchedAsSpace {
+                space,
+                result: res.map(|_| ()).map_err(|e| e.error),
+            });
+            Ok(().into())
+        }
+
+        /// Dispatch `call` signed by `space`'s account ([`Pallet::space_account`]), so the Space
+        /// can hold and spend funds. Only its authority.
+        #[pallet::call_index(7)]
+        #[pallet::weight({
+            let di = call.get_dispatch_info();
+            (T::WeightInfo::dispatch_as_account().saturating_add(di.call_weight), di.class)
+        })]
+        pub fn dispatch_as_account(
+            origin: OriginFor<T>,
+            space: T::SpaceId,
+            call: Box<<T as frame_system::Config>::RuntimeCall>,
+        ) -> DispatchResultWithPostInfo {
+            Self::ensure_authority(origin, space)?;
+            let signer = frame_system::RawOrigin::Signed(Self::space_account(&space));
+            let res = call.dispatch(signer.into());
+            Self::deposit_event(Event::DispatchedAsAccount {
+                space,
+                result: res.map(|_| ()).map_err(|e| e.error),
+            });
+            Ok(().into())
+        }
     }
 }
 
 impl<T: Config> Pallet<T> {
+    /// The account of `space`: the pallet id's sub-account for the Space id, as a community's
+    /// account is derived. Deterministic, and the same whether or not the Space exists yet.
+    pub fn space_account(space: &T::SpaceId) -> T::AccountId {
+        T::PalletId::get().into_sub_account_truncating(space)
+    }
+
     /// The Space, if `origin` is its authority.
     fn ensure_authority(
         origin: OriginFor<T>,

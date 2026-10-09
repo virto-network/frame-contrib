@@ -673,17 +673,222 @@ mod set_program {
     }
 
     #[test]
-    fn only_by_the_authority() {
+    fn not_by_others() {
         new_test_ext().execute_with(|| {
             register();
             assert_noop!(
                 Spaces::set_program(RuntimeOrigin::signed(RELAYER), SPACE, OTHER_PROGRAM),
                 Error::<Test>::NotAuthority
             );
+        });
+    }
+}
+
+mod set_program_with_binds {
+    use super::*;
+
+    type Binds = SpacesPallet<Test>;
+
+    #[test]
+    fn the_authority_cannot_switch_once_something_is_bound() {
+        new_test_ext().execute_with(|| {
+            register();
+            assert_ok!(<Binds as SpaceBinds<_, _>>::bind(&SPACE, &5));
             assert_noop!(
-                Spaces::set_program(RuntimeOrigin::root(), SPACE, OTHER_PROGRAM),
+                Spaces::set_program(RuntimeOrigin::signed(OWNER), SPACE, OTHER_PROGRAM),
+                Error::<Test>::HasBinds
+            );
+            // Released, the authority switches freely again.
+            assert_ok!(<Binds as SpaceBinds<_, _>>::unbind(&SPACE, &5));
+            assert_ok!(Spaces::set_program(
+                RuntimeOrigin::signed(OWNER),
+                SPACE,
+                OTHER_PROGRAM
+            ));
+        });
+    }
+
+    #[test]
+    fn the_reset_origin_switches_with_binds() {
+        new_test_ext().execute_with(|| {
+            register();
+            anchor_next(root(1));
+            assert_ok!(<Binds as SpaceBinds<_, _>>::bind(&SPACE, &5));
+            assert_ok!(Spaces::set_program(
+                RuntimeOrigin::root(),
+                SPACE,
+                OTHER_PROGRAM
+            ));
+            System::assert_last_event(
+                Event::<Test>::ProgramSet {
+                    space: SPACE,
+                    version: 1,
+                    program: OTHER_PROGRAM,
+                    from_anchor: 2,
+                }
+                .into(),
+            );
+            // The bind stays, and the next anchor needs the new program.
+            assert!(<Binds as SpaceBinds<_, _>>::is_bound(&SPACE, &5));
+            assert_ok!(anchor(
+                2,
+                root(2),
+                prove_with(&OTHER_PROGRAM, root(2), b"input"),
+                b"input"
+            ));
+            assert_noop!(
+                Spaces::set_program(RuntimeOrigin::root(), SPACE + 1, PROGRAM),
+                Error::<Test>::UnknownSpace
+            );
+        });
+    }
+}
+
+mod space_account {
+    use super::*;
+    use frame_support::{traits::fungible::Inspect, PalletId};
+    use sp_runtime::traits::AccountIdConversion;
+
+    #[test]
+    fn is_derived_from_the_space_id() {
+        new_test_ext().execute_with(|| {
+            let expected: AccountId = PalletId(*b"fc/space").into_sub_account_truncating(SPACE);
+            // The same before and after registration, and on every call.
+            assert_eq!(SpacesPallet::<Test>::space_account(&SPACE), expected);
+            register();
+            assert_eq!(SpacesPallet::<Test>::space_account(&SPACE), expected);
+            assert_ne!(SpacesPallet::<Test>::space_account(&(SPACE + 1)), expected);
+            // It exists from registration on.
+            assert!(System::account_exists(&expected));
+        });
+    }
+
+    #[test]
+    fn holds_and_spends_funds() {
+        new_test_ext().execute_with(|| {
+            register();
+            let account = SpacesPallet::<Test>::space_account(&SPACE);
+            // Anyone can fund it, as a community's assets would move into it.
+            assert_ok!(Balances::transfer_allow_death(
+                RuntimeOrigin::signed(1),
+                account,
+                300
+            ));
+            assert_eq!(Balances::balance(&account), 300);
+            // Its authority spends from it.
+            let spend = Box::new(RuntimeCall::Balances(
+                pallet_balances::Call::transfer_allow_death {
+                    dest: 9,
+                    value: 100,
+                },
+            ));
+            assert_ok!(Spaces::dispatch_as_account(
+                RuntimeOrigin::signed(OWNER),
+                SPACE,
+                spend.clone()
+            ));
+            System::assert_last_event(
+                Event::<Test>::DispatchedAsAccount {
+                    space: SPACE,
+                    result: Ok(()),
+                }
+                .into(),
+            );
+            assert_eq!(Balances::balance(&account), 200);
+            assert_eq!(Balances::balance(&9), 100);
+            // Nobody else does.
+            assert_noop!(
+                Spaces::dispatch_as_account(RuntimeOrigin::signed(RELAYER), SPACE, spend),
                 Error::<Test>::NotAuthority
             );
+        });
+    }
+
+    #[test]
+    fn a_failing_call_is_reported() {
+        new_test_ext().execute_with(|| {
+            register();
+            let overspend = Box::new(RuntimeCall::Balances(
+                pallet_balances::Call::transfer_allow_death {
+                    dest: 9,
+                    value: 100,
+                },
+            ));
+            assert_ok!(Spaces::dispatch_as_account(
+                RuntimeOrigin::signed(OWNER),
+                SPACE,
+                overspend
+            ));
+            assert!(matches!(
+                System::events().last().map(|r| r.event.clone()),
+                Some(RuntimeEvent::Spaces(Event::DispatchedAsAccount {
+                    result: Err(_),
+                    ..
+                }))
+            ));
+        });
+    }
+}
+
+mod space_origin {
+    use super::*;
+    use crate::mock::space_user;
+
+    fn as_space() -> Box<RuntimeCall> {
+        Box::new(RuntimeCall::SpaceUser(space_user::Call::as_space {}))
+    }
+
+    #[test]
+    fn dispatches_as_the_space() {
+        new_test_ext().execute_with(|| {
+            register();
+            assert_ok!(Spaces::dispatch_as_space(
+                RuntimeOrigin::signed(OWNER),
+                SPACE,
+                as_space()
+            ));
+            System::assert_has_event(space_user::Event::<Test>::CalledBy { space: SPACE }.into());
+            System::assert_last_event(
+                Event::<Test>::DispatchedAsSpace {
+                    space: SPACE,
+                    result: Ok(()),
+                }
+                .into(),
+            );
+        });
+    }
+
+    #[test]
+    fn only_the_authority_speaks_for_the_space() {
+        new_test_ext().execute_with(|| {
+            register();
+            assert_noop!(
+                Spaces::dispatch_as_space(RuntimeOrigin::signed(RELAYER), SPACE, as_space()),
+                Error::<Test>::NotAuthority
+            );
+            assert_noop!(
+                Spaces::dispatch_as_space(RuntimeOrigin::signed(OWNER), SPACE + 1, as_space()),
+                Error::<Test>::UnknownSpace
+            );
+        });
+    }
+
+    #[test]
+    fn ensure_space_accepts_only_an_existing_space() {
+        new_test_ext().execute_with(|| {
+            use frame_support::traits::EnsureOrigin;
+            type E = crate::EnsureSpace<Test>;
+            register();
+            assert_eq!(
+                E::try_origin(crate::RawOrigin::new(SPACE).into()).ok(),
+                Some(SPACE)
+            );
+            assert!(E::try_origin(crate::RawOrigin::new(SPACE + 1).into()).is_err());
+            assert!(E::try_origin(RuntimeOrigin::signed(OWNER)).is_err());
+            assert!(E::try_origin(RuntimeOrigin::root()).is_err());
+            // Signed by the Space's account is not the Space's origin.
+            let account = SpacesPallet::<Test>::space_account(&SPACE);
+            assert!(E::try_origin(RuntimeOrigin::signed(account)).is_err());
         });
     }
 }

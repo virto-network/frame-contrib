@@ -170,5 +170,31 @@ mod benchmarks {
         Ok(())
     }
 
+    #[benchmark]
+    fn dispatch_as_space() -> Result<(), BenchmarkError> {
+        let (origin, authority) = authority_of::<T>(whitelisted_caller());
+        let space = register_space::<T>(authority)?;
+        let call: <T as frame_system::Config>::RuntimeCall =
+            frame_system::Call::<T>::remark { remark: vec![] }.into();
+
+        #[extrinsic_call]
+        _(origin as T::RuntimeOrigin, space, Box::new(call));
+
+        Ok(())
+    }
+
+    #[benchmark]
+    fn dispatch_as_account() -> Result<(), BenchmarkError> {
+        let (origin, authority) = authority_of::<T>(whitelisted_caller());
+        let space = register_space::<T>(authority)?;
+        let call: <T as frame_system::Config>::RuntimeCall =
+            frame_system::Call::<T>::remark { remark: vec![] }.into();
+
+        #[extrinsic_call]
+        _(origin as T::RuntimeOrigin, space, Box::new(call));
+
+        Ok(())
+    }
+
     impl_benchmark_test_suite!(Pallet, crate::mock::new_test_ext(), crate::mock::Test);
 }
