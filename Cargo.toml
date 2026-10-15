@@ -37,6 +37,7 @@ fc-pallet-communities = { path = "./pallets/communities", version = "3.0.0-pre.2
 fc-pallet-gas-transaction-payment = { path = "./pallets/gas-transaction-payment", version = "3.0.0-pre.2", default-features = false }
 fc-pallet-orders = { path = "./pallets/orders", version = "3.0.0-pre.2", default-features = false }
 fc-pallet-pass = { path = "./pallets/pass", version = "3.0.0-pre.2", default-features = false }
+fc-pallet-spaces = { path = "./pallets/spaces", version = "3.0.0-pre.2", default-features = false }
 
 # Polkadot SDK
 frame = { version = "0.18.0", package = "polkadot-sdk-frame", default-features = false, features = ["runtime"] }
