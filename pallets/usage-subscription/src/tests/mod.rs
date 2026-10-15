@@ -18,10 +18,11 @@ use sp_runtime::DispatchError;
 mod amendments;
 mod contracts;
 mod offers;
+mod payment_step;
 mod trials;
 
 /// The allowance of the offers in the tests.
-pub const ALLOWANCE: Weight = Weight::from_parts(1_000_000, 100_000);
+pub const ALLOWANCE: Weight = Weight::from_parts(10_000_000_000, 1_000_000);
 /// The price of one billing period.
 pub const PRICE: Balance = 100;
 /// The billing period of the offers in the tests: 30 days.
