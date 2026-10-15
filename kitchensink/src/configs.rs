@@ -654,10 +654,14 @@ pub mod benchmark_helpers {
             )
         }
 
-        /// Gives `who` a membership with a gas tank that holds `gas`.
+        /// Gives `who` as many memberships as the tank's scan bound, with a gas tank that holds
+        /// `gas` on the one the scan reaches last: the worst case for the check and preparation.
+        /// The burn reads the paying-item note and that one tank, whatever the account holds.
         fn setup_account(who: &AccountId, gas: Weight) -> DispatchResult {
+            use frame_contrib_traits::gas_tank::DefaultMaxScan;
+            use frame_support::traits::tokens::nonfungibles_v2::InspectEnumerable;
+
             const GAS_COLLECTION: CommunityId = 0;
-            const GAS_MEMBERSHIP: MembershipId = 0;
 
             Memberships::do_create_collection(
                 GAS_COLLECTION,
@@ -670,17 +674,22 @@ pub mod benchmark_helpers {
                     owner: TreasuryAccount::get(),
                 },
             )?;
-            <Memberships as frame_support::traits::tokens::nonfungibles_v2::Mutate<
-                AccountId,
-                pallet_nfts::ItemConfig,
-            >>::mint_into(
-                &GAS_COLLECTION,
-                &GAS_MEMBERSHIP,
-                who,
-                &Default::default(),
-                true,
-            )?;
-            MembershipsGasTank::make_tank(&(GAS_COLLECTION, GAS_MEMBERSHIP), Some(gas), None)
+            for membership in 0..<DefaultMaxScan as Get<u32>>::get() {
+                <Memberships as frame_support::traits::tokens::nonfungibles_v2::Mutate<
+                    AccountId,
+                    pallet_nfts::ItemConfig,
+                >>::mint_into(
+                    &GAS_COLLECTION,
+                    &MembershipId::from(membership),
+                    who,
+                    &Default::default(),
+                    true,
+                )?;
+            }
+            let last = Memberships::owned(who)
+                .last()
+                .ok_or(sp_runtime::DispatchError::Other("no membership was minted"))?;
+            MembershipsGasTank::make_tank(&last, Some(gas), None)
         }
     }
 
