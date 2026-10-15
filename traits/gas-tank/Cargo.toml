@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 name = "fc-traits-gas-tank"
 repository.workspace = true
+readme = "README.md"
 version.workspace = true
 
 [dependencies]
