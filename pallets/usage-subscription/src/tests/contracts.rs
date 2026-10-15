@@ -41,6 +41,7 @@ fn contract_starts_active_when_the_first_charge_succeeds() {
                 pending: None,
                 next_allowance: None,
                 amendment_seq: 0,
+                load: Some(ALLOWANCE * (CapacityPeriod::get() / U)),
             })
         );
         assert_eq!(
@@ -998,11 +999,13 @@ fn listings_weighs_the_contract_hooks_it_runs() {
             AccountId,
             u64,
         >>::max_hook_weight();
-        // An amendment coming into force, then a replacement taking effect.
+        // An amendment coming into force, then a replacement taking effect, or dropped and
+        // followed by a charge that brings an amended allowance into force.
         assert_eq!(
             hooks,
             <() as crate::WeightInfo>::hook_amendment_in_force()
                 .saturating_add(<() as crate::WeightInfo>::hook_replaced())
+                .saturating_add(<() as crate::WeightInfo>::hook_charged())
         );
 
         // Every listings call that can run them declares them, on top of its own weight, once

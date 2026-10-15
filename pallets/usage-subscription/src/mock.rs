@@ -495,11 +495,13 @@ impl EnsureOrigin<RuntimeOrigin> for EnsureGroup {
 
 pub const ADMIN: AccountId = AccountId::new([0xAD; 32]);
 pub const AMENDER: AccountId = AccountId::new([0xA3; 32]);
+pub const CAPACITY_ADMIN: AccountId = AccountId::new([0xCA; 32]);
 pub const PAYEE: AccountId = AccountId::new([0xBE; 32]);
 
 ord_parameter_types! {
     pub const Admin: AccountId = ADMIN;
     pub const Amender: AccountId = AMENDER;
+    pub const CapacityAdmin: AccountId = CAPACITY_ADMIN;
 }
 
 parameter_types! {
@@ -511,6 +513,10 @@ parameter_types! {
     pub const MaxMembershipScan: u32 = 4;
     pub const MaxPayingGroupChanges: u32 = 3;
     pub static MaxOffersPerPage: u32 = 5;
+    /// A week: allowances read as "so much a week".
+    pub const CapacityPeriod: u64 = 7 * DAYS;
+    /// The alert mark, a share of the capacity. A test may change it.
+    pub static CapacityAlertThreshold: Perbill = Perbill::from_percent(80);
 }
 
 parameter_types! {
@@ -552,6 +558,9 @@ impl crate::WeightInfo for TestWeights {
     fn amend_offer() -> Weight {
         <() as crate::WeightInfo>::amend_offer()
     }
+    fn set_capacity() -> Weight {
+        <() as crate::WeightInfo>::set_capacity()
+    }
     fn fee_path_check() -> Weight {
         <() as crate::WeightInfo>::fee_path_check()
     }
@@ -566,6 +575,9 @@ impl crate::WeightInfo for TestWeights {
     }
     fn hook_amendment_in_force() -> Weight {
         <() as crate::WeightInfo>::hook_amendment_in_force()
+    }
+    fn hook_charged() -> Weight {
+        <() as crate::WeightInfo>::hook_charged()
     }
     fn pool_path() -> Weight {
         PoolPathWeight::get().unwrap_or_else(<() as crate::WeightInfo>::pool_path)
@@ -585,6 +597,7 @@ impl fc_pallet_usage_subscription::Config for Test {
     type TerminateOrigin = EnsureRoot<AccountId>;
     type AmendOrigin = EnsureSignedBy<Amender, AccountId>;
     type GroupOrigin = EnsureGroup;
+    type CapacityOrigin = EnsureSignedBy<CapacityAdmin, AccountId>;
     type BlockNumberProvider = Clock;
     type MinUsagePeriod = MinUsagePeriod;
     type MinBillingPeriod = MinBillingPeriod;
@@ -592,6 +605,8 @@ impl fc_pallet_usage_subscription::Config for Test {
     type MaxMembershipScan = MaxMembershipScan;
     type MaxPayingGroupChanges = MaxPayingGroupChanges;
     type MaxOffersPerPage = MaxOffersPerPage;
+    type CapacityPeriod = CapacityPeriod;
+    type CapacityAlertThreshold = CapacityAlertThreshold;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = UsageBenchmarkHelper;
 }

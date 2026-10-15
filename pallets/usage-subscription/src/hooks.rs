@@ -15,14 +15,18 @@ impl<T: Config>
         MomentOf<T>,
     > for Pallet<T>
 {
-    /// The heaviest hooks one subscription can trigger together, in one call or one processed
+    /// A bound on the hooks one subscription can trigger together, in one call or one processed
     /// entry of the due queue: an offer's amendment coming into force, then a switch or
-    /// conversion allowed and taking effect. Every other combination does less: a refused or
-    /// failed replacement followed by a suspension, a default and an end reads only what these
-    /// read, and writes or removes only the contract and the account entry, which `on_replaced`
-    /// rewrites too.
+    /// conversion allowed and taking effect, or refused and dropped, followed by a charge that
+    /// brings an amended allowance into force. A refused or failed replacement, a suspension, a
+    /// default and an end read only what these read (the offer's amendment, the committed load
+    /// and the capacity included), and write or remove only the contract, the account entry, the
+    /// committed load, the offer's contract count and the capacity, which `on_replaced` rewrites
+    /// too.
     fn max_hook_weight() -> Weight {
-        T::WeightInfo::hook_amendment_in_force().saturating_add(T::WeightInfo::hook_replaced())
+        T::WeightInfo::hook_amendment_in_force()
+            .saturating_add(T::WeightInfo::hook_replaced())
+            .saturating_add(T::WeightInfo::hook_charged())
     }
 
     /// The contract recorded by `subscribe` started: billing period 0 is paid.
@@ -39,6 +43,10 @@ impl<T: Config>
         }
     }
 
+    /// A billing period was charged. An amended allowance whose first usage window has begun
+    /// comes into force for the contract now, if no earlier write brought it: its window may
+    /// start after the boundary the amendment took effect at, and a decrease leaves the
+    /// committed load only once it is in force (`REQ-CP-1`, `DEC-42`).
     fn on_charged(
         inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
         item: &OfferIdOf<T>,
@@ -46,7 +54,10 @@ impl<T: Config>
         period: u32,
         paid_through: MomentOf<T>,
     ) {
-        if let Some((group, _)) = Self::contract_of(inventory, item, who) {
+        if let Some((group, mut contract)) = Self::contract_of(inventory, item, who) {
+            if Self::fold_next_allowance(&mut contract, Self::now()) {
+                Contracts::<T>::insert(group, contract);
+            }
             Self::deposit_event(Event::<T>::ContractCharged {
                 group,
                 period,
@@ -76,26 +87,30 @@ impl<T: Config>
         }
     }
 
-    /// The contract is kept, blocking the group, until its commitment end (`REQ-CT-11`).
+    /// The contract is kept, blocking the group, until its commitment end (`REQ-CT-11`). Its
+    /// pool admits nothing more, so it releases its share of the committed load (`DEC-39`).
     fn on_defaulted(
         inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
         item: &OfferIdOf<T>,
         who: &T::AccountId,
         until: MomentOf<T>,
     ) {
-        if let Some((group, _)) = Self::contract_of(inventory, item, who) {
+        if let Some((group, mut contract)) = Self::contract_of(inventory, item, who) {
+            Self::release_load(&mut contract);
+            Contracts::<T>::insert(group, contract);
             Self::deposit_event(Event::<T>::ContractDefaulted { group, until });
         }
     }
 
-    /// The contract's record is removed in the same block, with the reason (`REQ-CT-12`).
+    /// The contract's record is removed in the same block, with the reason (`REQ-CT-12`), and
+    /// its share of the committed load released.
     fn on_ended(
         inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
         item: &OfferIdOf<T>,
         who: &T::AccountId,
         reason: SubscriptionEnd,
     ) {
-        if let Some((group, _)) = Self::contract_of(inventory, item, who) {
+        if let Some((group, contract)) = Self::contract_of(inventory, item, who) {
             let reason = match reason {
                 SubscriptionEnd::Completed => EndReason::Completed,
                 SubscriptionEnd::Cancelled => EndReason::Cancelled,
@@ -103,7 +118,7 @@ impl<T: Config>
                 SubscriptionEnd::Replaced => EndReason::Switched,
                 SubscriptionEnd::Terminated => EndReason::Terminated,
             };
-            Self::end_contract(&group, who, reason);
+            Self::end_contract(&group, who, &contract, reason);
         }
     }
 
@@ -152,6 +167,11 @@ impl<T: Config>
                 .filter(|amendment| amendment.seq > contract.amendment_seq)
                 .map(|amendment| {
                     contract.amendment_seq = amendment.seq;
+                    // The committed load took the increase at the enactment: the contract now
+                    // counts it in its own load.
+                    contract.load = contract
+                        .load
+                        .map(|load| load.saturating_add(amendment.load_increase));
                     (
                         amendment.terms.allowance,
                         first_window_from(contract.anchor, contract.usage_period, effective_at),
@@ -174,7 +194,8 @@ impl<T: Config>
 
     /// A switch or conversion took effect: the old contract ended (*switched* or *converted*),
     /// and a contract to `new_item` started at `new_anchor` with its period 0 charged, copying the
-    /// new offer's terms as they stand now (`REQ-CT-7`, `REQ-CT-13`, `INV-9`).
+    /// new offer's terms as they stand now (`REQ-CT-7`, `REQ-CT-13`, `INV-9`). The new contract's
+    /// load takes the old one's place in the committed load, in one update.
     fn on_replaced(
         inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
         item: &OfferIdOf<T>,
@@ -189,16 +210,25 @@ impl<T: Config>
             Some(PendingChange::Convert(_)) => EndReason::Converted,
             _ => EndReason::Switched,
         };
-        Self::end_contract(&group, who, reason);
+        Self::remove_contract(&group, who, reason);
+        Self::uncount_contract(&contract);
+        let released = Self::committed_by(&contract);
 
         // `allow_replacement` only lets a known offer take effect.
         let Some(record) = Offers::<T>::get(new_item) else {
+            Self::update_load(released, Weight::zero());
             return;
         };
         let seq =
             <T::Subscriptions as subs::Inspect<T::AccountId>>::item_amendment(inventory, new_item)
                 .map_or(0, |amendment| amendment.seq);
-        Contracts::<T>::insert(group, Contract::start(*new_item, &record, new_anchor, seq));
+        let load = Self::normalized(record.allowance, record.usage_period);
+        Self::update_load(released, load);
+        Self::count_contract(new_item);
+        Contracts::<T>::insert(
+            group,
+            Contract::start(*new_item, &record, new_anchor, seq, load),
+        );
         GroupOfAccount::<T>::insert(who, group);
         Self::deposit_event(Event::<T>::ContractStarted {
             group,
@@ -212,15 +242,15 @@ impl<T: Config>
     }
 
     /// A switch or conversion takes effect only into an open offer the group is still eligible
-    /// for, while the group is still usable (`REQ-CT-13`). The refusal is the reason it is
-    /// dropped.
+    /// for, while the group is still usable (`REQ-CT-13`), and only if it still fits the
+    /// capacity (`REQ-CP-3`). The refusal is the reason it is dropped.
     fn allow_replacement(
         inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
         item: &OfferIdOf<T>,
         who: &T::AccountId,
         new_item: &OfferIdOf<T>,
     ) -> Result<(), DispatchError> {
-        let Some((group, _)) = Self::contract_of(inventory, item, who) else {
+        let Some((group, contract)) = Self::contract_of(inventory, item, who) else {
             return Ok(());
         };
         let record = Offers::<T>::get(new_item).ok_or(Error::<T>::UnknownOffer)?;
@@ -237,7 +267,10 @@ impl<T: Config>
             record.kind != OfferKind::Trial || !TrialUsed::<T>::contains_key(group),
             Error::<T>::TrialUsed
         );
-        Ok(())
+        Self::ensure_fits(
+            Self::committed_by(&contract),
+            Self::normalized(record.allowance, record.usage_period),
+        )
     }
 
     /// The pending switch or conversion is cleared: cancelled by the group, or dropped with the

@@ -51,6 +51,10 @@ pub type ContractInfoOf<T> = ContractInfo<OfferIdOf<T>, GroupOf<T>, PriceOf<T>, 
 pub type OffersPageOf<T> = OffersPage<OfferIdOf<T>, OfferInfoOf<T>>;
 /// [`OfferAmendmentRecord`] of the pallet.
 pub type OfferAmendmentOf<T> = OfferAmendmentRecord<PriceOf<T>, MomentOf<T>>;
+/// [`CapacityState`] of the pallet.
+pub type CapacityStateOf<T> = CapacityState<MomentOf<T>>;
+/// [`CapacityInfo`] of the pallet.
+pub type CapacityInfoOf<T> = CapacityInfo<MomentOf<T>>;
 
 /// The notice of every amendment of a contract, or of an offer for its contracts, in billing
 /// periods: the first billing boundary at least one billing period after the amendment
@@ -174,6 +178,12 @@ pub struct OfferAmendmentRecord<Price, Moment> {
     pub terms: Terms<Price, Moment>,
     /// The tick at which it was enacted.
     pub enacted_at: Moment,
+    /// What the amendment raised each contract's normalized allowance by, per component: the
+    /// committed load took it at the enactment for every contract it covers (`DEC-42`). A contract
+    /// that has not applied the amendment counts it on top of its own load.
+    // No storage migration: the pallet is new in 2.4.0, so no stored amendment predates this
+    // field.
+    pub load_increase: Weight,
 }
 
 /// A change pending for a contract.
@@ -237,15 +247,24 @@ pub struct Contract<OfferId, Group, Moment> {
     pub next_allowance: Option<NextAllowance<Moment>>,
     /// The last amendment of its offer it has applied, or that was enacted before it started.
     pub amendment_seq: u32,
+    /// What it counts in the committed load: its allowance normalized to the capacity period,
+    /// raised by an increase from its enactment, and lowered by a decrease only once the lower
+    /// allowance is in force (`DEC-39`, `DEC-42`). `None` once it no longer counts: it
+    /// defaulted.
+    // No storage migration: the pallet is new in 2.4.0, so no stored contract predates this
+    // field.
+    pub load: Option<Weight>,
 }
 
 impl<OfferId, Group, Moment: AtLeast32BitUnsigned + Copy> Contract<OfferId, Group, Moment> {
-    /// A contract to `offer`, anchored at `anchor`, with a fresh window.
+    /// A contract to `offer`, anchored at `anchor`, with a fresh window, counting `load` in the
+    /// committed load.
     pub fn start(
         offer: OfferId,
         terms: &Offer<Group, Moment>,
         anchor: Moment,
         amendment_seq: u32,
+        load: Weight,
     ) -> Self
     where
         Group: Clone,
@@ -261,6 +280,7 @@ impl<OfferId, Group, Moment: AtLeast32BitUnsigned + Copy> Contract<OfferId, Grou
             pending: None,
             next_allowance: None,
             amendment_seq,
+            load: Some(load),
         }
     }
 
@@ -309,6 +329,119 @@ pub fn first_window_from<Moment: AtLeast32BitUnsigned + Copy>(
     // `period` is non-zero here.
     let windows = distance.saturating_add(period.saturating_sub(One::one())) / period;
     anchor.saturating_add(windows.saturating_mul(period))
+}
+
+/// `allowance` per `usage_period`, normalized to `capacity_period`: `⌈allowance ×
+/// capacity_period ÷ usage_period⌉`, per component, saturating (`DEC-39`, `REQ-CP-1`). A zero
+/// usage period counts as one tick.
+pub fn normalized_allowance<Moment: AtLeast32BitUnsigned + Copy>(
+    allowance: Weight,
+    usage_period: Moment,
+    capacity_period: Moment,
+) -> Weight {
+    let capacity_period: u128 = capacity_period.unique_saturated_into();
+    let usage_period: u128 = usage_period.unique_saturated_into();
+    let usage_period = usage_period.max(1);
+    let scale = |amount: u64| -> u64 {
+        u128::from(amount)
+            .saturating_mul(capacity_period)
+            .div_ceil(usage_period)
+            .try_into()
+            .unwrap_or(u64::MAX)
+    };
+    Weight::from_parts(scale(allowance.ref_time()), scale(allowance.proof_size()))
+}
+
+/// A capacity change scheduled from a moment on (`DEC-40`).
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+)]
+pub struct ScheduledCapacity<Moment> {
+    /// The capacity from `from` on. `None` removes the cap.
+    pub capacity: Option<Weight>,
+    /// The tick from which it applies: the first read at or after it applies it.
+    pub from: Moment,
+}
+
+/// The capacity the allowance sold is capped against (`DEC-40`, `DEC-44`). The default is no
+/// cap and nothing scheduled.
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+)]
+pub struct CapacityState<Moment> {
+    /// The capacity now, per component. `None` is no cap.
+    pub current: Option<Weight>,
+    /// The one pending change, if any.
+    pub scheduled: Option<ScheduledCapacity<Moment>>,
+    /// Whether the committed load was at or above the alert mark in some component at its last
+    /// update: `CapacityThresholdCrossed` is emitted again only after it falls below the mark
+    /// (`DEC-44`).
+    pub above_threshold: bool,
+}
+
+impl<Moment> Default for CapacityState<Moment> {
+    fn default() -> Self {
+        Self {
+            current: None,
+            scheduled: None,
+            above_threshold: false,
+        }
+    }
+}
+
+impl<Moment: PartialOrd + Copy> CapacityState<Moment> {
+    /// Applies the scheduled change if `now` is at or after its moment. Whether it did.
+    pub fn apply_due(&mut self, now: Moment) -> bool {
+        match self.scheduled {
+            Some(change) if now >= change.from => {
+                self.current = change.capacity;
+                self.scheduled = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The capacity a sale must fit (`DEC-41`): the current one, or, per component, the lower of
+    /// it and a scheduled change below it. A scheduled increase does not count before its
+    /// moment. `None` is no cap.
+    pub fn binding(&self) -> Option<Weight> {
+        let scheduled = self.scheduled.and_then(|change| change.capacity);
+        match (self.current, scheduled) {
+            (Some(current), Some(scheduled)) => Some(current.min(scheduled)),
+            (current, scheduled) => current.or(scheduled),
+        }
+    }
+}
+
+/// The committed load and the capacity, as the `capacity` view function answers them
+/// (`DEC-43`, `REQ-CP-6`).
+#[derive(Encode, Decode, TypeInfo, Clone, PartialEq, Eq, Debug)]
+pub struct CapacityInfo<Moment> {
+    /// The committed load: the normalized allowances of the contracts that count.
+    pub load: Weight,
+    /// The capacity now. `None` is no cap.
+    pub capacity: Option<Weight>,
+    /// The pending scheduled change, if any.
+    pub scheduled: Option<ScheduledCapacity<Moment>>,
 }
 
 /// Why a contract ended (SPEC §5.2, *Ended*).
