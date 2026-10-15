@@ -509,6 +509,7 @@ parameter_types! {
     pub const MaxTrialPeriods: u32 = 3;
     pub const MaxMembershipScan: u32 = 4;
     pub const MaxPayingGroupChanges: u32 = 3;
+    pub static MaxOffersPerPage: u32 = 5;
 }
 
 parameter_types! {
@@ -577,6 +578,7 @@ impl fc_pallet_usage_subscription::Config for Test {
     type MaxTrialPeriods = MaxTrialPeriods;
     type MaxMembershipScan = MaxMembershipScan;
     type MaxPayingGroupChanges = MaxPayingGroupChanges;
+    type MaxOffersPerPage = MaxOffersPerPage;
 }
 
 // Accounts, groups and assets of the tests.
