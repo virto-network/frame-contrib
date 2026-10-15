@@ -985,3 +985,43 @@ fn hooks_ignore_subscriptions_that_are_not_contracts() {
         assert!(Contracts::<Test>::get(GROUP_A).is_none());
     });
 }
+
+// NFR-3, NFR-4
+#[test]
+fn listings_weighs_the_contract_hooks_it_runs() {
+    use frame_support::dispatch::GetDispatchInfo;
+
+    new_test_ext().execute_with(|| {
+        let hooks = <UsageSubscription as fc_traits_listings::OnSubscriptionChanged<
+            _,
+            _,
+            AccountId,
+            u64,
+        >>::max_hook_weight();
+        // An amendment coming into force, then a replacement taking effect.
+        assert_eq!(
+            hooks,
+            <() as crate::WeightInfo>::hook_amendment_in_force()
+                .saturating_add(<() as crate::WeightInfo>::hook_replaced())
+        );
+
+        // Every listings call that can run them declares them, on top of its own weight, once
+        // per subscription it acts on: a replacement can also end an expired record of the new
+        // key, so it declares them twice.
+        let charge_due = fc_pallet_listings::Call::<Test>::charge_due {
+            inventory_id: fc_pallet_listings::InventoryId(0, 0),
+            id: 0,
+            who: ALICE,
+        }
+        .get_dispatch_info()
+        .call_weight;
+        let one = <() as fc_pallet_listings::WeightInfo>::charge_due()
+            .max(<() as fc_pallet_listings::WeightInfo>::process_due_overflow());
+        let replacement = <() as fc_pallet_listings::WeightInfo>::process_due_replacement();
+        assert_eq!(
+            charge_due,
+            one.saturating_add(hooks)
+                .max(replacement.saturating_add(hooks.saturating_mul(2)))
+        );
+    });
+}

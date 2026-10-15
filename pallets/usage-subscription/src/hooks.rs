@@ -15,6 +15,16 @@ impl<T: Config>
         MomentOf<T>,
     > for Pallet<T>
 {
+    /// The heaviest hooks one subscription can trigger together, in one call or one processed
+    /// entry of the due queue: an offer's amendment coming into force, then a switch or
+    /// conversion allowed and taking effect. Every other combination does less: a refused or
+    /// failed replacement followed by a suspension, a default and an end reads only what these
+    /// read, and writes or removes only the contract and the account entry, which `on_replaced`
+    /// rewrites too.
+    fn max_hook_weight() -> Weight {
+        T::WeightInfo::hook_amendment_in_force().saturating_add(T::WeightInfo::hook_replaced())
+    }
+
     /// The contract recorded by `subscribe` started: billing period 0 is paid.
     fn on_started(
         inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),

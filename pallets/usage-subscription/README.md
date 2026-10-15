@@ -167,6 +167,156 @@ became invalid is ignored, never deleted. Naming a group the member holds no val
 named) and has made fewer than `MaxPayingGroupChanges` changes in the current rate window of `MinUsagePeriod` ticks,
 counted from tick 0 (`REQ-PC-5`).
 
+## The payment step: integration guide
+
+This section is for a runtime integrator wiring `ChargeUsageSubscription<T, S>` (`DEC-24`). Every pitfall at its end
+is kept out by a test in this crate.
+
+### What it is
+
+A transaction extension that wraps the runtime's fee extension `S` (for example
+`pallet_asset_tx_payment::ChargeAssetTxPayment` or `pallet_transaction_payment::ChargeTransactionPayment`). For each
+signed transaction it runs the pool meter's check: a ticket means the **pool path**, and `S` never runs; nothing means
+the **fee path**, and `S` validates, prepares and charges exactly as it would alone (`INV-12`). Unsigned, root and
+other non-signed origins always take the fee path.
+
+It is invisible to clients: its identifier, implicit data, type information, metadata and encoding are `S`'s.
+Replacing `S` with `ChargeUsageSubscription<Runtime, S>` changes neither the runtime metadata nor any transaction's
+bytes.
+
+### The check and the charge
+
+| Phase | The extension | The pool meter |
+|---|---|---|
+| Validation (in the pool, and again in the block) | Computes the estimate and runs the check. A ticket: `Val = Path::Pool(ticket)`, `ValidTransaction::default()` (no priority above a zero-tip fee-path transaction, `REQ-PL-10`), and `S` is not asked. Nothing: `S` validates, and its value is carried as `Path::Fee(v)` | `check(who, estimate)`: read only, and the same answer for the same arguments in the same state (`CTR-FEE-1`) |
+| Preparation | `Path::Fee(v)`: `S` prepares with `v`, and the pool is not asked again. `Path::Pool(t)`: the check runs again and must return the same ticket; otherwise the transaction is invalid with `InvalidTransaction::Custom(PATH_MISMATCH)`, and is never moved to a fee path validation did not check (`CTR-FEE-4`) | `check` again |
+| Post-dispatch | The extension's own unspent weight, what the path taken left of its declared weight (`CTR-FEE-5`), is refunded first, on a copy of the post-dispatch information. `Path::Pool(t)`: unless the transaction pays no fee, the actual metered weight, from that copy, is charged and `UsageCharged` deposited; the unspent weight is `declared − pool_path`. `Path::Fee(p)`: `S`'s post-dispatch, with that copy, so the signer pays only for what the fee path used (`REQ-PL-11`, `INV-12`); the unspent weight is `declared − check − S::weight(call)`, where `check` is the weight of the check up to where it stopped (below), plus what `S` reports of its own | `charge(ticket, actual)`: one write, never fails, charges `min(actual, estimate)` in the ticket's window (`CTR-FEE-2`) |
+
+### The ticket
+
+Admission's answer is a ticket: the member, its paying group, its membership, the contract (its offer and anchor),
+the usage window and the estimate. It is opaque outside this crate. Post-dispatch charges the pool the ticket names,
+in the window it names, whatever the call did meanwhile: a call that releases or transfers the signer's membership,
+changes its paying group, or cancels the contract is still charged to the group that admitted it (`INV-13`). If the
+contract's record is gone by then (the collective terminated it during dispatch), or the group's contract is no
+longer the one the ticket names, nothing is charged: there is no pool of that contract left to charge.
+
+### Placement in `TransactionExtensions`
+
+Put it where the fee extension would be, wrapping it:
+
+- **After `CheckWeight`**, so the block has booked the transaction before the pool is asked, and the estimate is the
+  weight `CheckWeight` books.
+- **Inside `SkipCheckIfFeeless`**, which is required (`REQ-PC-5`), exactly as the fee extension would be: a feeless call
+  (such as a free `set_paying_group`) then skips both paths, and touches no pool. `#[pallet::feeless_if]` does nothing
+  without it: a free change would be charged to a pool or to the signer, and a member of several groups with no balance
+  could never name one.
+- **Around the fee extension**, which it replaces in the tuple.
+
+```rust,ignore
+pub type TxExtension = (
+    frame_system::CheckNonZeroSender<Runtime>,
+    frame_system::CheckSpecVersion<Runtime>,
+    frame_system::CheckTxVersion<Runtime>,
+    frame_system::CheckGenesis<Runtime>,
+    frame_system::CheckEra<Runtime>,
+    frame_system::CheckNonce<Runtime>,
+    frame_system::CheckWeight<Runtime>,
+    pallet_skip_feeless_payment::SkipCheckIfFeeless<
+        Runtime,
+        fc_pallet_usage_subscription::ChargeUsageSubscription<
+            Runtime,
+            pallet_asset_tx_payment::ChargeAssetTxPayment<Runtime>,
+        >,
+    >,
+    frame_system::WeightReclaim<Runtime>,
+);
+```
+
+Two consequences of this order:
+
+- **`CheckNonce` needs an account.** It runs before the payment step, and refuses a signer with neither a provider
+  nor a sufficient reference (`InvalidTransaction::Payment`), whatever its pool. Holding a membership gives no
+  reference (an nfts item adds none), so a member that transacts on its pool with no balance at all, or names its
+  paying group for free, must have one some other way. Pass accounts do: `fc-pallet-pass` adds a provider when it
+  registers one.
+- **The pool is charged before any later reclaim.** The charge is taken in the payment step's post-dispatch, from
+  the weight reported then. An extension that lowers it afterwards, such as a parachain's storage-weight reclaim
+  measuring the proof size actually used, does so after the pool was charged: the pool pays the benchmarked proof
+  size, a small overcharge that never exceeds the estimate, so the allowance still holds (`INV-4`) and nothing is
+  reported as unspent (`INV-11`). A runtime that wants the refund reflected places the payment step after the
+  extension that makes it, where that extension's shape allows. `frame_system::WeightReclaim` only re-books the
+  block's weight from the same report, so its place changes no charge.
+
+### Declared weight and benchmarks
+
+The extension declares `max(pool_path, fee_path_check + S::weight(call))` (`CTR-FEE-6`): the worst of the pool path
+(the check in validation and in preparation, and the charge) and the fee path (the check, then `S`). Both come from
+this pallet's `WeightInfo`; `S`'s weight from its own benchmark. A transaction pays only for the path it took: what
+the other path would have used beyond it is the extension's unspent weight, refunded before anything is charged. On
+the fee path, the delta over `S` alone is what usage subscriptions add to a fee (`NFR-2`).
+
+On the fee path, the check keeps only its weight up to where it stopped, and the rest of `fee_path_check` is refunded:
+`fee_path_no_paying_group` for a signer holding no membership at all; `fee_path_no_contract` for a signer whose paying
+group is found, when it holds no membership of it, the group is not usable, or the group has no contract;
+`fee_path_check` for any other reason. A non-signed origin is not checked, and keeps none. The declared weight stays the
+worst case.
+
+The `pool_path` and `fee_path_check` benchmarks run the worst case of admission (PLAN §7): a member whose named
+paying group is stale (so admission reads the name, looks for a membership of it, and then scans) and who holds
+`MaxMembershipScan` memberships of one usable group, an *Active* standard contract whose offer has an amendment, and a
+pool at its limit minus the estimate (`pool_path`) or at its limit (`fee_path_check`, which then reads everything and
+fails at the last condition). The `fee_path_no_paying_group` and `fee_path_no_contract` benchmarks run the check's
+early exits at their own worst cases: a stale name and no membership; a stale name, the full scan of one usable group,
+and no contract. The runtime's `BenchmarkHelper` provides the group, its members, a price, and a second group for the
+stale name.
+
+### What is metered
+
+A pool is charged the weight the payment step sees the transaction consume, counted as `CheckWeight` counts it
+(`frame_system::calculate_consumed_extrinsic_weight`). It is taken before any storage-weight reclaim outside the payment
+step (`cumulus_pallet_weight_reclaim::StorageWeightReclaim`), so it is never less than what the block finally books
+for the transaction (`REQ-PL-6`):
+
+- **Estimate**, what the pool must cover: the declared call weight, plus every transaction extension's declared
+  weight, plus the base extrinsic weight of the call's class, with the encoded length added to proof size. Both
+  components must fit, or the fee path is taken; a pool is never partly applied (`REQ-PL-12`).
+- **Actual**, what the pool is charged: the call and extension weights left after dispatch and refunds
+  (`calc_actual_weight`), plus the same base and length, capped at the estimate, in each component.
+- **Nothing**, when the transaction pays no fee (the call is declared `Pays::No`, or reports it after dispatch).
+
+### Naming a paying group for free
+
+`set_paying_group` carries `#[pallet::feeless_if]`: it is feeless when the signer holds a valid membership of the group
+it names (or, clearing, of the group it had named) and has made fewer than `MaxPayingGroupChanges` changes in the
+current rate window. The runtime's `SkipCheckIfFeeless` then skips the payment step entirely, so a member with no
+balance can name its group, provided `CheckNonce` admits it: it must have a provider or a sufficient reference, as
+above. Beyond the limit it is an ordinary transaction. A member never names a group through a transaction extension's
+data.
+
+### Pitfalls
+
+The defects an earlier gas-tank payment step shipped with in production, each kept out of this one by a test in this crate:
+
+1. **Writes in validation.** A write in a check runs in the pool and again in the block, and is how that
+   step locked members out. Admission reads only; the window is computed, never reset by a write.
+2. **`expect` in preparation.** Preparing the fee extension with a value validation never produced panicked. A
+   changed answer is now `PATH_MISMATCH`, and the fee path is prepared only with its own validated value.
+3. **A window reset into the future.** The window start is computed from the anchor, and always contains now.
+4. **The call weight reported as unspent.** Only the extension's own unspent weight is reported: the part of its
+   declared weight the path taken did not use, plus, on the fee path, what `S` reports of its own. It is refunded before
+   the pool or `S` charges, so neither the pool nor the signer pays for it. The call's weight stays booked.
+5. **Admission and charge measuring different things.** Both are the metered weight above; the charge is the actual,
+   never the estimate.
+6. **An undeclared inner weight.** The declared weight covers the fee path too.
+7. **An unbounded scan.** Admission reads at most `MaxMembershipScan + 1` items to find a member's memberships, and
+   beyond that takes the fee path. The bound counts the items read, not only the memberships returned
+   (`Inspect::user_memberships_bounded`): a signing group account whose own stock `GroupCollectionMemberships` skips
+   takes the fee path once that stock reaches the bound, instead of reading all of it.
+8. **A charge decided after dispatch.** Who pays must not be looked up again after the call has run, or a call that
+   changes it escapes its charge (the gas tank now charges the tank it noted before dispatch, in O(1)). Here the
+   ticket decides who pays (`INV-13`): the group admission chose is the group charged.
+
 ## Configuration
 
 | Item | What it is | Constraint |
@@ -177,7 +327,7 @@ counted from tick 0 (`REQ-PC-5`).
 | `UsableGroup` | The groups that may subscribe and draw on a pool | At most one storage read. Never the collective's own group |
 | `Subscriptions` | Recurring subscriptions over listings items (e.g. `fc-pallet-listings`) | Its hooks notify this pallet. Only this pallet subscribes to, publishes in or administers `OfferInventory` |
 | `OfferInventory` | The collective's inventory, where every offer is an item | Not used by anything else |
-| `Payee` | The configured payee, owner of the inventory, recipient of every charge | — |
+| `Payee` | The configured payee, owner of the inventory, recipient of every charge | Holds the catalog deposits of every offer |
 | `StandardOfferOrigin` | Publishes and withdraws standard offers | The collective's administrative origin |
 | `CustomOfferOrigin` | Publishes and withdraws custom offers | The outcome of a collective referendum |
 | `TerminateOrigin` | Terminates contracts | The collective's |
@@ -190,6 +340,7 @@ counted from tick 0 (`REQ-PC-5`).
 | `MaxMembershipScan` | The most items admission reads to find a member's only group, skipped ones included | Small: every signed transaction pays for the reads |
 | `MaxPayingGroupChanges` | The free paying-group changes per rate window (`MinUsagePeriod` ticks) | — |
 | `MaxOffersPerPage` | The most offers one page of `open_offers` examines | Non-zero |
+| `BenchmarkHelper` | With `runtime-benchmarks`: a usable group, its administrative origin, its members, a price, another group for a stale paying-group name, how many subscriptions fill the due queue's buckets (0 without such a queue), whether its overflow is empty, and funds for the payee | The group's account can pay many billing periods |
 
 ## Calls
 
@@ -249,7 +400,9 @@ writes nothing (`REQ-OB-1`):
    (for communities, `fc_pallet_communities::CommunityAccount`), and `UsableGroup` to a one-read check that refuses the
    collective's own group.
 2. **Listings.** Bind `Subscriptions` to `fc-pallet-listings`, and set its `OnSubscriptionChanged` to this pallet
-   (in a tuple, if there are other dependants). Close direct subscription to `OfferInventory` in its
+   (in a tuple, if there are other dependants). Listings adds this pallet's `max_hook_weight`, the benchmarked
+   worst case of the hooks one subscription can trigger, to every call and due-queue entry that can notify, so its
+   weights cover the contract bookkeeping. Close direct subscription to `OfferInventory` in its
    `SubscribeOrigin`, so contracts are made only here. Use the same `BlockNumberProvider` in both.
 3. **Payments.** Listings charges each billing period as a direct payment through its `Payments`
    (`fc_traits_payments::DirectPayment`, implemented by `fc-pallet-payments`). The payments system's fee policy should

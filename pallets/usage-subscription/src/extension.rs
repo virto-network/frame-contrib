@@ -1,4 +1,8 @@
 //! The payment step of usage subscriptions: [`ChargeUsageSubscription`] (`DEC-24`).
+//!
+//! Its integration guide (the check and the charge, the ticket, placement, declared weight and
+//! benchmarks, what is metered, and the pitfalls it avoids) is in the
+//! [crate documentation](crate), section "The payment step: integration guide".
 
 use super::*;
 use codec::{Decode, DecodeWithMemTracking, Encode};
@@ -130,8 +134,9 @@ where
 {
     const IDENTIFIER: &'static str = S::IDENTIFIER;
     type Implicit = S::Implicit;
-    /// The pool path with its ticket, or the fee path with the inner extension's value.
-    type Val = Path<Ticket<T>, S::Val>;
+    /// The pool path with its ticket, or the fee path with the inner extension's value and the
+    /// weight of the check up to where it stopped (none when no signer was checked).
+    type Val = Path<Ticket<T>, (S::Val, Weight)>;
     /// The pool path with its ticket, or the fee path with the inner extension's value; either
     /// with this extension's own unspent weight on that path: what the path leaves of the
     /// declared weight (`CTR-FEE-5`).
@@ -146,7 +151,8 @@ where
     }
 
     /// The worst of both paths (`CTR-FEE-6`): the pool path (the check twice and the charge), or
-    /// the check and the fee path.
+    /// the check at its worst and the fee path. What the path taken leaves of it is refunded
+    /// after dispatch, including the rest of a check that stopped early.
     fn weight(&self, call: &T::RuntimeCall) -> Weight {
         T::WeightInfo::pool_path()
             .max(T::WeightInfo::fee_path_check().saturating_add(self.0.weight(call)))
@@ -162,13 +168,17 @@ where
         inherited_implication: &impl Implication,
         source: TransactionSource,
     ) -> ValidateResult<Self::Val, T::RuntimeCall> {
-        if let Some(who) = origin.as_system_origin_signer().cloned() {
-            if let Ok(ticket) = Pallet::<T>::check(&who, Self::estimate(info, len)) {
+        let checked = match origin.as_system_origin_signer().cloned() {
+            Some(who) => match Pallet::<T>::admit(&who, Self::estimate(info, len)) {
                 // No fee, no tip, and no priority above a zero-tip fee-path transaction
                 // (`REQ-PL-10`). Nothing was written (`INV-1`).
-                return Ok((ValidTransaction::default(), Path::Pool(ticket), origin));
-            }
-        }
+                Ok(ticket) => return Ok((ValidTransaction::default(), Path::Pool(ticket), origin)),
+                // The check up to the reason it stopped at.
+                Err((_, weight)) => weight,
+            },
+            // No signer: nothing is checked.
+            None => Weight::zero(),
+        };
 
         self.0
             .validate(
@@ -180,7 +190,7 @@ where
                 inherited_implication,
                 source,
             )
-            .map(|(valid, val, origin)| (valid, Path::Fee(val), origin))
+            .map(|(valid, val, origin)| (valid, Path::Fee((val, checked)), origin))
     }
 
     fn prepare(
@@ -193,12 +203,12 @@ where
     ) -> Result<Self::Pre, TransactionValidityError> {
         match val {
             // Validation chose the fee path: prepare it with its value. The pool is not asked
-            // again. Of the declared weight, the fee path uses the check and the inner extension's
-            // own: the rest, when the pool path weighs more, is this extension's unspent weight.
-            Path::Fee(val) => {
-                let unspent = self.weight(call).saturating_sub(
-                    T::WeightInfo::fee_path_check().saturating_add(self.0.weight(call)),
-                );
+            // again. Of the declared weight, the fee path uses the check up to where it stopped
+            // and the inner extension's own: the rest is this extension's unspent weight.
+            Path::Fee((val, checked)) => {
+                let unspent = self
+                    .weight(call)
+                    .saturating_sub(checked.saturating_add(self.0.weight(call)));
                 self.0
                     .prepare(val, origin, call, info, len)
                     .map(|pre| Path::Fee((pre, unspent)))
