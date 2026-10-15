@@ -203,6 +203,44 @@ fn fill_due_queue_for_next<T: Config>() -> Result<(), BenchmarkError> {
     fill_due_queue::<T>(&filler)
 }
 
+/// The worst case of the capacity for a sale or a load update (`DEC-41`, `DEC-42`): a capacity
+/// is set, so a sale is checked against it, and a scheduled change is due, so the first update
+/// applies it and stores the capacity. Both are as large as can be, so every sale fits.
+fn set_worst_case_capacity<T: Config>() {
+    Capacity::<T>::put(CapacityState {
+        current: Some(Weight::MAX),
+        scheduled: Some(ScheduledCapacity {
+            capacity: Some(Weight::MAX),
+            from: UsageSubscription::<T>::now(),
+        }),
+        above_threshold: false,
+    });
+}
+
+/// The worst case of the capacity for a sale that adds load: as [`set_worst_case_capacity`], but
+/// both the capacity and its due change are `load`, the committed load after the sale, so the sale
+/// fits exactly and reaches the alert mark, which emits `CapacityThresholdCrossed`.
+fn set_capacity_reached_by<T: Config>(load: Weight) {
+    Capacity::<T>::put(CapacityState {
+        current: Some(load),
+        scheduled: Some(ScheduledCapacity {
+            capacity: Some(load),
+            from: UsageSubscription::<T>::now(),
+        }),
+        above_threshold: false,
+    });
+}
+
+/// What `allowance` per the benchmarks' usage period commits.
+fn load_of<T: Config>(allowance: Weight) -> Weight {
+    UsageSubscription::<T>::normalized(allowance, T::MinUsagePeriod::get())
+}
+
+/// Whether the due scheduled change of [`set_worst_case_capacity`] was applied and stored.
+fn capacity_was_stored<T: Config>() -> bool {
+    Capacity::<T>::get().scheduled.is_none()
+}
+
 fn assert_last_event<T: Config>(event: Event<T>) {
     frame_system::Pallet::<T>::assert_last_event(<T as frame_system::Config>::RuntimeEvent::from(
         event,
@@ -339,7 +377,8 @@ mod benchmarks {
     /// The worst case: the group's old contract, *Suspended* past its grace end, is settled
     /// (ended, *lapsed*) first; the new contract's due-queue entry finds every bucket it probes
     /// full, and goes to its bucket's overflow; and the offer is a trial that names its
-    /// conversion, so the replacement is scheduled too.
+    /// conversion, so the replacement is scheduled too. A capacity is set, with a change due, and
+    /// the new contract fills it, so the alert fires.
     #[benchmark]
     fn subscribe() -> Result<(), BenchmarkError> {
         let group = T::BenchmarkHelper::group();
@@ -352,11 +391,18 @@ mod benchmarks {
         let filler = publish::<T>(OfferKind::Trial, free)?;
         fill_due_queue::<T>(&filler)?;
         T::BenchmarkHelper::fund_subscriber(&T::GroupAccount::convert(group));
+        let load = load_of::<T>(allowance());
+        set_capacity_reached_by::<T>(load);
         let origin = T::BenchmarkHelper::group_origin(&group);
 
         #[extrinsic_call]
         _(origin as T::RuntimeOrigin, offer, Some(target));
 
+        assert!(capacity_was_stored::<T>());
+        assert_has_event::<T>(Event::CapacityThresholdCrossed {
+            load,
+            capacity: load,
+        });
         assert_has_event::<T>(Event::ContractEnded {
             group,
             reason: EndReason::Lapsed,
@@ -372,7 +418,8 @@ mod benchmarks {
     /// outside any commitment with a switch pending ends at once. Listings drops the switch and
     /// ends the subscription, running both hooks. (A *Suspended* one outside its commitment takes
     /// the same path, but can only have a replacement pending as a trial's conversion that waits
-    /// for its term limit, suspended by a charge it could pay at first and not later.)
+    /// for its term limit, suspended by a charge it could pay at first and not later.) Its load
+    /// is released, with a capacity change due.
     #[benchmark]
     fn cancel() -> Result<(), BenchmarkError> {
         let group = T::BenchmarkHelper::group();
@@ -383,12 +430,14 @@ mod benchmarks {
         assert!(!T::BenchmarkHelper::due_overflow_is_empty());
         UsageSubscription::<T>::switch_offer(T::BenchmarkHelper::group_origin(&group), target)?;
         set_clock::<T>(subscription_of::<T>(&group, &offer)?.paid_through);
+        set_worst_case_capacity::<T>();
         let origin = T::BenchmarkHelper::group_origin(&group);
 
         #[extrinsic_call]
         _(origin as T::RuntimeOrigin);
 
         assert!(!Contracts::<T>::contains_key(group));
+        assert!(capacity_was_stored::<T>());
         assert!(T::BenchmarkHelper::due_overflow_is_empty());
         assert_has_event::<T>(Event::SwitchDropped {
             group,
@@ -402,12 +451,17 @@ mod benchmarks {
         Ok(())
     }
 
+    /// A switch from a standard contract (what it counts reads its offer's amendment) to a
+    /// larger allowance, checked against a capacity with a change due.
     #[benchmark]
     fn switch_offer() -> Result<(), BenchmarkError> {
         let group = T::BenchmarkHelper::group();
         let offer = publish::<T>(OfferKind::Standard, terms::<T>(None, None))?;
-        let target = publish::<T>(OfferKind::Standard, terms::<T>(None, None))?;
+        let mut larger = terms::<T>(None, None);
+        larger.allowance = allowance().saturating_mul(2);
+        let target = publish::<T>(OfferKind::Standard, larger)?;
         subscribe_group::<T>(&group, offer, None)?;
+        set_worst_case_capacity::<T>();
         let origin = T::BenchmarkHelper::group_origin(&group);
 
         #[extrinsic_call]
@@ -420,7 +474,8 @@ mod benchmarks {
         Ok(())
     }
 
-    /// A contract with a switch pending: the larger record, ended with it.
+    /// A contract with a switch pending: the larger record, ended with it. Its load is released,
+    /// with a capacity change due.
     #[benchmark]
     fn terminate_contract() -> Result<(), BenchmarkError> {
         let group = T::BenchmarkHelper::group();
@@ -430,6 +485,7 @@ mod benchmarks {
         subscribe_group::<T>(&group, offer, None)?;
         assert!(!T::BenchmarkHelper::due_overflow_is_empty());
         UsageSubscription::<T>::switch_offer(T::BenchmarkHelper::group_origin(&group), target)?;
+        set_worst_case_capacity::<T>();
         let origin =
             T::TerminateOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
 
@@ -437,6 +493,7 @@ mod benchmarks {
         _(origin as T::RuntimeOrigin, group);
 
         assert!(!Contracts::<T>::contains_key(group));
+        assert!(capacity_was_stored::<T>());
         assert!(T::BenchmarkHelper::due_overflow_is_empty());
         Ok(())
     }
@@ -462,7 +519,9 @@ mod benchmarks {
         Ok(())
     }
 
-    /// A custom contract with a switch pending, which the amendment drops.
+    /// A custom contract with a switch pending, which the amendment drops. The amendment raises
+    /// the allowance: a sale, checked against a capacity with a change due, which it fills, so the
+    /// alert fires.
     #[benchmark]
     fn amend_contract() -> Result<(), BenchmarkError> {
         let group = T::BenchmarkHelper::group();
@@ -470,12 +529,21 @@ mod benchmarks {
         let target = publish::<T>(OfferKind::Standard, terms::<T>(None, None))?;
         subscribe_group::<T>(&group, offer, None)?;
         UsageSubscription::<T>::switch_offer(T::BenchmarkHelper::group_origin(&group), target)?;
+        let mut amended = terms::<T>(None, Some(3));
+        amended.allowance = allowance().saturating_mul(2);
+        let load = load_of::<T>(amended.allowance);
+        set_capacity_reached_by::<T>(load);
         let origin =
             T::AmendOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
 
         #[extrinsic_call]
-        _(origin as T::RuntimeOrigin, group, terms::<T>(None, Some(3)));
+        _(origin as T::RuntimeOrigin, group, amended);
 
+        assert!(capacity_was_stored::<T>());
+        assert_has_event::<T>(Event::CapacityThresholdCrossed {
+            load,
+            capacity: load,
+        });
         assert!(matches!(
             Contracts::<T>::get(group).and_then(|contract| contract.pending),
             Some(PendingChange::Amend { .. })
@@ -502,16 +570,55 @@ mod benchmarks {
         Ok(())
     }
 
+    /// An amendment raising the allowance of an offer with a live contract: a sale for it,
+    /// checked against a capacity with a change due, which it fills, so the alert fires.
     #[benchmark]
     fn amend_offer() -> Result<(), BenchmarkError> {
         let offer = publish::<T>(OfferKind::Standard, terms::<T>(None, None))?;
+        subscribe_group::<T>(&T::BenchmarkHelper::group(), offer, None)?;
+        let mut amended = terms::<T>(None, None);
+        amended.allowance = allowance().saturating_mul(2);
+        let load = load_of::<T>(amended.allowance);
+        set_capacity_reached_by::<T>(load);
         let origin =
             T::AmendOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
 
         #[extrinsic_call]
-        _(origin as T::RuntimeOrigin, offer, terms::<T>(None, None));
+        _(origin as T::RuntimeOrigin, offer, amended);
 
         assert!(OfferAmendment::<T>::contains_key(offer));
+        assert!(capacity_was_stored::<T>());
+        assert_has_event::<T>(Event::CapacityThresholdCrossed {
+            load,
+            capacity: load,
+        });
+        Ok(())
+    }
+
+    /// A capacity declared now, at the committed load: a due scheduled change is applied first,
+    /// and the load reaches the alert mark, so the event is emitted.
+    #[benchmark]
+    fn set_capacity() -> Result<(), BenchmarkError> {
+        CommittedLoad::<T>::put(allowance());
+        Capacity::<T>::put(CapacityState {
+            current: None,
+            scheduled: Some(ScheduledCapacity {
+                capacity: None,
+                from: UsageSubscription::<T>::now(),
+            }),
+            above_threshold: false,
+        });
+        let origin =
+            T::CapacityOrigin::try_successful_origin().map_err(|_| BenchmarkError::Weightless)?;
+
+        #[extrinsic_call]
+        _(origin as T::RuntimeOrigin, Some(allowance()), None);
+
+        assert_last_event::<T>(Event::CapacityThresholdCrossed {
+            load: allowance(),
+            capacity: allowance(),
+        });
+        assert_eq!(Capacity::<T>::get().current, Some(allowance()));
         Ok(())
     }
 
@@ -611,36 +718,48 @@ mod benchmarks {
         Ok(())
     }
 
-    /// One half of `max_hook_weight`: a trial's conversion into a custom offer, allowed and
-    /// then taking effect. A switch into an unused trial offer reads one item more (the
-    /// `TrialUsed` entry) and writes it instead of `Offers`; `max_hook_weight` still covers that,
-    /// because its sum counts the reads of the group's account entry and the contract twice. It
-    /// reads the group's account entry, the
-    /// contract, the new offer, whether the group is usable, its eligibility and the new offer's
-    /// item amendment, and writes the contract, the account entry and the accepted custom offer.
+    /// One half of `max_hook_weight`: a switch from a standard contract into a larger custom
+    /// offer, allowed and then taking effect. A switch into an unused trial offer reads one item
+    /// more (the `TrialUsed` entry) and writes it instead of `Offers`; `max_hook_weight` still
+    /// covers that, because its sum counts the reads of the group's account entry and the
+    /// contract twice. It reads the group's account entry, the contract, its offer's amendment
+    /// (for what it counts), the new offer, whether the group is usable, its eligibility, the
+    /// committed load and the capacity (the replacement is checked against it) and the new
+    /// offer's item amendment, and writes the contract, the account entry, the accepted custom
+    /// offer, both offers' contract counts, the committed load and the capacity, whose scheduled
+    /// change is due, and which the new contract fills, so the alert fires.
     #[benchmark]
     fn hook_replaced() -> Result<(), BenchmarkError> {
         let group = T::BenchmarkHelper::group();
-        let custom = publish::<T>(OfferKind::Custom(group), terms::<T>(None, Some(6)))?;
-        let trial = publish::<T>(OfferKind::Trial, terms::<T>(Some(1), None))?;
-        subscribe_group::<T>(&group, trial, Some(custom))?;
+        let mut larger = terms::<T>(None, Some(6));
+        larger.allowance = allowance().saturating_mul(2);
+        let custom = publish::<T>(OfferKind::Custom(group), larger)?;
+        let offer = publish::<T>(OfferKind::Standard, terms::<T>(None, None))?;
+        subscribe_group::<T>(&group, offer, None)?;
+        let load = load_of::<T>(allowance().saturating_mul(2));
+        set_capacity_reached_by::<T>(load);
         let inventory = T::OfferInventory::get();
         let who = T::GroupAccount::convert(group);
-        let anchor = subscription_of::<T>(&group, &trial)?.paid_through;
+        let anchor = subscription_of::<T>(&group, &offer)?.paid_through;
 
         let allowed;
         #[block]
         {
             allowed =
                 <UsageSubscription<T> as OnSubscriptionChanged<_, _, _, _>>::allow_replacement(
-                    &inventory, &trial, &who, &custom,
+                    &inventory, &offer, &who, &custom,
                 );
             <UsageSubscription<T> as OnSubscriptionChanged<_, _, _, _>>::on_replaced(
-                &inventory, &trial, &who, &custom, anchor,
+                &inventory, &offer, &who, &custom, anchor,
             );
         }
 
         allowed?;
+        assert!(capacity_was_stored::<T>());
+        assert_has_event::<T>(Event::CapacityThresholdCrossed {
+            load,
+            capacity: load,
+        });
         assert_eq!(
             Contracts::<T>::get(group).map(|contract| contract.offer),
             Some(custom)
@@ -651,14 +770,19 @@ mod benchmarks {
 
     /// The other half of `max_hook_weight`: an offer's amendment coming into force for a standard
     /// contract, which can come before a replacement for the same subscription. It reads the
-    /// offer's amendment besides the contract, and writes the contract.
+    /// offer's amendment besides the contract, and writes the contract. The amendment lowers the
+    /// proof size, so, in force from the boundary's window, it releases load: it reads and writes
+    /// the committed load and the capacity, whose scheduled change is due.
     #[benchmark]
     fn hook_amendment_in_force() -> Result<(), BenchmarkError> {
         let group = T::BenchmarkHelper::group();
         let offer = publish::<T>(OfferKind::Standard, terms::<T>(None, None))?;
         subscribe_group::<T>(&group, offer, None)?;
         let mut amended = terms::<T>(None, None);
-        amended.allowance = allowance().saturating_mul(2);
+        amended.allowance = Weight::from_parts(
+            allowance().ref_time().saturating_mul(2),
+            allowance().proof_size() / 2,
+        );
         UsageSubscription::<T>::amend_offer(amend_origin::<T>()?, offer, amended)?;
         let inventory = T::OfferInventory::get();
         let who = T::GroupAccount::convert(group);
@@ -671,6 +795,7 @@ mod benchmarks {
         .map(|pending| pending.effective_at)
         .ok_or(BenchmarkError::Stop("no amendment pending"))?;
         set_clock::<T>(effective_at);
+        set_worst_case_capacity::<T>();
 
         #[block]
         {
@@ -690,6 +815,53 @@ mod benchmarks {
             group,
             effective_at,
         });
+        Ok(())
+    }
+
+    /// The last part of `max_hook_weight`: a charge that brings an amended allowance into force,
+    /// its first usage window having begun after the boundary the amendment took effect at. It
+    /// reads the group's account entry and the contract, and writes the contract. The allowance
+    /// is lower, so it releases load: it reads and writes the committed load and the capacity,
+    /// whose scheduled change is due.
+    #[benchmark]
+    fn hook_charged() -> Result<(), BenchmarkError> {
+        let group = T::BenchmarkHelper::group();
+        let offer = publish::<T>(OfferKind::Custom(group), terms::<T>(None, None))?;
+        subscribe_group::<T>(&group, offer, None)?;
+        let lower = Weight::from_parts(allowance().ref_time(), allowance().proof_size() / 2);
+        let now = UsageSubscription::<T>::now();
+        Contracts::<T>::try_mutate(group, |maybe_contract| {
+            let contract = maybe_contract.as_mut().ok_or(())?;
+            contract.next_allowance = Some(NextAllowance {
+                allowance: lower,
+                from_window: contract.window_at(now).ok_or(())?,
+            });
+            Ok::<_, ()>(())
+        })
+        .map_err(|_| BenchmarkError::Stop("no contract"))?;
+        set_worst_case_capacity::<T>();
+        let inventory = T::OfferInventory::get();
+        let who = T::GroupAccount::convert(group);
+        let paid_through = subscription_of::<T>(&group, &offer)?.paid_through;
+
+        #[block]
+        {
+            <UsageSubscription<T> as OnSubscriptionChanged<_, _, _, _>>::on_charged(
+                &inventory,
+                &offer,
+                &who,
+                1,
+                paid_through,
+            );
+        }
+
+        assert!(capacity_was_stored::<T>());
+        assert_eq!(
+            Contracts::<T>::get(group)
+                .map(|contract| (contract.allowance, contract.next_allowance)),
+            Some((lower, None))
+        );
+        assert_eq!(CommittedLoad::<T>::get(), load_of::<T>(lower));
         Ok(())
     }
 
