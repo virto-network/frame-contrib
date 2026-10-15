@@ -36,8 +36,12 @@ impl<T: Config> Pallet<T> {
         let priced = !terms.price.amount.is_zero();
         let kind_rules = match kind {
             OfferKind::Standard => terms.term.is_none() && terms.min_commitment.is_none() && priced,
-            // Trials are not offered yet.
-            OfferKind::Trial => false,
+            OfferKind::Trial => {
+                terms
+                    .term
+                    .is_some_and(|term| (1..=T::MaxTrialPeriods::get()).contains(&term))
+                    && terms.min_commitment.is_none()
+            }
             OfferKind::Custom(_) => priced,
         };
         ensure!(shaped && kind_rules, Error::<T>::InvalidTerms);
@@ -49,6 +53,53 @@ impl<T: Config> Pallet<T> {
         match kind {
             OfferKind::Custom(only) => only == group,
             OfferKind::Standard | OfferKind::Trial => true,
+        }
+    }
+
+    /// Whether a trial of `group` may name `offer` as its conversion: an open offer, not a trial,
+    /// that the group is eligible for (`REQ-CT-13`).
+    pub(crate) fn is_valid_conversion(offer: &OfferIdOf<T>, group: &GroupOf<T>) -> bool {
+        Offers::<T>::get(offer).is_some_and(|record| {
+            record.status == OfferStatus::Open
+                && record.kind != OfferKind::Trial
+                && Self::is_eligible(&record.kind, group)
+        })
+    }
+
+    /// The moment before which a contract may still have an offer amendment, enacted at
+    /// `enacted_at`, pending: the last boundary a contract's notice can end on, which is
+    /// [`AMENDMENT_NOTICE_PERIODS`] plus one billing periods after the enactment.
+    pub(crate) fn amendment_pending_until(
+        enacted_at: MomentOf<T>,
+        billing_period: MomentOf<T>,
+    ) -> MomentOf<T> {
+        use sp_runtime::traits::Saturating;
+        enacted_at.saturating_add(billing_period.saturating_mul(MomentOf::<T>::from(
+            AMENDMENT_NOTICE_PERIODS.saturating_add(1),
+        )))
+    }
+
+    /// Whether the contract holds an amended allowance that is not in force yet at `now`: its first
+    /// usage window has not begun.
+    pub(crate) fn allowance_pending(contract: &ContractOf<T>, now: MomentOf<T>) -> bool {
+        contract.next_allowance.as_ref().is_some_and(|next| {
+            contract
+                .window_at(now)
+                .is_none_or(|window| window < next.from_window)
+        })
+    }
+
+    /// Moves an amended allowance whose first window has come into the contract's allowance.
+    pub(crate) fn fold_next_allowance(contract: &mut ContractOf<T>, now: MomentOf<T>) {
+        let Some(window) = contract.window_at(now) else {
+            return;
+        };
+        if let Some(next) = contract.next_allowance.take() {
+            if window >= next.from_window {
+                contract.allowance = next.allowance;
+            } else {
+                contract.next_allowance = Some(next);
+            }
         }
     }
 
