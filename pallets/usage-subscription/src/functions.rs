@@ -89,16 +89,28 @@ impl<T: Config> Pallet<T> {
         })
     }
 
-    /// Moves an amended allowance whose first window has come into the contract's allowance.
-    pub(crate) fn fold_next_allowance(contract: &mut ContractOf<T>, now: MomentOf<T>) {
+    /// Moves an amended allowance whose first window has come into the contract's allowance. Its
+    /// load becomes the new allowance's: a decrease leaves the committed load only now that it is
+    /// in force, while an increase was counted at the enactment (`DEC-42`). Whether it moved one,
+    /// so the caller writes the contract.
+    ///
+    /// It runs when an amendment comes into force, at each charge, and before a custom contract
+    /// is amended again, so a decrease is released at the latest at the contract's first charge
+    /// after its first window began.
+    pub(crate) fn fold_next_allowance(contract: &mut ContractOf<T>, now: MomentOf<T>) -> bool {
         let Some(window) = contract.window_at(now) else {
-            return;
+            return false;
         };
-        if let Some(next) = contract.next_allowance.take() {
-            if window >= next.from_window {
+        match contract.next_allowance.take() {
+            Some(next) if window >= next.from_window => {
                 contract.allowance = next.allowance;
-            } else {
-                contract.next_allowance = Some(next);
+                let load = Self::normalized(next.allowance, contract.usage_period);
+                Self::set_contract_load(contract, load);
+                true
+            }
+            next => {
+                contract.next_allowance = next;
+                false
             }
         }
     }
@@ -144,9 +156,10 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    /// Records the contract of `group` to `offer`, anchored at `now`, then subscribes its account
-    /// through listings, which charges billing period 0 and calls `on_started`. A failed charge
-    /// fails the call, and nothing is kept.
+    /// Records the contract of `group` to `offer`, anchored at `now`, and adds its load to the
+    /// committed load, then subscribes its account through listings, which charges billing
+    /// period 0 and calls `on_started`. A failed charge fails the call, and nothing is kept. The
+    /// caller checks the capacity.
     pub(crate) fn start_contract(
         group: GroupOf<T>,
         account: &T::AccountId,
@@ -158,8 +171,11 @@ impl<T: Config> Pallet<T> {
         let seq =
             <T::Subscriptions as subs::Inspect<T::AccountId>>::item_amendment(&inventory, &offer)
                 .map_or(0, |amendment| amendment.seq);
-        Contracts::<T>::insert(group, Contract::start(offer, record, now, seq));
+        let load = Self::normalized(record.allowance, record.usage_period);
+        Contracts::<T>::insert(group, Contract::start(offer, record, now, seq, load));
         GroupOfAccount::<T>::insert(account, group);
+        Self::update_load(Weight::zero(), load);
+        Self::count_contract(&offer);
 
         <T::Subscriptions as subs::Mutate<T::AccountId>>::subscribe(&inventory, &offer, account)
             .map_err(|e| Self::listings_error(e, Error::<T>::ChargeFailed))?;
@@ -180,8 +196,22 @@ impl<T: Config> Pallet<T> {
         Self::deposit_event(Event::<T>::OfferWithdrawn { offer: *offer });
     }
 
-    /// Removes the contract of `group` and its account's entry, and says why (`REQ-CT-12`).
-    pub(crate) fn end_contract(group: &GroupOf<T>, account: &T::AccountId, reason: EndReason) {
+    /// Ends `contract`, the contract of `group`: releases what it counts in the committed load,
+    /// and removes it (`REQ-CT-12`, `DEC-42`).
+    pub(crate) fn end_contract(
+        group: &GroupOf<T>,
+        account: &T::AccountId,
+        contract: &ContractOf<T>,
+        reason: EndReason,
+    ) {
+        Self::update_load(Self::committed_by(contract), Weight::zero());
+        Self::uncount_contract(contract);
+        Self::remove_contract(group, account, reason);
+    }
+
+    /// Removes the contract of `group` and its account's entry, and says why (`REQ-CT-12`). The
+    /// caller releases its load.
+    pub(crate) fn remove_contract(group: &GroupOf<T>, account: &T::AccountId, reason: EndReason) {
         Contracts::<T>::remove(group);
         GroupOfAccount::<T>::remove(account);
         Self::deposit_event(Event::<T>::ContractEnded {

@@ -49,12 +49,14 @@ pub trait WeightInfo {
 	fn amend_contract() -> Weight;
 	fn cancel_switch() -> Weight;
 	fn amend_offer() -> Weight;
+	fn set_capacity() -> Weight;
 	fn pool_path() -> Weight;
 	fn fee_path_check() -> Weight;
 	fn fee_path_no_paying_group() -> Weight;
 	fn fee_path_no_contract() -> Weight;
 	fn hook_replaced() -> Weight;
 	fn hook_amendment_in_force() -> Weight;
+	fn hook_charged() -> Weight;
 }
 
 /// Weights for `fc_pallet_usage_subscription`, generated with the FRAME Contrib kitchensink runtime on reference hardware.
@@ -310,6 +312,16 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(6_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
+	/// Placeholder until the benchmark is run: `set_capacity` is new.
+	/// Storage: `UsageSubscription::CommittedLoad` (r:1 w:0)
+	/// Proof: `UsageSubscription::CommittedLoad` (`max_values`: Some(1), `max_size`: Some(18), added: 513, mode: `MaxEncodedLen`)
+	/// Storage: `UsageSubscription::Capacity` (r:1 w:1)
+	/// Proof: `UsageSubscription::Capacity` (`max_values`: Some(1), `max_size`: Some(45), added: 540, mode: `MaxEncodedLen`)
+	fn set_capacity() -> Weight {
+		Weight::from_parts(15_000_000, 1_530)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
 	/// Storage: `UsageSubscription::PayingGroup` (r:1 w:0)
 	/// Proof: `UsageSubscription::PayingGroup` (`max_values`: None, `max_size`: Some(59), added: 2534, mode: `MaxEncodedLen`)
 	/// Storage: `Memberships::Account` (r:7 w:0)
@@ -412,6 +424,20 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		Weight::from_parts(18_630_000, 3585)
 			.saturating_add(T::DbWeight::get().reads(3_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	/// Placeholder until the benchmark is run: `hook_charged` is new.
+	/// Storage: `UsageSubscription::GroupOfAccount` (r:1 w:0)
+	/// Proof: `UsageSubscription::GroupOfAccount` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `UsageSubscription::Contracts` (r:1 w:1)
+	/// Proof: `UsageSubscription::Contracts` (`max_values`: None, `max_size`: Some(137), added: 2612, mode: `MaxEncodedLen`)
+	/// Storage: `UsageSubscription::CommittedLoad` (r:1 w:1)
+	/// Proof: `UsageSubscription::CommittedLoad` (`max_values`: Some(1), `max_size`: Some(16), added: 511, mode: `MaxEncodedLen`)
+	/// Storage: `UsageSubscription::Capacity` (r:1 w:1)
+	/// Proof: `UsageSubscription::Capacity` (`max_values`: Some(1), `max_size`: Some(40), added: 535, mode: `MaxEncodedLen`)
+	fn hook_charged() -> Weight {
+		Weight::from_parts(25_000_000, 3602)
+			.saturating_add(T::DbWeight::get().reads(4_u64))
+			.saturating_add(T::DbWeight::get().writes(3_u64))
 	}
 }
 
@@ -667,6 +693,16 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads(6_u64))
 			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
+	/// Placeholder until the benchmark is run: `set_capacity` is new.
+	/// Storage: `UsageSubscription::CommittedLoad` (r:1 w:0)
+	/// Proof: `UsageSubscription::CommittedLoad` (`max_values`: Some(1), `max_size`: Some(18), added: 513, mode: `MaxEncodedLen`)
+	/// Storage: `UsageSubscription::Capacity` (r:1 w:1)
+	/// Proof: `UsageSubscription::Capacity` (`max_values`: Some(1), `max_size`: Some(45), added: 540, mode: `MaxEncodedLen`)
+	fn set_capacity() -> Weight {
+		Weight::from_parts(15_000_000, 1_530)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
 	/// Storage: `UsageSubscription::PayingGroup` (r:1 w:0)
 	/// Proof: `UsageSubscription::PayingGroup` (`max_values`: None, `max_size`: Some(59), added: 2534, mode: `MaxEncodedLen`)
 	/// Storage: `Memberships::Account` (r:7 w:0)
@@ -769,5 +805,19 @@ impl WeightInfo for () {
 		Weight::from_parts(18_630_000, 3585)
 			.saturating_add(RocksDbWeight::get().reads(3_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// Placeholder until the benchmark is run: `hook_charged` is new.
+	/// Storage: `UsageSubscription::GroupOfAccount` (r:1 w:0)
+	/// Proof: `UsageSubscription::GroupOfAccount` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `UsageSubscription::Contracts` (r:1 w:1)
+	/// Proof: `UsageSubscription::Contracts` (`max_values`: None, `max_size`: Some(137), added: 2612, mode: `MaxEncodedLen`)
+	/// Storage: `UsageSubscription::CommittedLoad` (r:1 w:1)
+	/// Proof: `UsageSubscription::CommittedLoad` (`max_values`: Some(1), `max_size`: Some(16), added: 511, mode: `MaxEncodedLen`)
+	/// Storage: `UsageSubscription::Capacity` (r:1 w:1)
+	/// Proof: `UsageSubscription::Capacity` (`max_values`: Some(1), `max_size`: Some(40), added: 535, mode: `MaxEncodedLen`)
+	fn hook_charged() -> Weight {
+		Weight::from_parts(25_000_000, 3602)
+			.saturating_add(RocksDbWeight::get().reads(4_u64))
+			.saturating_add(RocksDbWeight::get().writes(3_u64))
 	}
 }

@@ -71,7 +71,9 @@ fn offer_shows_its_terms_and_its_pending_amendment() {
             Some(OfferAmendmentRecord {
                 seq: 1,
                 terms: amended,
-                enacted_at: DAYS
+                enacted_at: DAYS,
+                // The allowance doubled: each contract it covers counts one more allowance.
+                load_increase: ALLOWANCE * (CapacityPeriod::get() / U),
             })
         );
         Clock::set(DAYS + 2 * B);

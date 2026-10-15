@@ -18,6 +18,7 @@ into them.
 | The **collective** | Its referendum origins: `StandardOfferOrigin`, `CustomOfferOrigin`, `TerminateOrigin`, and the dedicated `AmendOrigin` | Publish and withdraw offers, agree custom terms with one group, amend a custom contract or a standard offer, terminate a contract |
 | A **group** | Its administrative origin, `GroupOrigin` | Subscribe (optionally naming a trial's conversion), cancel, switch offer, cancel a switch or conversion |
 | A **member** | A signed transaction | Draw on its group's pool; name its paying group (`set_paying_group`) |
+| The **capacity origin** | `CapacityOrigin` | Declare or schedule the capacity the allowance sold is capped against |
 | The **configured payee** | Passive | Receive every charge |
 | **Anyone** | A signed transaction | Trigger a charge that is due (in the subscriptions system) |
 
@@ -126,6 +127,53 @@ The two clocks are independent (`REQ-BL-2`). Billing period *n* covers `[anchor 
 charged at its start. Usage window *k* covers `[anchor + k·U, anchor + (k+1)·U)`. A contract stores one window start
 and the weight used in it; the current window is computed from the anchor and the clock, and the stored usage counts
 only if it belongs to that window. Nothing is reset by a write, and a boundary passing needs no processing (`DEC-3`).
+
+## Sales capacity
+
+A deployment can cap the allowance it sells against the execution it can actually serve. The cap is opt-in: with no
+capacity set (the default), nothing is refused for capacity, and the pallet only keeps the load (`REQ-CP-1`–`REQ-CP-6`).
+The pallet knows a declared capacity and its clock, nothing more: it acquires, releases and schedules no capacity of
+its own.
+
+**The committed load** (`CommittedLoad`) is the sum, over the contracts that count, of each one's allowance
+normalized to `CapacityPeriod`: `⌈allowance × CapacityPeriod ÷ usage period⌉`, in `ref_time` and proof size apart.
+With a capacity period of a week, the figures read as "so much execution a week", and 2 520 contracts of one minute a
+week commit what 42 contracts of one hour a week do: the measure is the allowance, never a count of contracts. A
+contract counts from its start, trials included, until it ends or defaults: a *Defaulted* contract releases its share
+when it defaults, and nothing again when it ends. The load is a rate: a burst within one usage window is bounded by
+that window's allowance, and each block by the block limits.
+
+The load is updated where a contract is written, in O(1) with no loop: a start adds, an end or a default releases, a
+switch or conversion replaces the old contract's share with the new one's. An amendment that raises an allowance
+counts at once (for an offer, the increase times the offer's contracts that count, which the pallet keeps in
+`ContractsOnOffer`; a subscription to the offer's item made outside the pallet is no contract, and adds nothing),
+while each contract moves the increase into its own share when it applies the amendment. An amendment that lowers an
+allowance counts for a contract only once the lower allowance is in force for it, at the contract's next charge (or
+amendment) at or after the first usage window of the lower allowance, so the load never understates what can be
+drawn. A sale that would overflow the load in either component is refused (`CapacityExceeded`), with or without a
+capacity, so each release subtracts exactly what its contract added.
+
+**The capacity** (`Capacity`) is declared by `CapacityOrigin` with `set_capacity(capacity, from)`, per component.
+`None` removes the cap. With `from` `None`, it applies now, and a pending change stays pending; with a moment in the
+pallet's clock, it is scheduled, and takes effect at the first read at or after that moment. At most one change is
+scheduled: a new schedule replaces the pending one, and one from a moment already reached replaces it and applies at
+once. To drop a pending change, pass `from` = now. A capacity below the committed load in either component, now or
+scheduled, is refused (`CapacityBelowLoad`): releasing capacity needs the load to fit first, by withdrawing offers or
+amending allowances down with notice. A capacity with a zero component stops all sales in that component, since every
+allowance is non-zero in both, and the alert reads above the mark meanwhile.
+
+**A sale** is anything that raises the committed load: a subscription, a switch to a larger allowance, a trial's
+conversion, and an amendment that raises an allowance. It must fit the **binding capacity** in both components: the
+current capacity, or, per component, the lower of it and a scheduled change below it. A scheduled increase does not
+count before its moment, as a contract sold now runs now. A sale that does not fit is refused with
+`CapacityExceeded`, and nothing changes. A switch or conversion is checked when it is requested, and again at its
+boundary, where a refusal drops it with the reason.
+
+**The alert.** When a load update or a capacity change takes the load, in either component, to at least
+`CapacityAlertThreshold` of the binding capacity (the one sales are checked against, so the alert comes before sales
+stop), the pallet emits `CapacityThresholdCrossed { load, capacity }` with that capacity, once: not again while the
+load stays at or above the mark, and again only after it has fallen below. The `capacity()` view
+function returns the load, the capacity and the scheduled change in one read.
 
 ## Admission, metering and charging
 
@@ -340,6 +388,9 @@ The defects an earlier gas-tank payment step shipped with in production, each ke
 | `MaxMembershipScan` | The most items admission reads to find a member's only group, skipped ones included | Small: every signed transaction pays for the reads |
 | `MaxPayingGroupChanges` | The free paying-group changes per rate window (`MinUsagePeriod` ticks) | — |
 | `MaxOffersPerPage` | The most offers one page of `open_offers` examines | Non-zero |
+| `CapacityOrigin` | Declares or schedules the capacity | The deployment's governance of its execution capacity |
+| `CapacityPeriod` | The period every allowance is normalized to for the committed load and the capacity, in ticks | Non-zero. For example a week |
+| `CapacityAlertThreshold` | The share of the capacity at which `CapacityThresholdCrossed` is emitted | A `Perbill`, for example 80 % |
 | `BenchmarkHelper` | With `runtime-benchmarks`: a usable group, its administrative origin, its members, a price, another group for a stale paying-group name, how many subscriptions fill the due queue's buckets (0 without such a queue), whether its overflow is empty, and funds for the payee | The group's account can pay many billing periods |
 
 ## Calls
@@ -356,6 +407,7 @@ The defects an earlier gas-tank payment step shipped with in production, each ke
 | 7 | `amend_contract(group, terms)` | `AmendOrigin` | Amends a custom contract, with notice |
 | 8 | `cancel_switch()` | `GroupOrigin` | Drops the group's pending switch or conversion |
 | 9 | `amend_offer(offer, terms)` | `AmendOrigin` | Amends a standard offer and its contracts, with notice |
+| 10 | `set_capacity(capacity, from)` | `CapacityOrigin` | Declares the capacity now, or schedules it from a moment |
 
 Due charges are not a call of this pallet: the subscriptions system processes them, and anyone may trigger one there.
 
@@ -366,14 +418,14 @@ One per state change (`CTR-EVT-1`): `OfferPublished`, `OfferWithdrawn` (also whe
 `CancellationRequested`, `ContractEnded` (with its `EndReason`), `SwitchScheduled`, `SwitchCancelled`,
 `SwitchDropped` (with the reason), `ConversionScheduled`, `ConversionCancelled`, `ConversionDropped` (with the
 reason), `OfferAmended` (with its last boundary), `ContractAmended` (with its effective boundary),
-`ContractAmendmentInForce`, `PayingGroupSet`; and `UsageCharged`, a pool-path transaction's only event
-(`CTR-EVT-2`).
+`ContractAmendmentInForce`, `PayingGroupSet`, `CapacitySet`, `CapacityScheduled`, `CapacityThresholdCrossed`; and
+`UsageCharged`, a pool-path transaction's only event (`CTR-EVT-2`).
 
 ## Errors
 
 `InvalidTerms`, `UnknownOffer`, `OfferWithdrawn`, `NotEligible`, `AlreadyContracted`, `ChargeFailed`, `NoContract`,
 `SwitchPending`, `ChangePending`, `NoPendingSwitch`, `InvalidConversion`, `GroupUnusable`, `TrialUsed`, `NotAMember`,
-and `BadOrigin`: SPEC §10's names (`CTR-CALL-2`). The subscriptions system's refusals are mapped to them. In the
+`CapacityExceeded`, `CapacityBelowLoad`, and `BadOrigin`: SPEC §10's names (`CTR-CALL-2`). The subscriptions system's refusals are mapped to them. In the
 payment step, a preparation that disagrees with validation is `InvalidTransaction::Custom(PATH_MISMATCH)`
 (`ERR-PathMismatch`); a failing fee path is the fee extension's own error (`ERR-Payment`).
 
@@ -392,6 +444,7 @@ writes nothing (`REQ-OB-1`):
 | `trial_used(group)` | Whether the group has started a trial |
 | `transfer_policy(group)` | The group's transfer policy, as its memberships manager keeps it |
 | `would_waive(account, estimate)` | The pool path with the remainder, or the fee path with the first condition of admission that fails |
+| `capacity()` | The committed load, the capacity now (`None`: no cap) and the pending scheduled change |
 
 ## Wiring it
 
@@ -412,3 +465,7 @@ writes nothing (`REQ-OB-1`):
    `CheckWeight`, inside `pallet_skip_feeless_payment::SkipCheckIfFeeless`, which is required: `set_paying_group` is
    feeless only through it (`REQ-PC-5`). Give every member account a provider or a sufficient reference (pass accounts
    have one): `CheckNonce` refuses a signer with neither before the payment step is asked, and a membership gives none.
+6. **Sales capacity.** Bind `CapacityOrigin` to the origin that governs the deployment's execution capacity,
+   `CapacityPeriod` to the period operators reason in (for example a week, in ticks of the pallet's clock), and
+   `CapacityAlertThreshold` to the share at which they want the alert. Nothing is capped until that origin calls
+   `set_capacity`.
