@@ -37,6 +37,7 @@ fc-pallet-pass = { path = "./pallets/pass", version = "2.3.1", default-features 
 fc-pallet-listings = { path = "./pallets/listings", version = "2.3.1", default-features = false }
 fc-pallet-payments = { path = "./pallets/payments", version = "2.3.1", default-features = false }
 fc-pallet-referenda-tracks = { path = "./pallets/referenda-tracks", version = "2.3.1", default-features = false }
+fc-pallet-usage-subscription = { path = "./pallets/usage-subscription", version = "2.3.1", default-features = false }
 
 # Polkadot SDK
 frame = { version = "0.18.0", package = "polkadot-sdk-frame", default-features = false, features = ["runtime"] }
