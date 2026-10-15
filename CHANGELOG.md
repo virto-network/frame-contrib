@@ -9,6 +9,52 @@ with one extra rule: every new Polkadot SDK line is a major release.
 
 ## [Unreleased]
 
+## [2.4.0](https://github.com/virto-network/frame-contrib/releases/tag/v2.4.0)
+
+Usage subscriptions: a new pallet, `fc-pallet-usage-subscription`, sells metered access to a
+runtime's transactions to the members of a group, on top of recurring subscriptions in
+`fc-pallet-listings`, direct payments and group-collection memberships. The gas crates are fixed and
+documented. The release adds calls, events, storage and `Config` items, and a few `Config` changes
+are breaking, as listed under "Breaking changes". Bump `transaction_version`.
+
+### Added
+
+- *(fc-pallet-usage-subscription)* New pallet: offers, contracts, trials, conversions and
+  amendments, a payment-step transaction extension, view functions, benchmarks, a payment-step guide
+  and an opt-in cap on the sales capacity (#128, #129, #130, #131, #132, #136).
+- *(fc-traits-listings, fc-pallet-listings)* Subscription types and traits, and recurring
+  subscriptions in the listings pallet (#123, #124).
+- *(fc-traits-payments, fc-pallet-payments)* Direct payments: no hold and no stored record (#122).
+- *(fc-traits-memberships)* `GroupCollectionMemberships`, the `memberships::Transfer` trait and a
+  transfer policy per group (#125).
+- *(fc-pallet-communities)* Transfer a membership within the group, and set the transfer policy
+  (#126).
+- *(fc-pallet-gas-transaction-payment)* Integration guide (#121).
+- A kitchensink runtime wiring of usage subscriptions, for benchmarks (#133).
+
+### Fixed
+
+- *(fc-pallet-gas-transaction-payment, fc-traits-gas-tank)* The availability check is read-only,
+  the phases agree, and the weight is metered (#120).
+
+### Breaking changes
+
+A runtime must act on each of these.
+
+- *(fc-pallet-usage-subscription)* `Config::PayingGroupChangeWindow` is removed: the rate window is
+  `MinUsagePeriod`.
+- *(fc-pallet-usage-subscription)* `Config` gains `CapacityOrigin` (the origin of `set_capacity`),
+  `CapacityPeriod` (the period every allowance is normalized to, in the clock's unit) and
+  `CapacityAlertThreshold` (the share of capacity at which the alert event is emitted).
+- *(fc-pallet-listings)* `Config` gains `SubscriptionDeposit`, a `Consideration` that holds each
+  subscription's storage deposit under the new `HoldReason::SubscriptionDeposit`. Bind
+  `HoldConsideration` with a fixed price, or `()` for no deposit.
+- *(fc-pallet-communities)* `Config` gains a required `MemberOrigin`, and `MemberMgmt` is bounded
+  by `InspectEnumerable` and `memberships::Transfer`.
+- *(fc-traits-memberships)* `NonFungiblesMemberships` is deprecated, with no grace period: a runtime
+  switches to `GroupCollectionMemberships`, with a data migration at the upgrade.
+
+
 ## [2.3.1](https://github.com/virto-network/frame-contrib/releases/tag/v2.3.1)
 
 A security fix. Upgrade from any 2.x release; nothing else changes.
