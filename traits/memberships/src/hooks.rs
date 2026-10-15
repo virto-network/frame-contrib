@@ -2,6 +2,7 @@ use super::*;
 use frame_support::dispatch::DispatchResult;
 use frame_support::traits::Get;
 
+/// A hook that does nothing: the default of every hook [`WithHooks`] takes.
 pub struct NoOp;
 
 /// Triggers an action when a membership has been assigned
@@ -46,6 +47,33 @@ where
 impl<G: Clone, M: Clone> Get<Box<dyn OnMembershipReleased<G, M>>> for NoOp {
     fn get() -> Box<dyn OnMembershipReleased<G, M>> {
         Box::new(|_, _| Ok(()))
+    }
+}
+
+/// Triggers an action when a membership has been transferred to `to`, a member's transfer as its
+/// group's policy allows.
+pub trait OnMembershipTransferred<AccountId: Clone, Group: Clone, Membership: Clone> {
+    /// Called after `membership` of `group` moved to `to`.
+    fn on_membership_transferred(
+        &self,
+        to: AccountId,
+        group: Group,
+        membership: Membership,
+    ) -> DispatchResult;
+}
+
+impl<A: Clone, G: Clone, M: Clone> Get<Box<dyn OnMembershipTransferred<A, G, M>>> for NoOp {
+    fn get() -> Box<dyn OnMembershipTransferred<A, G, M>> {
+        Box::new(|_, _, _| Ok(()))
+    }
+}
+
+impl<T, A: Clone, G: Clone, M: Clone> OnMembershipTransferred<A, G, M> for T
+where
+    T: Fn(A, G, M) -> DispatchResult,
+{
+    fn on_membership_transferred(&self, to: A, group: G, membership: M) -> DispatchResult {
+        self(to, group, membership)
     }
 }
 
