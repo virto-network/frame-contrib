@@ -15,7 +15,8 @@ Usage subscriptions: a new pallet, `fc-pallet-usage-subscription`, sells metered
 runtime's transactions to the members of a group, on top of recurring subscriptions in
 `fc-pallet-listings`, direct payments and group-collection memberships. The gas crates are fixed and
 documented. The release adds calls, events, storage and `Config` items, and a few `Config` changes
-are breaking, as listed under "Breaking changes". Bump `transaction_version`.
+are breaking, as listed under "Breaking changes". A runtime that adds the payment-step extension to its
+`TxExtension` changes its transaction format, and bumps `transaction_version`.
 
 ### Added
 
