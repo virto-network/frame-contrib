@@ -1379,6 +1379,7 @@ dependencies = [
  "fc-pallet-pass",
  "fc-pallet-payments",
  "fc-pallet-referenda-tracks",
+ "fc-pallet-usage-subscription",
  "frame-benchmarking",
  "frame-contrib-traits",
  "frame-executive",
