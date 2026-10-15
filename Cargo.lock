@@ -1482,13 +1482,18 @@ name = "fc-pallet-listings"
 version = "2.3.1"
 dependencies = [
  "fc-mock-helpers",
+ "fc-pallet-payments",
  "fc-traits-listings",
+ "fc-traits-payments",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
  "pallet-assets",
+ "pallet-assets-holder",
  "pallet-balances",
  "pallet-nfts",
+ "pallet-preimage",
+ "pallet-scheduler",
  "parity-scale-codec",
  "scale-info",
  "serde",
