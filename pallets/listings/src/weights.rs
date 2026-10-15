@@ -8,7 +8,7 @@
 //! THIS FILE WAS AUTO-GENERATED USING THE SUBSTRATE BENCHMARK CLI VERSION 60.0.0
 //! DATE: 2026-10-15, STEPS: `50`, REPEAT: `20`, LOW RANGE: `[]`, HIGH RANGE: `[]`
 //! WORST CASE MAP SIZE: `1000000`
-//! HOSTNAME: `virto-bench-oahy22dt7cst`, CPU: `AMD EPYC-Milan Processor`
+//! HOSTNAME: `virto-bench-uat3qolui2ae`, CPU: `AMD EPYC-Milan Processor`
 //! WASM-EXECUTION: `Compiled`, CHAIN: `None`, DB CACHE: `1024`
 
 // Executed Command:
@@ -83,8 +83,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `182`
 		//  Estimated: `3593`
-		// Minimum execution time: 31_390_000 picoseconds.
-		Weight::from_parts(32_980_000, 3593)
+		// Minimum execution time: 31_355_000 picoseconds.
+		Weight::from_parts(33_027_000, 3593)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
@@ -96,8 +96,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `258`
 		//  Estimated: `3948`
-		// Minimum execution time: 28_270_000 picoseconds.
-		Weight::from_parts(29_920_000, 3948)
+		// Minimum execution time: 28_237_000 picoseconds.
+		Weight::from_parts(29_789_000, 3948)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
@@ -120,10 +120,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `493`
 		//  Estimated: `9864`
-		// Minimum execution time: 79_210_000 picoseconds.
-		Weight::from_parts(83_325_916, 9864)
-			// Standard Error: 171
-			.saturating_add(Weight::from_parts(4_900, 0).saturating_mul(q.into()))
+		// Minimum execution time: 79_620_000 picoseconds.
+		Weight::from_parts(84_290_617, 9864)
+			// Standard Error: 283
+			.saturating_add(Weight::from_parts(4_458, 0).saturating_mul(q.into()))
 			.saturating_add(T::DbWeight::get().reads(8_u64))
 			.saturating_add(T::DbWeight::get().writes(7_u64))
 	}
@@ -137,8 +137,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `559`
 		//  Estimated: `6906`
-		// Minimum execution time: 37_890_000 picoseconds.
-		Weight::from_parts(39_899_000, 6906)
+		// Minimum execution time: 37_218_000 picoseconds.
+		Weight::from_parts(39_522_000, 6906)
 			.saturating_add(T::DbWeight::get().reads(4_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
@@ -152,8 +152,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `568`
 		//  Estimated: `9864`
-		// Minimum execution time: 42_740_000 picoseconds.
-		Weight::from_parts(44_940_000, 9864)
+		// Minimum execution time: 42_435_000 picoseconds.
+		Weight::from_parts(44_688_000, 9864)
 			.saturating_add(T::DbWeight::get().reads(5_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
@@ -167,8 +167,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `568`
 		//  Estimated: `6906`
-		// Minimum execution time: 47_470_000 picoseconds.
-		Weight::from_parts(49_780_000, 6906)
+		// Minimum execution time: 47_073_000 picoseconds.
+		Weight::from_parts(49_565_000, 6906)
 			.saturating_add(T::DbWeight::get().reads(4_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
@@ -182,8 +182,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `590`
 		//  Estimated: `6906`
-		// Minimum execution time: 47_679_000 picoseconds.
-		Weight::from_parts(49_970_000, 6906)
+		// Minimum execution time: 46_991_000 picoseconds.
+		Weight::from_parts(49_584_000, 6906)
 			.saturating_add(T::DbWeight::get().reads(4_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
@@ -199,12 +199,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `568`
 		//  Estimated: `9864`
-		// Minimum execution time: 41_310_000 picoseconds.
-		Weight::from_parts(43_158_798, 9864)
-			// Standard Error: 289
-			.saturating_add(Weight::from_parts(12_124, 0).saturating_mul(p.into()))
-			// Standard Error: 67
-			.saturating_add(Weight::from_parts(1_595, 0).saturating_mul(q.into()))
+		// Minimum execution time: 40_760_000 picoseconds.
+		Weight::from_parts(42_774_093, 9864)
+			// Standard Error: 368
+			.saturating_add(Weight::from_parts(8_745, 0).saturating_mul(p.into()))
+			// Standard Error: 86
+			.saturating_add(Weight::from_parts(1_585, 0).saturating_mul(q.into()))
 			.saturating_add(T::DbWeight::get().reads(5_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
@@ -220,12 +220,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `614 + p * (1 ±0) + q * (1 ±0)`
 		//  Estimated: `9864`
-		// Minimum execution time: 36_911_000 picoseconds.
-		Weight::from_parts(38_581_869, 9864)
-			// Standard Error: 212
-			.saturating_add(Weight::from_parts(19_445, 0).saturating_mul(p.into()))
-			// Standard Error: 49
-			.saturating_add(Weight::from_parts(1_129, 0).saturating_mul(q.into()))
+		// Minimum execution time: 36_822_000 picoseconds.
+		Weight::from_parts(38_347_619, 9864)
+			// Standard Error: 270
+			.saturating_add(Weight::from_parts(18_749, 0).saturating_mul(p.into()))
+			// Standard Error: 63
+			.saturating_add(Weight::from_parts(1_194, 0).saturating_mul(q.into()))
 			.saturating_add(T::DbWeight::get().reads(5_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
@@ -243,8 +243,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `995`
 		//  Estimated: `6906`
-		// Minimum execution time: 48_400_000 picoseconds.
-		Weight::from_parts(50_640_000, 6906)
+		// Minimum execution time: 47_848_000 picoseconds.
+		Weight::from_parts(50_251_000, 6906)
 			.saturating_add(T::DbWeight::get().reads(6_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
@@ -255,7 +255,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Listings::ItemConditions` (r:1 w:0)
 	/// Proof: `Listings::ItemConditions` (`max_values`: None, `max_size`: Some(106), added: 2581, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: UNKNOWN KEY `0xbacf5f93fbbb2c2ad87da081c8dac87cb56fe87734a0e4d6c8683a214145ac43` (r:1 w:1)
 	/// Proof: UNKNOWN KEY `0xbacf5f93fbbb2c2ad87da081c8dac87cb56fe87734a0e4d6c8683a214145ac43` (r:1 w:1)
 	/// Storage: `Assets::Asset` (r:1 w:1)
@@ -270,6 +270,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Orders::Payment` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueQueue` (r:4 w:1)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
@@ -280,15 +284,15 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn subscribe() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `12937`
+		//  Measured:  `13183`
 		//  Estimated: `22210`
-		// Minimum execution time: 213_380_000 picoseconds.
-		Weight::from_parts(223_391_000, 22210)
-			.saturating_add(T::DbWeight::get().reads(21_u64))
-			.saturating_add(T::DbWeight::get().writes(9_u64))
+		// Minimum execution time: 285_933_000 picoseconds.
+		Weight::from_parts(299_141_000, 22210)
+			.saturating_add(T::DbWeight::get().reads(23_u64))
+			.saturating_add(T::DbWeight::get().writes(11_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
 	/// Proof: `Listings::DueCursor` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::PausedTicks` (r:1 w:0)
@@ -319,36 +323,44 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn charge_due() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `12742`
+		//  Measured:  `12759`
 		//  Estimated: `22210`
-		// Minimum execution time: 197_000_000 picoseconds.
-		Weight::from_parts(204_391_000, 22210)
+		// Minimum execution time: 198_768_000 picoseconds.
+		Weight::from_parts(207_590_000, 22210)
 			.saturating_add(T::DbWeight::get().reads(21_u64))
 			.saturating_add(T::DbWeight::get().writes(9_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueQueue` (r:1 w:1)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemSubscriptionCounts` (r:1 w:1)
 	/// Proof: `Listings::ItemSubscriptionCounts` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueOverflow` (r:0 w:1)
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn cancel_subscription() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `3266`
+		//  Measured:  `3512`
 		//  Estimated: `6295`
-		// Minimum execution time: 35_620_000 picoseconds.
-		Weight::from_parts(37_491_000, 6295)
-			.saturating_add(T::DbWeight::get().reads(4_u64))
-			.saturating_add(T::DbWeight::get().writes(4_u64))
+		// Minimum execution time: 70_808_000 picoseconds.
+		Weight::from_parts(73_812_000, 6295)
+			.saturating_add(T::DbWeight::get().reads(6_u64))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueQueue` (r:1 w:1)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemSubscriptionCounts` (r:1 w:1)
@@ -357,38 +369,42 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn terminate_subscription() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `3170`
+		//  Measured:  `3416`
 		//  Estimated: `6295`
-		// Minimum execution time: 31_430_000 picoseconds.
-		Weight::from_parts(33_530_000, 6295)
-			.saturating_add(T::DbWeight::get().reads(4_u64))
-			.saturating_add(T::DbWeight::get().writes(4_u64))
+		// Minimum execution time: 63_918_000 picoseconds.
+		Weight::from_parts(66_802_000, 6295)
+			.saturating_add(T::DbWeight::get().reads(6_u64))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:2 w:2)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemConditions` (r:1 w:0)
 	/// Proof: `Listings::ItemConditions` (`max_values`: None, `max_size`: Some(106), added: 2581, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueQueue` (r:1 w:1)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
 	/// Proof: `Listings::DueCursor` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	fn schedule_replacement() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `3436`
-		//  Estimated: `6376`
-		// Minimum execution time: 54_180_000 picoseconds.
-		Weight::from_parts(56_790_000, 6376)
-			.saturating_add(T::DbWeight::get().reads(6_u64))
-			.saturating_add(T::DbWeight::get().writes(3_u64))
+		//  Measured:  `3699`
+		//  Estimated: `6418`
+		// Minimum execution time: 89_634_000 picoseconds.
+		Weight::from_parts(93_508_000, 6418)
+			.saturating_add(T::DbWeight::get().reads(8_u64))
+			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
 	/// Storage: `ListingsCatalog::Collection` (r:1 w:0)
 	/// Proof: `ListingsCatalog::Collection` (`max_values`: None, `max_size`: Some(88), added: 2563, mode: `MaxEncodedLen`)
 	/// Storage: `ListingsCatalog::Attribute` (r:1 w:0)
 	/// Proof: `ListingsCatalog::Attribute` (`max_values`: None, `max_size`: Some(483), added: 2958, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Assets::Asset` (r:1 w:0)
@@ -397,15 +413,15 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Listings::DueCursor` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	fn amend_subscription() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1079`
+		//  Measured:  `1096`
 		//  Estimated: `3948`
-		// Minimum execution time: 46_330_000 picoseconds.
-		Weight::from_parts(48_490_000, 3948)
+		// Minimum execution time: 46_434_000 picoseconds.
+		Weight::from_parts(49_057_000, 3948)
 			.saturating_add(T::DbWeight::get().reads(6_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
@@ -416,10 +432,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn cancel_replacement() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `11663`
+		//  Measured:  `11680`
 		//  Estimated: `22210`
-		// Minimum execution time: 40_050_000 picoseconds.
-		Weight::from_parts(42_510_000, 22210)
+		// Minimum execution time: 42_418_000 picoseconds.
+		Weight::from_parts(45_210_000, 22210)
 			.saturating_add(T::DbWeight::get().reads(7_u64))
 			.saturating_add(T::DbWeight::get().writes(4_u64))
 	}
@@ -439,15 +455,15 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `1134`
 		//  Estimated: `3948`
-		// Minimum execution time: 41_760_000 picoseconds.
-		Weight::from_parts(43_870_000, 3948)
+		// Minimum execution time: 42_027_000 picoseconds.
+		Weight::from_parts(44_501_000, 3948)
 			.saturating_add(T::DbWeight::get().reads(6_u64))
 			.saturating_add(T::DbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Listings::DueQueue` (r:2 w:2)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:64 w:64)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `ListingsCatalog::Collection` (r:1 w:0)
@@ -469,22 +485,22 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// The range of component `n` is `[1, 64]`.
 	fn process_due(n: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1169 + n * (244 ±0)`
-		//  Estimated: `11600 + n * (2693 ±0)`
-		// Minimum execution time: 177_350_000 picoseconds.
-		Weight::from_parts(14_757_084, 11600)
-			// Standard Error: 50_524
-			.saturating_add(Weight::from_parts(148_013_784, 0).saturating_mul(n.into()))
+		//  Measured:  `1169 + n * (261 ±0)`
+		//  Estimated: `11600 + n * (2714 ±0)`
+		// Minimum execution time: 180_945_000 picoseconds.
+		Weight::from_parts(26_178_683, 11600)
+			// Standard Error: 119_721
+			.saturating_add(Weight::from_parts(150_158_742, 0).saturating_mul(n.into()))
 			.saturating_add(T::DbWeight::get().reads(11_u64))
 			.saturating_add(T::DbWeight::get().reads((5_u64).saturating_mul(n.into())))
 			.saturating_add(T::DbWeight::get().writes(6_u64))
 			.saturating_add(T::DbWeight::get().writes((2_u64).saturating_mul(n.into())))
-			.saturating_add(Weight::from_parts(0, 2693).saturating_mul(n.into()))
+			.saturating_add(Weight::from_parts(0, 2714).saturating_mul(n.into()))
 	}
 	/// Storage: `Listings::DueQueue` (r:2 w:2)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:2 w:2)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:2 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemConditions` (r:1 w:0)
@@ -505,18 +521,22 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `AssetsFreezer::FrozenBalances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `Orders::Payment` (r:1 w:0)
 	/// Proof: `Orders::Payment` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemSubscriptionCounts` (r:2 w:2)
 	/// Proof: `Listings::ItemSubscriptionCounts` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueOverflow` (r:1 w:0)
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn process_due_replacement() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1708`
+		//  Measured:  `1971`
 		//  Estimated: `11600`
-		// Minimum execution time: 222_329_000 picoseconds.
-		Weight::from_parts(229_690_000, 11600)
-			.saturating_add(T::DbWeight::get().reads(22_u64))
-			.saturating_add(T::DbWeight::get().writes(11_u64))
+		// Minimum execution time: 258_558_000 picoseconds.
+		Weight::from_parts(270_445_000, 11600)
+			.saturating_add(T::DbWeight::get().reads(24_u64))
+			.saturating_add(T::DbWeight::get().writes(13_u64))
 	}
 	/// Storage: `Listings::DueQueue` (r:1 w:0)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
@@ -526,8 +546,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `4`
 		//  Estimated: `6295`
-		// Minimum execution time: 6_020_000 picoseconds.
-		Weight::from_parts(6_490_000, 6295)
+		// Minimum execution time: 6_098_000 picoseconds.
+		Weight::from_parts(6_618_000, 6295)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
 	}
 	/// Storage: `Listings::DueQueue` (r:4 w:0)
@@ -535,7 +555,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Listings::DueOverflow` (r:2 w:2)
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `ListingsCatalog::Collection` (r:1 w:0)
@@ -554,15 +574,15 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Orders::Payment` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
 	fn process_due_overflow() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `9901`
+		//  Measured:  `9918`
 		//  Estimated: `22210`
-		// Minimum execution time: 191_840_000 picoseconds.
-		Weight::from_parts(198_790_000, 22210)
+		// Minimum execution time: 195_153_000 picoseconds.
+		Weight::from_parts(204_114_000, 22210)
 			.saturating_add(T::DbWeight::get().reads(19_u64))
 			.saturating_add(T::DbWeight::get().writes(8_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
 	/// Proof: `Listings::DueCursor` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::PausedTicks` (r:1 w:0)
@@ -581,10 +601,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn settle_subscription() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `11799`
+		//  Measured:  `11816`
 		//  Estimated: `22210`
-		// Minimum execution time: 54_839_000 picoseconds.
-		Weight::from_parts(57_719_000, 22210)
+		// Minimum execution time: 55_003_000 picoseconds.
+		Weight::from_parts(58_398_000, 22210)
 			.saturating_add(T::DbWeight::get().reads(11_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
@@ -598,8 +618,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `543`
 		//  Estimated: `3948`
-		// Minimum execution time: 19_950_000 picoseconds.
-		Weight::from_parts(21_359_000, 3948)
+		// Minimum execution time: 19_887_000 picoseconds.
+		Weight::from_parts(21_289_000, 3948)
 			.saturating_add(T::DbWeight::get().reads(3_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
@@ -609,8 +629,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `101`
 		//  Estimated: `3571`
-		// Minimum execution time: 8_710_000 picoseconds.
-		Weight::from_parts(9_680_000, 3571)
+		// Minimum execution time: 8_625_000 picoseconds.
+		Weight::from_parts(9_566_000, 3571)
 			.saturating_add(T::DbWeight::get().reads(1_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
@@ -632,8 +652,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `182`
 		//  Estimated: `3593`
-		// Minimum execution time: 31_390_000 picoseconds.
-		Weight::from_parts(32_980_000, 3593)
+		// Minimum execution time: 31_355_000 picoseconds.
+		Weight::from_parts(33_027_000, 3593)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
@@ -645,8 +665,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `258`
 		//  Estimated: `3948`
-		// Minimum execution time: 28_270_000 picoseconds.
-		Weight::from_parts(29_920_000, 3948)
+		// Minimum execution time: 28_237_000 picoseconds.
+		Weight::from_parts(29_789_000, 3948)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
@@ -669,10 +689,10 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `493`
 		//  Estimated: `9864`
-		// Minimum execution time: 79_210_000 picoseconds.
-		Weight::from_parts(83_325_916, 9864)
-			// Standard Error: 171
-			.saturating_add(Weight::from_parts(4_900, 0).saturating_mul(q.into()))
+		// Minimum execution time: 79_620_000 picoseconds.
+		Weight::from_parts(84_290_617, 9864)
+			// Standard Error: 283
+			.saturating_add(Weight::from_parts(4_458, 0).saturating_mul(q.into()))
 			.saturating_add(RocksDbWeight::get().reads(8_u64))
 			.saturating_add(RocksDbWeight::get().writes(7_u64))
 	}
@@ -686,8 +706,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `559`
 		//  Estimated: `6906`
-		// Minimum execution time: 37_890_000 picoseconds.
-		Weight::from_parts(39_899_000, 6906)
+		// Minimum execution time: 37_218_000 picoseconds.
+		Weight::from_parts(39_522_000, 6906)
 			.saturating_add(RocksDbWeight::get().reads(4_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
@@ -701,8 +721,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `568`
 		//  Estimated: `9864`
-		// Minimum execution time: 42_740_000 picoseconds.
-		Weight::from_parts(44_940_000, 9864)
+		// Minimum execution time: 42_435_000 picoseconds.
+		Weight::from_parts(44_688_000, 9864)
 			.saturating_add(RocksDbWeight::get().reads(5_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
@@ -716,8 +736,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `568`
 		//  Estimated: `6906`
-		// Minimum execution time: 47_470_000 picoseconds.
-		Weight::from_parts(49_780_000, 6906)
+		// Minimum execution time: 47_073_000 picoseconds.
+		Weight::from_parts(49_565_000, 6906)
 			.saturating_add(RocksDbWeight::get().reads(4_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
@@ -731,8 +751,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `590`
 		//  Estimated: `6906`
-		// Minimum execution time: 47_679_000 picoseconds.
-		Weight::from_parts(49_970_000, 6906)
+		// Minimum execution time: 46_991_000 picoseconds.
+		Weight::from_parts(49_584_000, 6906)
 			.saturating_add(RocksDbWeight::get().reads(4_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
@@ -748,12 +768,12 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `568`
 		//  Estimated: `9864`
-		// Minimum execution time: 41_310_000 picoseconds.
-		Weight::from_parts(43_158_798, 9864)
-			// Standard Error: 289
-			.saturating_add(Weight::from_parts(12_124, 0).saturating_mul(p.into()))
-			// Standard Error: 67
-			.saturating_add(Weight::from_parts(1_595, 0).saturating_mul(q.into()))
+		// Minimum execution time: 40_760_000 picoseconds.
+		Weight::from_parts(42_774_093, 9864)
+			// Standard Error: 368
+			.saturating_add(Weight::from_parts(8_745, 0).saturating_mul(p.into()))
+			// Standard Error: 86
+			.saturating_add(Weight::from_parts(1_585, 0).saturating_mul(q.into()))
 			.saturating_add(RocksDbWeight::get().reads(5_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
@@ -769,12 +789,12 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `614 + p * (1 ±0) + q * (1 ±0)`
 		//  Estimated: `9864`
-		// Minimum execution time: 36_911_000 picoseconds.
-		Weight::from_parts(38_581_869, 9864)
-			// Standard Error: 212
-			.saturating_add(Weight::from_parts(19_445, 0).saturating_mul(p.into()))
-			// Standard Error: 49
-			.saturating_add(Weight::from_parts(1_129, 0).saturating_mul(q.into()))
+		// Minimum execution time: 36_822_000 picoseconds.
+		Weight::from_parts(38_347_619, 9864)
+			// Standard Error: 270
+			.saturating_add(Weight::from_parts(18_749, 0).saturating_mul(p.into()))
+			// Standard Error: 63
+			.saturating_add(Weight::from_parts(1_194, 0).saturating_mul(q.into()))
 			.saturating_add(RocksDbWeight::get().reads(5_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
@@ -792,8 +812,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `995`
 		//  Estimated: `6906`
-		// Minimum execution time: 48_400_000 picoseconds.
-		Weight::from_parts(50_640_000, 6906)
+		// Minimum execution time: 47_848_000 picoseconds.
+		Weight::from_parts(50_251_000, 6906)
 			.saturating_add(RocksDbWeight::get().reads(6_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
@@ -804,7 +824,7 @@ impl WeightInfo for () {
 	/// Storage: `Listings::ItemConditions` (r:1 w:0)
 	/// Proof: `Listings::ItemConditions` (`max_values`: None, `max_size`: Some(106), added: 2581, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: UNKNOWN KEY `0xbacf5f93fbbb2c2ad87da081c8dac87cb56fe87734a0e4d6c8683a214145ac43` (r:1 w:1)
 	/// Proof: UNKNOWN KEY `0xbacf5f93fbbb2c2ad87da081c8dac87cb56fe87734a0e4d6c8683a214145ac43` (r:1 w:1)
 	/// Storage: `Assets::Asset` (r:1 w:1)
@@ -819,6 +839,10 @@ impl WeightInfo for () {
 	/// Proof: `Orders::Payment` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueQueue` (r:4 w:1)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
@@ -829,15 +853,15 @@ impl WeightInfo for () {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn subscribe() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `12937`
+		//  Measured:  `13183`
 		//  Estimated: `22210`
-		// Minimum execution time: 213_380_000 picoseconds.
-		Weight::from_parts(223_391_000, 22210)
-			.saturating_add(RocksDbWeight::get().reads(21_u64))
-			.saturating_add(RocksDbWeight::get().writes(9_u64))
+		// Minimum execution time: 285_933_000 picoseconds.
+		Weight::from_parts(299_141_000, 22210)
+			.saturating_add(RocksDbWeight::get().reads(23_u64))
+			.saturating_add(RocksDbWeight::get().writes(11_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
 	/// Proof: `Listings::DueCursor` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::PausedTicks` (r:1 w:0)
@@ -868,36 +892,44 @@ impl WeightInfo for () {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn charge_due() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `12742`
+		//  Measured:  `12759`
 		//  Estimated: `22210`
-		// Minimum execution time: 197_000_000 picoseconds.
-		Weight::from_parts(204_391_000, 22210)
+		// Minimum execution time: 198_768_000 picoseconds.
+		Weight::from_parts(207_590_000, 22210)
 			.saturating_add(RocksDbWeight::get().reads(21_u64))
 			.saturating_add(RocksDbWeight::get().writes(9_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueQueue` (r:1 w:1)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemSubscriptionCounts` (r:1 w:1)
 	/// Proof: `Listings::ItemSubscriptionCounts` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueOverflow` (r:0 w:1)
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn cancel_subscription() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `3266`
+		//  Measured:  `3512`
 		//  Estimated: `6295`
-		// Minimum execution time: 35_620_000 picoseconds.
-		Weight::from_parts(37_491_000, 6295)
-			.saturating_add(RocksDbWeight::get().reads(4_u64))
-			.saturating_add(RocksDbWeight::get().writes(4_u64))
+		// Minimum execution time: 70_808_000 picoseconds.
+		Weight::from_parts(73_812_000, 6295)
+			.saturating_add(RocksDbWeight::get().reads(6_u64))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueQueue` (r:1 w:1)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemSubscriptionCounts` (r:1 w:1)
@@ -906,38 +938,42 @@ impl WeightInfo for () {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn terminate_subscription() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `3170`
+		//  Measured:  `3416`
 		//  Estimated: `6295`
-		// Minimum execution time: 31_430_000 picoseconds.
-		Weight::from_parts(33_530_000, 6295)
-			.saturating_add(RocksDbWeight::get().reads(4_u64))
-			.saturating_add(RocksDbWeight::get().writes(4_u64))
+		// Minimum execution time: 63_918_000 picoseconds.
+		Weight::from_parts(66_802_000, 6295)
+			.saturating_add(RocksDbWeight::get().reads(6_u64))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:2 w:2)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemConditions` (r:1 w:0)
 	/// Proof: `Listings::ItemConditions` (`max_values`: None, `max_size`: Some(106), added: 2581, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueQueue` (r:1 w:1)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
 	/// Proof: `Listings::DueCursor` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	fn schedule_replacement() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `3436`
-		//  Estimated: `6376`
-		// Minimum execution time: 54_180_000 picoseconds.
-		Weight::from_parts(56_790_000, 6376)
-			.saturating_add(RocksDbWeight::get().reads(6_u64))
-			.saturating_add(RocksDbWeight::get().writes(3_u64))
+		//  Measured:  `3699`
+		//  Estimated: `6418`
+		// Minimum execution time: 89_634_000 picoseconds.
+		Weight::from_parts(93_508_000, 6418)
+			.saturating_add(RocksDbWeight::get().reads(8_u64))
+			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
 	/// Storage: `ListingsCatalog::Collection` (r:1 w:0)
 	/// Proof: `ListingsCatalog::Collection` (`max_values`: None, `max_size`: Some(88), added: 2563, mode: `MaxEncodedLen`)
 	/// Storage: `ListingsCatalog::Attribute` (r:1 w:0)
 	/// Proof: `ListingsCatalog::Attribute` (`max_values`: None, `max_size`: Some(483), added: 2958, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Assets::Asset` (r:1 w:0)
@@ -946,15 +982,15 @@ impl WeightInfo for () {
 	/// Proof: `Listings::DueCursor` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	fn amend_subscription() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1079`
+		//  Measured:  `1096`
 		//  Estimated: `3948`
-		// Minimum execution time: 46_330_000 picoseconds.
-		Weight::from_parts(48_490_000, 3948)
+		// Minimum execution time: 46_434_000 picoseconds.
+		Weight::from_parts(49_057_000, 3948)
 			.saturating_add(RocksDbWeight::get().reads(6_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
@@ -965,10 +1001,10 @@ impl WeightInfo for () {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn cancel_replacement() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `11663`
+		//  Measured:  `11680`
 		//  Estimated: `22210`
-		// Minimum execution time: 40_050_000 picoseconds.
-		Weight::from_parts(42_510_000, 22210)
+		// Minimum execution time: 42_418_000 picoseconds.
+		Weight::from_parts(45_210_000, 22210)
 			.saturating_add(RocksDbWeight::get().reads(7_u64))
 			.saturating_add(RocksDbWeight::get().writes(4_u64))
 	}
@@ -988,15 +1024,15 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `1134`
 		//  Estimated: `3948`
-		// Minimum execution time: 41_760_000 picoseconds.
-		Weight::from_parts(43_870_000, 3948)
+		// Minimum execution time: 42_027_000 picoseconds.
+		Weight::from_parts(44_501_000, 3948)
 			.saturating_add(RocksDbWeight::get().reads(6_u64))
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Listings::DueQueue` (r:2 w:2)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:64 w:64)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `ListingsCatalog::Collection` (r:1 w:0)
@@ -1018,22 +1054,22 @@ impl WeightInfo for () {
 	/// The range of component `n` is `[1, 64]`.
 	fn process_due(n: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1169 + n * (244 ±0)`
-		//  Estimated: `11600 + n * (2693 ±0)`
-		// Minimum execution time: 177_350_000 picoseconds.
-		Weight::from_parts(14_757_084, 11600)
-			// Standard Error: 50_524
-			.saturating_add(Weight::from_parts(148_013_784, 0).saturating_mul(n.into()))
+		//  Measured:  `1169 + n * (261 ±0)`
+		//  Estimated: `11600 + n * (2714 ±0)`
+		// Minimum execution time: 180_945_000 picoseconds.
+		Weight::from_parts(26_178_683, 11600)
+			// Standard Error: 119_721
+			.saturating_add(Weight::from_parts(150_158_742, 0).saturating_mul(n.into()))
 			.saturating_add(RocksDbWeight::get().reads(11_u64))
 			.saturating_add(RocksDbWeight::get().reads((5_u64).saturating_mul(n.into())))
 			.saturating_add(RocksDbWeight::get().writes(6_u64))
 			.saturating_add(RocksDbWeight::get().writes((2_u64).saturating_mul(n.into())))
-			.saturating_add(Weight::from_parts(0, 2693).saturating_mul(n.into()))
+			.saturating_add(Weight::from_parts(0, 2714).saturating_mul(n.into()))
 	}
 	/// Storage: `Listings::DueQueue` (r:2 w:2)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:2 w:2)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:2 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemConditions` (r:1 w:0)
@@ -1054,18 +1090,22 @@ impl WeightInfo for () {
 	/// Proof: `AssetsFreezer::FrozenBalances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `Orders::Payment` (r:1 w:0)
 	/// Proof: `Orders::Payment` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	/// Proof: `Balances::Holds` (`max_values`: None, `max_size`: Some(175), added: 2650, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemSubscriptionCounts` (r:2 w:2)
 	/// Proof: `Listings::ItemSubscriptionCounts` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueOverflow` (r:1 w:0)
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn process_due_replacement() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1708`
+		//  Measured:  `1971`
 		//  Estimated: `11600`
-		// Minimum execution time: 222_329_000 picoseconds.
-		Weight::from_parts(229_690_000, 11600)
-			.saturating_add(RocksDbWeight::get().reads(22_u64))
-			.saturating_add(RocksDbWeight::get().writes(11_u64))
+		// Minimum execution time: 258_558_000 picoseconds.
+		Weight::from_parts(270_445_000, 11600)
+			.saturating_add(RocksDbWeight::get().reads(24_u64))
+			.saturating_add(RocksDbWeight::get().writes(13_u64))
 	}
 	/// Storage: `Listings::DueQueue` (r:1 w:0)
 	/// Proof: `Listings::DueQueue` (`max_values`: None, `max_size`: Some(2830), added: 5305, mode: `MaxEncodedLen`)
@@ -1075,8 +1115,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `4`
 		//  Estimated: `6295`
-		// Minimum execution time: 6_020_000 picoseconds.
-		Weight::from_parts(6_490_000, 6295)
+		// Minimum execution time: 6_098_000 picoseconds.
+		Weight::from_parts(6_618_000, 6295)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 	}
 	/// Storage: `Listings::DueQueue` (r:4 w:0)
@@ -1084,7 +1124,7 @@ impl WeightInfo for () {
 	/// Storage: `Listings::DueOverflow` (r:2 w:2)
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::ItemAmendments` (r:1 w:0)
 	/// Proof: `Listings::ItemAmendments` (`max_values`: None, `max_size`: Some(74), added: 2549, mode: `MaxEncodedLen`)
 	/// Storage: `ListingsCatalog::Collection` (r:1 w:0)
@@ -1103,15 +1143,15 @@ impl WeightInfo for () {
 	/// Proof: `Orders::Payment` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
 	fn process_due_overflow() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `9901`
+		//  Measured:  `9918`
 		//  Estimated: `22210`
-		// Minimum execution time: 191_840_000 picoseconds.
-		Weight::from_parts(198_790_000, 22210)
+		// Minimum execution time: 195_153_000 picoseconds.
+		Weight::from_parts(204_114_000, 22210)
 			.saturating_add(RocksDbWeight::get().reads(19_u64))
 			.saturating_add(RocksDbWeight::get().writes(8_u64))
 	}
 	/// Storage: `Listings::Subscriptions` (r:1 w:1)
-	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(218), added: 2693, mode: `MaxEncodedLen`)
+	/// Proof: `Listings::Subscriptions` (`max_values`: None, `max_size`: Some(239), added: 2714, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::DueCursor` (r:1 w:0)
 	/// Proof: `Listings::DueCursor` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Listings::PausedTicks` (r:1 w:0)
@@ -1130,10 +1170,10 @@ impl WeightInfo for () {
 	/// Proof: `Listings::DueOverflow` (`max_values`: None, `max_size`: Some(72), added: 2547, mode: `MaxEncodedLen`)
 	fn settle_subscription() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `11799`
+		//  Measured:  `11816`
 		//  Estimated: `22210`
-		// Minimum execution time: 54_839_000 picoseconds.
-		Weight::from_parts(57_719_000, 22210)
+		// Minimum execution time: 55_003_000 picoseconds.
+		Weight::from_parts(58_398_000, 22210)
 			.saturating_add(RocksDbWeight::get().reads(11_u64))
 			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
@@ -1147,8 +1187,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `543`
 		//  Estimated: `3948`
-		// Minimum execution time: 19_950_000 picoseconds.
-		Weight::from_parts(21_359_000, 3948)
+		// Minimum execution time: 19_887_000 picoseconds.
+		Weight::from_parts(21_289_000, 3948)
 			.saturating_add(RocksDbWeight::get().reads(3_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
@@ -1158,8 +1198,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `101`
 		//  Estimated: `3571`
-		// Minimum execution time: 8_710_000 picoseconds.
-		Weight::from_parts(9_680_000, 3571)
+		// Minimum execution time: 8_625_000 picoseconds.
+		Weight::from_parts(9_566_000, 3571)
 			.saturating_add(RocksDbWeight::get().reads(1_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}

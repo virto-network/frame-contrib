@@ -8,7 +8,7 @@
 //! THIS FILE WAS AUTO-GENERATED USING THE SUBSTRATE BENCHMARK CLI VERSION 60.0.0
 //! DATE: 2026-10-15, STEPS: `50`, REPEAT: `20`, LOW RANGE: `[]`, HIGH RANGE: `[]`
 //! WORST CASE MAP SIZE: `1000000`
-//! HOSTNAME: `virto-bench-oahy22dt7cst`, CPU: `AMD EPYC-Milan Processor`
+//! HOSTNAME: `virto-bench-uat3qolui2ae`, CPU: `AMD EPYC-Milan Processor`
 //! WASM-EXECUTION: `Compiled`, CHAIN: `None`, DB CACHE: `1024`
 
 // Executed Command:
@@ -65,7 +65,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:1 w:0)
 	/// Proof: `AssetsFreezer::FrozenBalances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:2 w:2)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `Payments::PaymentParties` (r:0 w:1)
 	/// Proof: `Payments::PaymentParties` (`max_values`: None, `max_size`: Some(76), added: 2551, mode: `MaxEncodedLen`)
 	/// The range of component `q` is `[1, 256]`.
@@ -73,10 +73,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `553`
 		//  Estimated: `8500`
-		// Minimum execution time: 95_179_000 picoseconds.
-		Weight::from_parts(99_162_611, 8500)
-			// Standard Error: 187
-			.saturating_add(Weight::from_parts(1_418, 0).saturating_mul(q.into()))
+		// Minimum execution time: 94_230_000 picoseconds.
+		Weight::from_parts(100_929_732, 8500)
+			// Standard Error: 332
+			.saturating_add(Weight::from_parts(991, 0).saturating_mul(q.into()))
 			.saturating_add(T::DbWeight::get().reads(10_u64))
 			.saturating_add(T::DbWeight::get().writes(9_u64))
 	}
@@ -87,7 +87,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Assets::Account` (r:3 w:3)
 	/// Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:2 w:2)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::BalancesOnHold` (r:2 w:2)
 	/// Proof: `AssetsHolder::BalancesOnHold` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:2 w:0)
@@ -100,8 +100,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `1289`
 		//  Estimated: `8817`
-		// Minimum execution time: 165_499_000 picoseconds.
-		Weight::from_parts(170_549_000, 8817)
+		// Minimum execution time: 167_087_000 picoseconds.
+		Weight::from_parts(177_583_000, 8817)
 			.saturating_add(T::DbWeight::get().reads(13_u64))
 			.saturating_add(T::DbWeight::get().writes(10_u64))
 	}
@@ -114,7 +114,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Assets::Account` (r:2 w:2)
 	/// Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:2 w:2)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::BalancesOnHold` (r:2 w:2)
 	/// Proof: `AssetsHolder::BalancesOnHold` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:1 w:0)
@@ -125,8 +125,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `1315`
 		//  Estimated: `8500`
-		// Minimum execution time: 123_219_000 picoseconds.
-		Weight::from_parts(127_390_000, 8500)
+		// Minimum execution time: 124_593_000 picoseconds.
+		Weight::from_parts(130_993_000, 8500)
 			.saturating_add(T::DbWeight::get().reads(11_u64))
 			.saturating_add(T::DbWeight::get().writes(9_u64))
 	}
@@ -140,8 +140,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `327`
 		//  Estimated: `110487`
-		// Minimum execution time: 21_500_000 picoseconds.
-		Weight::from_parts(23_630_000, 110487)
+		// Minimum execution time: 21_902_000 picoseconds.
+		Weight::from_parts(24_797_000, 110487)
 			.saturating_add(T::DbWeight::get().reads(3_u64))
 			.saturating_add(T::DbWeight::get().writes(3_u64))
 	}
@@ -158,7 +158,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:1 w:0)
 	/// Proof: `AssetsFreezer::FrozenBalances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:1 w:1)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `Scheduler::Lookup` (r:1 w:1)
 	/// Proof: `Scheduler::Lookup` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
 	/// Storage: `Scheduler::Agenda` (r:1 w:1)
@@ -167,8 +167,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `1392`
 		//  Estimated: `110487`
-		// Minimum execution time: 82_041_000 picoseconds.
-		Weight::from_parts(85_420_000, 110487)
+		// Minimum execution time: 83_792_000 picoseconds.
+		Weight::from_parts(87_909_000, 110487)
 			.saturating_add(T::DbWeight::get().reads(9_u64))
 			.saturating_add(T::DbWeight::get().writes(7_u64))
 	}
@@ -181,7 +181,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Assets::Account` (r:3 w:3)
 	/// Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:2 w:2)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::BalancesOnHold` (r:2 w:2)
 	/// Proof: `AssetsHolder::BalancesOnHold` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:2 w:0)
@@ -192,8 +192,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `1348`
 		//  Estimated: `8817`
-		// Minimum execution time: 241_489_000 picoseconds.
-		Weight::from_parts(251_679_000, 8817)
+		// Minimum execution time: 240_139_000 picoseconds.
+		Weight::from_parts(256_352_000, 8817)
 			.saturating_add(T::DbWeight::get().reads(13_u64))
 			.saturating_add(T::DbWeight::get().writes(10_u64))
 	}
@@ -207,8 +207,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `6`
 		//  Estimated: `8500`
-		// Minimum execution time: 11_010_000 picoseconds.
-		Weight::from_parts(11_990_000, 8500)
+		// Minimum execution time: 11_336_000 picoseconds.
+		Weight::from_parts(12_388_000, 8500)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
 			.saturating_add(T::DbWeight::get().writes(3_u64))
 	}
@@ -232,8 +232,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `981`
 		//  Estimated: `8817`
-		// Minimum execution time: 152_160_000 picoseconds.
-		Weight::from_parts(157_419_000, 8817)
+		// Minimum execution time: 153_281_000 picoseconds.
+		Weight::from_parts(163_075_000, 8817)
 			.saturating_add(T::DbWeight::get().reads(12_u64))
 			.saturating_add(T::DbWeight::get().writes(6_u64))
 	}
@@ -254,7 +254,7 @@ impl WeightInfo for () {
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:1 w:0)
 	/// Proof: `AssetsFreezer::FrozenBalances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:2 w:2)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `Payments::PaymentParties` (r:0 w:1)
 	/// Proof: `Payments::PaymentParties` (`max_values`: None, `max_size`: Some(76), added: 2551, mode: `MaxEncodedLen`)
 	/// The range of component `q` is `[1, 256]`.
@@ -262,10 +262,10 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `553`
 		//  Estimated: `8500`
-		// Minimum execution time: 95_179_000 picoseconds.
-		Weight::from_parts(99_162_611, 8500)
-			// Standard Error: 187
-			.saturating_add(Weight::from_parts(1_418, 0).saturating_mul(q.into()))
+		// Minimum execution time: 94_230_000 picoseconds.
+		Weight::from_parts(100_929_732, 8500)
+			// Standard Error: 332
+			.saturating_add(Weight::from_parts(991, 0).saturating_mul(q.into()))
 			.saturating_add(RocksDbWeight::get().reads(10_u64))
 			.saturating_add(RocksDbWeight::get().writes(9_u64))
 	}
@@ -276,7 +276,7 @@ impl WeightInfo for () {
 	/// Storage: `Assets::Account` (r:3 w:3)
 	/// Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:2 w:2)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::BalancesOnHold` (r:2 w:2)
 	/// Proof: `AssetsHolder::BalancesOnHold` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:2 w:0)
@@ -289,8 +289,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `1289`
 		//  Estimated: `8817`
-		// Minimum execution time: 165_499_000 picoseconds.
-		Weight::from_parts(170_549_000, 8817)
+		// Minimum execution time: 167_087_000 picoseconds.
+		Weight::from_parts(177_583_000, 8817)
 			.saturating_add(RocksDbWeight::get().reads(13_u64))
 			.saturating_add(RocksDbWeight::get().writes(10_u64))
 	}
@@ -303,7 +303,7 @@ impl WeightInfo for () {
 	/// Storage: `Assets::Account` (r:2 w:2)
 	/// Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:2 w:2)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::BalancesOnHold` (r:2 w:2)
 	/// Proof: `AssetsHolder::BalancesOnHold` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:1 w:0)
@@ -314,8 +314,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `1315`
 		//  Estimated: `8500`
-		// Minimum execution time: 123_219_000 picoseconds.
-		Weight::from_parts(127_390_000, 8500)
+		// Minimum execution time: 124_593_000 picoseconds.
+		Weight::from_parts(130_993_000, 8500)
 			.saturating_add(RocksDbWeight::get().reads(11_u64))
 			.saturating_add(RocksDbWeight::get().writes(9_u64))
 	}
@@ -329,8 +329,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `327`
 		//  Estimated: `110487`
-		// Minimum execution time: 21_500_000 picoseconds.
-		Weight::from_parts(23_630_000, 110487)
+		// Minimum execution time: 21_902_000 picoseconds.
+		Weight::from_parts(24_797_000, 110487)
 			.saturating_add(RocksDbWeight::get().reads(3_u64))
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
 	}
@@ -347,7 +347,7 @@ impl WeightInfo for () {
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:1 w:0)
 	/// Proof: `AssetsFreezer::FrozenBalances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:1 w:1)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `Scheduler::Lookup` (r:1 w:1)
 	/// Proof: `Scheduler::Lookup` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
 	/// Storage: `Scheduler::Agenda` (r:1 w:1)
@@ -356,8 +356,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `1392`
 		//  Estimated: `110487`
-		// Minimum execution time: 82_041_000 picoseconds.
-		Weight::from_parts(85_420_000, 110487)
+		// Minimum execution time: 83_792_000 picoseconds.
+		Weight::from_parts(87_909_000, 110487)
 			.saturating_add(RocksDbWeight::get().reads(9_u64))
 			.saturating_add(RocksDbWeight::get().writes(7_u64))
 	}
@@ -370,7 +370,7 @@ impl WeightInfo for () {
 	/// Storage: `Assets::Account` (r:3 w:3)
 	/// Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::Holds` (r:2 w:2)
-	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(159), added: 2634, mode: `MaxEncodedLen`)
+	/// Proof: `AssetsHolder::Holds` (`max_values`: None, `max_size`: Some(195), added: 2670, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsHolder::BalancesOnHold` (r:2 w:2)
 	/// Proof: `AssetsHolder::BalancesOnHold` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
 	/// Storage: `AssetsFreezer::FrozenBalances` (r:2 w:0)
@@ -381,8 +381,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `1348`
 		//  Estimated: `8817`
-		// Minimum execution time: 241_489_000 picoseconds.
-		Weight::from_parts(251_679_000, 8817)
+		// Minimum execution time: 240_139_000 picoseconds.
+		Weight::from_parts(256_352_000, 8817)
 			.saturating_add(RocksDbWeight::get().reads(13_u64))
 			.saturating_add(RocksDbWeight::get().writes(10_u64))
 	}
@@ -396,8 +396,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `6`
 		//  Estimated: `8500`
-		// Minimum execution time: 11_010_000 picoseconds.
-		Weight::from_parts(11_990_000, 8500)
+		// Minimum execution time: 11_336_000 picoseconds.
+		Weight::from_parts(12_388_000, 8500)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
 	}
@@ -421,8 +421,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `981`
 		//  Estimated: `8817`
-		// Minimum execution time: 152_160_000 picoseconds.
-		Weight::from_parts(157_419_000, 8817)
+		// Minimum execution time: 153_281_000 picoseconds.
+		Weight::from_parts(163_075_000, 8817)
 			.saturating_add(RocksDbWeight::get().reads(12_u64))
 			.saturating_add(RocksDbWeight::get().writes(6_u64))
 	}
