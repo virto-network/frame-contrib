@@ -1,8 +1,10 @@
 use super::*;
 use crate::{
-    filter::DeviceFilter, AuthenticatedDevice, CallMatcher, DeviceFilterOf, DeviceFilters,
-    DeviceOf, Pallet, SessionKeys,
+    filter::DeviceFilter,
+    migrations::{self, MigrateV0ToV1},
+    AuthenticatedDevice, CallMatcher, DeviceFilterOf, DeviceFilters, DeviceOf, Pallet, SessionKeys,
 };
+use frame_support::migrations::SteppedMigration;
 
 use frame_benchmarking::v2::*;
 use frame_support::{
@@ -83,6 +85,17 @@ fn max_calls_filter<T: Config<I>, I: 'static>(call: &RuntimeCallFor<T>) -> Devic
         .unwrap_or(DeviceFilter::Admin)
 }
 
+/// Fills the account's `DeviceFilters` up to `MaxDevicesPerAccount` with restricted filters: the
+/// worst case for the scan that keeps an `Admin` device. Only the filters are written, which
+/// is all that scan reads.
+fn fill_with_restricted_filters<T: Config<I>, I: 'static>(address: &T::AccountId) {
+    let filter = max_calls_filter::<T, I>(&benchmark_call::<T>());
+    let present = DeviceFilters::<T, I>::iter_prefix(address).count() as u32;
+    for i in 0..T::MaxDevicesPerAccount::get().saturating_sub(present) {
+        DeviceFilters::<T, I>::insert(address, [100u8.saturating_add(i as u8); 32], filter.clone());
+    }
+}
+
 fn hash<T: frame_system::Config>(b: &[u8]) -> HashedUserId
 where
     T::Hash: Into<HashedUserId>,
@@ -98,6 +111,7 @@ where
     PostDispatchInfoOf<RuntimeCallFor<T>>: From<()>,
     OriginFor<T>: From<frame_system::Origin<T>> + AsTransactionAuthorizedOrigin,
 )]
+#[allow(deprecated)]
 mod benchmarks {
     use super::*;
 
@@ -215,7 +229,7 @@ mod benchmarks {
     }
 
     #[benchmark]
-    pub fn add_device() -> Result<(), BenchmarkError> {
+    pub fn add_device_with_filter() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
         let admin_device_id = do_register::<T, I>(user_id)?;
@@ -265,11 +279,13 @@ mod benchmarks {
         );
 
         AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
-        Pallet::<T, I>::add_device(
+        Pallet::<T, I>::add_device_with_filter(
             RawOrigin::Signed(address.clone()).into(),
             attestation,
             DeviceFilter::Admin,
         )?;
+        // The guard that keeps an `Admin` device scans the account's filters.
+        fill_with_restricted_filters::<T, I>(&address);
 
         #[extrinsic_call]
         _(RawOrigin::Signed(address.clone()), new_device_id);
@@ -287,7 +303,7 @@ mod benchmarks {
     }
 
     #[benchmark]
-    pub fn add_session_key() -> Result<(), BenchmarkError> {
+    pub fn add_session_key_with_filter() -> Result<(), BenchmarkError> {
         // Setup code
         let user_id = hash::<T>(b"my-account");
         let admin_device_id = do_register::<T, I>(user_id)?;
@@ -309,7 +325,7 @@ mod benchmarks {
         // Worst case for the session itself: the key is already in use by
         // this account, so the existing session (and its scheduled removal)
         // is torn down before the new one is created and scheduled.
-        Pallet::<T, I>::add_session_key(
+        Pallet::<T, I>::add_session_key_with_filter(
             RawOrigin::Signed(address.clone()).into(),
             T::Lookup::unlookup(new_session_key.clone()),
             None,
@@ -361,7 +377,7 @@ mod benchmarks {
                 .expect("within bounds"),
         );
         AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
-        Pallet::<T, I>::add_session_key(
+        Pallet::<T, I>::add_session_key_with_filter(
             RawOrigin::Signed(address.clone()).into(),
             T::Lookup::unlookup(session_key.clone()),
             None,
@@ -373,6 +389,190 @@ mod benchmarks {
 
         // Verification code
         assert_has_event::<T, I>(Event::SessionRemoved { session_key }.into());
+
+        Ok(())
+    }
+
+    /// The legacy `add_device`: the caller is an `Admin` device, so the
+    /// no-escalation check short-circuits.
+    #[benchmark]
+    pub fn add_device() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let admin_device_id = do_register::<T, I>(user_id)?;
+
+        let address = Pallet::<T, I>::address_for(user_id);
+        let attestation = <T as Config<I>>::Authenticator::device_attestation(&address.encode());
+        let new_device_id = *(attestation.clone().device_id());
+        T::DeviceConsideration::ensure_successful(
+            &address,
+            Footprint::from_parts(2, DeviceOf::<T, I>::max_encoded_len()),
+        );
+        AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(address.clone()), attestation);
+
+        // Verification code
+        assert_eq!(
+            DeviceFilters::<T, I>::get(&address, new_device_id),
+            Some(DeviceFilter::Admin)
+        );
+
+        Ok(())
+    }
+
+    /// The legacy `add_session_key`. Requires `Config::UnrestrictedSessionKeys`
+    /// to be `true`: benchmark with it on.
+    #[benchmark]
+    pub fn add_session_key() -> Result<(), BenchmarkError> {
+        if !T::UnrestrictedSessionKeys::get() {
+            return Err(BenchmarkError::Stop(
+                "benchmark with `UnrestrictedSessionKeys` set to true",
+            ));
+        }
+
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let admin_device_id = do_register::<T, I>(user_id)?;
+
+        let address = Pallet::<T, I>::address_for(user_id);
+        let new_session_key: T::AccountId = account("session-key", 0, 0);
+        AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
+
+        // Worst case for the session itself: the key is already in use by
+        // this account, so the existing session (and its scheduled removal)
+        // is torn down before the new one is created and scheduled.
+        Pallet::<T, I>::add_session_key(
+            RawOrigin::Signed(address.clone()).into(),
+            T::Lookup::unlookup(new_session_key.clone()),
+            None,
+        )?;
+
+        #[extrinsic_call]
+        _(
+            RawOrigin::Signed(address.clone()),
+            T::Lookup::unlookup(new_session_key.clone()),
+            None,
+        );
+
+        // Verification code
+        assert_has_event::<T, I>(
+            Event::SessionCreated {
+                session_key_hash: T::Hashing::hash(&new_session_key.encode()),
+                until: T::MaxSessionDuration::get(),
+            }
+            .into(),
+        );
+
+        Ok(())
+    }
+
+    /// One unit of the first phase of `MigrateV0ToV1`. The measurement also
+    /// includes the phase hand-over (an empty `SessionKeys` iteration).
+    #[benchmark]
+    pub fn migrate_device_filter() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let device_id = do_register::<T, I>(user_id)?;
+        let address = Pallet::<T, I>::address_for(user_id);
+        DeviceFilters::<T, I>::remove(&address, device_id);
+
+        let mut meter = frame_support::weights::WeightMeter::new();
+
+        #[block]
+        {
+            assert!(matches!(
+                MigrateV0ToV1::<T, I>::step(None, &mut meter),
+                Ok(None)
+            ));
+        }
+
+        // Verification code
+        assert_eq!(
+            DeviceFilters::<T, I>::get(&address, device_id),
+            Some(DeviceFilter::Admin)
+        );
+
+        Ok(())
+    }
+
+    /// One unit of the second phase of `MigrateV0ToV1`.
+    #[benchmark]
+    pub fn migrate_session_key() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        do_register::<T, I>(user_id)?;
+        let address = Pallet::<T, I>::address_for(user_id);
+
+        // A value in the storage version 0 shape.
+        let session_key: T::AccountId = account("session-key", 0, 0);
+        let raw_key = SessionKeys::<T, I>::hashed_key_for(&session_key);
+        frame_support::storage::unhashed::put_raw(
+            &raw_key,
+            &(address.clone(), T::MaxSessionDuration::get()).encode(),
+        );
+
+        let mut meter = frame_support::weights::WeightMeter::new();
+
+        #[block]
+        {
+            assert!(matches!(
+                MigrateV0ToV1::<T, I>::step(
+                    Some((migrations::Phase::SessionKeys, Default::default())),
+                    &mut meter
+                ),
+                Ok(None)
+            ));
+        }
+
+        // Verification code
+        assert_eq!(
+            frame_support::storage::unhashed::get::<(
+                T::AccountId,
+                crate::types::BlockNumberFor<T, I>,
+                DeviceFilterOf<T, I>
+            )>(&raw_key),
+            Some((address, T::MaxSessionDuration::get(), DeviceFilter::Admin))
+        );
+
+        Ok(())
+    }
+
+    /// The worst case: an `Admin` device downgrades itself, so the scan for another `Admin`
+    /// device goes through an account full of restricted ones, and the filters are the largest.
+    #[benchmark]
+    pub fn set_device_filter() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let admin_device_id = do_register::<T, I>(user_id)?;
+        let address = Pallet::<T, I>::address_for(user_id);
+
+        let filter = max_calls_filter::<T, I>(&benchmark_call::<T>());
+        // Another `Admin` device, so the account keeps one.
+        DeviceFilters::<T, I>::insert(&address, [99u8; 32], DeviceFilter::Admin);
+        fill_with_restricted_filters::<T, I>(&address);
+        AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
+
+        #[extrinsic_call]
+        _(
+            RawOrigin::Signed(address.clone()),
+            admin_device_id,
+            filter.clone(),
+        );
+
+        // Verification code
+        assert_eq!(
+            DeviceFilters::<T, I>::get(&address, admin_device_id),
+            Some(filter)
+        );
+        assert_has_event::<T, I>(
+            Event::DeviceFilterUpdated {
+                who: address,
+                device_id: admin_device_id,
+            }
+            .into(),
+        );
 
         Ok(())
     }

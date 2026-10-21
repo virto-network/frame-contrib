@@ -121,6 +121,11 @@ parameter_types! {
     pub HoldSessionKeys: RuntimeHoldReason = HoldReason::SessionKeys.into();
 }
 
+parameter_types! {
+    /// Whether the legacy `add_session_key` call is available. Tests change it.
+    pub static UnrestrictedSessionKeysEnabled: bool = true;
+}
+
 composite_authenticators! {
     // `AuthenticatorB` goes first: benchmarks use the first authenticator's helper, and it
     // actually checks credentials (signature and nonce).
@@ -199,6 +204,7 @@ impl Config for Test {
     type MaxSessionDuration = ConstU64<10>;
     type MaxFilteredCalls = ConstU32<10>;
     type MaxFilteredAssets = ConstU32<5>;
+    type UnrestrictedSessionKeys = UnrestrictedSessionKeysEnabled;
 }
 
 pub fn new_test_ext() -> TestExternalities {

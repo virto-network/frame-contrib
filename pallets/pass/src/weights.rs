@@ -25,6 +25,16 @@ pub trait WeightInfo {
 	fn remove_device() -> Weight;
 	fn add_session_key() -> Weight;
 	fn remove_session_key() -> Weight;
+	/// Does not include verifying the attestation, which the authenticator reports separately.
+	fn add_device_with_filter() -> Weight;
+	fn add_session_key_with_filter() -> Weight;
+	/// One unit of `migrations::MigrateV0ToV1`'s first phase: giving `Admin` to one device that
+	/// has no filter.
+	fn migrate_device_filter() -> Weight;
+	/// One unit of `migrations::MigrateV0ToV1`'s second phase: converting one session key.
+	fn migrate_session_key() -> Weight;
+	/// Includes the scan of the account's `DeviceFilters` that keeps one `Admin` device.
+	fn set_device_filter() -> Weight;
 }
 
 /// PLACEHOLDER weights for `fc_pallet_pass`: none of these come from a benchmark run on reference
@@ -98,6 +108,9 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Balances::Holds` (r:1 w:1)
 	/// Storage: `Pass::DeviceIds` (r:0 w:1)
 	/// Storage: `Pass::DeviceFilters` (r:0 w:1)
+	///
+	/// NOTE: it does not yet count the scan of the account's `DeviceFilters` that keeps one
+	/// `Admin` device (up to `MaxDevicesPerAccount` reads); a benchmark run covers it.
 	fn remove_device() -> Weight {
 		Weight::from_parts(100_000_000, 20_000)
 			.saturating_add(T::DbWeight::get().reads(5_u64))
@@ -135,6 +148,62 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		Weight::from_parts(100_000_000, 200_000)
 			.saturating_add(T::DbWeight::get().reads(5_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
+	}
+
+	/// PLACEHOLDER: not produced by a benchmark run; same estimate as
+	/// [`Self::add_device`], whose cost the filter does not change:
+	/// Storage: `Pass::Devices` (r:2 w:1)
+	/// Storage: `Pass::AuthenticatedDevice` (r:1 w:0)
+	/// Storage: `Pass::DeviceFilters` (r:1 w:1)
+	/// Storage: `Pass::DeviceIds` (r:1 w:1)
+	/// Storage: `Pass::DeviceConsiderations` (r:1 w:1)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Storage: `Balances::Holds` (r:1 w:1)
+	///
+	/// Does not include verifying the attestation, which the authenticator reports separately.
+	fn add_device_with_filter() -> Weight {
+		Weight::from_parts(100_000_000, 20_000)
+			.saturating_add(T::DbWeight::get().reads(8_u64))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
+	}
+
+	/// PLACEHOLDER: not produced by a benchmark run; same estimate as
+	/// [`Self::add_session_key`]. See there for the accesses.
+	fn add_session_key_with_filter() -> Weight {
+		Weight::from_parts(100_000_000, 200_000)
+			.saturating_add(T::DbWeight::get().reads(18_u64))
+			.saturating_add(T::DbWeight::get().writes(12_u64))
+	}
+
+	/// PLACEHOLDER: not produced by a benchmark run. Execution time and proof size are
+	/// conservative estimates; DB accesses are counted from the code path:
+	/// Storage: `Pass::Devices` (r:1 w:0) (next key)
+	/// Storage: `Pass::DeviceFilters` (r:1 w:1)
+	fn migrate_device_filter() -> Weight {
+		Weight::from_parts(10_000_000, 5_000)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+
+	/// PLACEHOLDER: not produced by a benchmark run. Execution time and proof size are
+	/// conservative estimates; DB accesses are counted from the code path:
+	/// Storage: `Pass::SessionKeys` (r:2 w:1) (next key, then the value)
+	fn migrate_session_key() -> Weight {
+		Weight::from_parts(10_000_000, 5_000)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+
+	/// PLACEHOLDER: not produced by a benchmark run. Execution time and proof size are
+	/// conservative estimates; DB accesses are counted from the code path, with the scan of the
+	/// account's `DeviceFilters` (the guard that keeps one `Admin` device) at up to 10 entries:
+	/// Storage: `Pass::AuthenticatedDevice` (r:1 w:0)
+	/// Storage: `Pass::Devices` (r:2 w:0)
+	/// Storage: `Pass::DeviceFilters` (r:12 w:1)
+	fn set_device_filter() -> Weight {
+		Weight::from_parts(30_000_000, 20_000)
+			.saturating_add(T::DbWeight::get().reads(15_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 }
 
@@ -206,5 +275,41 @@ impl WeightInfo for () {
 		Weight::from_parts(0, 0)
 			// Standard Error: 0
 			.saturating_add(Weight::from_parts(0, 0))
+	}
+
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::add_device_with_filter`] with `RocksDbWeight`.
+	fn add_device_with_filter() -> Weight {
+		Weight::from_parts(100_000_000, 20_000)
+			.saturating_add(RocksDbWeight::get().reads(8_u64))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
+	}
+
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::add_session_key_with_filter`] with
+	/// `RocksDbWeight`.
+	fn add_session_key_with_filter() -> Weight {
+		Weight::from_parts(100_000_000, 200_000)
+			.saturating_add(RocksDbWeight::get().reads(18_u64))
+			.saturating_add(RocksDbWeight::get().writes(12_u64))
+	}
+
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::migrate_device_filter`] with `RocksDbWeight`.
+	fn migrate_device_filter() -> Weight {
+		Weight::from_parts(10_000_000, 5_000)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::migrate_session_key`] with `RocksDbWeight`.
+	fn migrate_session_key() -> Weight {
+		Weight::from_parts(10_000_000, 5_000)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::set_device_filter`] with `RocksDbWeight`.
+	fn set_device_filter() -> Weight {
+		Weight::from_parts(30_000_000, 20_000)
+			.saturating_add(RocksDbWeight::get().reads(15_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 }

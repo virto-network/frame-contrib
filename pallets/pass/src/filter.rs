@@ -3,12 +3,15 @@
 //! Per-device call authorization based on the principle of least privilege.
 //! Each device is bound to a [`DeviceFilter`] that gates which extrinsics
 //! it may dispatch. The first/recovery device gets `Admin` (unrestricted);
-//! additional devices must have an explicit, more restrictive filter.
+//! additional devices are expected to have an explicit, more restrictive filter,
+//! but an `Admin` device may create other `Admin` devices.
 //!
 //! ## Variants
 //!
-//! - [`DeviceFilter::Admin`] — unrestricted. Only the first device (from
-//!   `register()`), and only one Admin device per account is expected.
+//! - [`DeviceFilter::Admin`] — unrestricted. The first device (from
+//!   `register()`) gets it. Devices created before per-device filters existed
+//!   have it too (the migration gives it to them), and so do those created with
+//!   the unfiltered `add_device`.
 //! - [`DeviceFilter::Pallets`] — whitelist by pallet index.
 //! - [`DeviceFilter::Calls`] — whitelist by `(pallet_index, call_index)`.
 //! - [`DeviceFilter::Spend`] — transfer listed assets up to per-asset limits.
@@ -35,8 +38,11 @@
 //!
 //! ## Session keys
 //!
-//! Session keys are ephemeral and cannot use `Admin`. They still undergo the
-//! no-escalation check against the device that created them.
+//! Session keys are ephemeral, so `add_session_key_with_filter` does not accept
+//! `Admin`. The deprecated `add_session_key` is the only way to get an `Admin`
+//! session key, while the runtime allows it (`Config::UnrestrictedSessionKeys`).
+//! They still undergo the no-escalation check against the device that created
+//! them.
 //!
 //! ## Spending inspection
 //!

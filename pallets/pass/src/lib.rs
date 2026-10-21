@@ -37,6 +37,7 @@ mod tests;
 
 mod extensions;
 pub mod filter;
+pub mod migrations;
 mod types;
 
 pub mod weights;
@@ -130,6 +131,15 @@ pub mod pallet {
         /// Maximum assets in a device's spend filter.
         #[pallet::constant]
         type MaxFilteredAssets: Get<u32>;
+        /// Whether the deprecated [`add_session_key`][Pallet::add_session_key] call, which
+        /// creates a session key with an unrestricted (`Admin`) filter, is available.
+        ///
+        /// When `false`, the call fails with [`Error::UnrestrictedSessionKeysDisabled`].
+        /// Runtimes keep it `true` while their integrators move to
+        /// [`add_session_key_with_filter`][Pallet::add_session_key_with_filter], then flip it
+        /// to `false` (a runtime upgrade, no pallet release needed).
+        #[pallet::constant]
+        type UnrestrictedSessionKeys: Get<bool>;
     }
 
     #[pallet::composite_enum]
@@ -143,7 +153,15 @@ pub mod pallet {
         SessionKeys,
     }
 
+    /// The current storage version.
+    ///
+    /// - `0`: devices were implicitly unrestricted, and `SessionKeys` held `(account, until)`.
+    /// - `1`: every device has an explicit entry in [`DeviceFilters`], and `SessionKeys` holds
+    ///   `(account, until, filter)`. See [`migrations::MigrateV0ToV1`].
+    pub(crate) const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+
     #[pallet::pallet]
+    #[pallet::storage_version(STORAGE_VERSION)]
     pub struct Pallet<T, I = ()>(_);
 
     /// A map of the pass accounts registered by a system account, with a mapping of the
@@ -174,7 +192,12 @@ pub mod pallet {
     pub type DeviceIds<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, DeviceId, ()>;
 
-    /// Per-device call filters. Devices without an entry are treated as `Admin`.
+    /// Per-device call filters.
+    ///
+    /// A device without an entry is **denied** every call: `PassAuthenticate` rejects it, and it
+    /// cannot create devices or session keys. Every device written by this pallet gets an entry
+    /// (`Admin` for the first and legacy ones). Devices created before storage version 1 had no
+    /// entry; [`migrations::MigrateV0ToV1`] gives them `Admin`, which is what they were before.
     #[pallet::storage]
     pub type DeviceFilters<T: Config<I>, I: 'static = ()> = StorageDoubleMap<
         _,
@@ -205,8 +228,9 @@ pub mod pallet {
     ///
     /// - **Set**: by `PassAuthenticate::prepare` when the tx was
     ///   authenticated with a device credential.
-    /// - **Read**: by `check_no_escalation` during `add_device` /
-    ///   `add_session_key`.
+    /// - **Read**: by `check_no_escalation` during `add_device`,
+    ///   `add_device_with_filter`, `add_session_key`,
+    ///   `add_session_key_with_filter` and `set_device_filter`.
     /// - **Cleared**: in `PassAuthenticate::post_dispatch_details` of the same
     ///   transaction, AND at the start of every block in `on_initialize`
     ///   (defense-in-depth).
@@ -263,6 +287,11 @@ pub mod pallet {
         SessionRemoved {
             session_key: T::AccountId,
         },
+        /// The filter of a device was changed by `set_device_filter`.
+        DeviceFilterUpdated {
+            who: T::AccountId,
+            device_id: DeviceId,
+        },
     }
 
     #[pallet::error]
@@ -291,6 +320,12 @@ pub mod pallet {
         /// The transaction did not carry a device authentication, so no
         /// device filter context is available for this operation.
         NotAuthenticatedByDevice,
+        /// Creating unrestricted (`Admin`) session keys is disabled by the runtime
+        /// ([`Config::UnrestrictedSessionKeys`]). Use `add_session_key_with_filter`.
+        UnrestrictedSessionKeysDisabled,
+        /// An account must keep at least one device with an `Admin` filter. The operation would
+        /// remove or downgrade the last one.
+        LastAdminDevice,
     }
 
     #[pallet::hooks]
@@ -302,6 +337,15 @@ pub mod pallet {
             // per block, instead of one on every transaction.
             AuthenticatedDevice::<T, I>::kill();
             T::DbWeight::get().writes(1)
+        }
+
+        fn integrity_test() {
+            // `migrations::MigrateV0ToV1` keeps raw storage keys in its cursor.
+            assert!(
+                migrations::MAX_KEY_LEN as usize
+                    >= migrations::MAX_KEY_OVERHEAD + T::AccountId::max_encoded_len(),
+                "AccountId is too large for the cursor of `MigrateV0ToV1`"
+            );
         }
     }
 
@@ -333,16 +377,104 @@ pub mod pallet {
             Self::try_add_device(address, attestation, DeviceFilter::Admin)
         }
 
-        /// Add a new device with a call filter. The caller's device filter
-        /// must be a superset of the new device's filter (no-escalation).
-        /// The caller's device is determined by `AuthenticatedDevice` storage,
-        /// which is set by the `PassAuthenticate` transaction extension.
+        /// Adds a device with an unrestricted (`Admin`) filter.
+        ///
+        /// This is the call as it was in 2.x. Prefer
+        /// [`add_device_with_filter`][Self::add_device_with_filter], which lets the caller
+        /// restrict the new device.
+        ///
+        /// # Authorization
+        ///
+        /// In 2.x this only required the signer to be a Pass account. That cannot be
+        /// reproduced as it was: a device or session key whose filter merely allows the Pass
+        /// pallet would be able to create an `Admin` device. So the call must be made through
+        /// a device whose filter is `Admin` (the no-escalation check against
+        /// [`DeviceFilter::Admin`]); anything else fails with
+        /// [`PermissionEscalation`][Error::PermissionEscalation], or
+        /// [`NotAuthenticatedByDevice`][Error::NotAuthenticatedByDevice] if no device
+        /// authenticated the transaction (e.g. it was signed by a session key). The rule lives
+        /// in one place, `Pallet::ensure_legacy_authorization`.
         #[pallet::call_index(1)]
         #[pallet::weight(
             T::WeightInfo::add_device()
                 .saturating_add(<T::Authenticator as Authenticator>::verification_weight(attestation))
         )]
         pub fn add_device(
+            origin: OriginFor<T>,
+            attestation: DeviceAttestationOf<T, I>,
+        ) -> DispatchResult {
+            let address = Self::ensure_signer_is_pass_account(origin)?;
+            Self::ensure_legacy_authorization(&address)?;
+            Self::try_add_device(&address, attestation, DeviceFilter::Admin)
+        }
+
+        /// Removes a device.
+        ///
+        /// The device that authenticated the call can always remove itself. To remove another
+        /// one, its filter must be a superset of the target's (a device without a filter counts
+        /// as `Admin`). An account must keep at least one `Admin` device: removing the last one
+        /// fails with [`LastAdminDevice`][Error::LastAdminDevice].
+        ///
+        /// A call that no device authenticated (e.g. one signed by a session key) fails with
+        /// [`NotAuthenticatedByDevice`][Error::NotAuthenticatedByDevice]. This is a deliberate
+        /// tightening versus 2.x, where any signer that was a Pass account could remove devices.
+        #[pallet::call_index(2)]
+        pub fn remove_device(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
+            let address = Self::ensure_signer_is_pass_account(origin)?;
+            let (caller_device_id, caller_filter) = Self::authenticated_device(&address)?;
+            if caller_device_id != device_id {
+                ensure!(
+                    Devices::<T, I>::contains_key(&address, device_id),
+                    Error::<T, I>::DeviceNotFound
+                );
+                let target = DeviceFilters::<T, I>::get(&address, device_id);
+                ensure!(
+                    caller_filter.is_superset_of(target.as_ref().unwrap_or(&DeviceFilter::Admin)),
+                    Error::<T, I>::PermissionEscalation
+                );
+            }
+            Self::try_remove_device(&address, &device_id)
+        }
+
+        #[pallet::call_index(3)]
+        #[pallet::weight(T::WeightInfo::add_session_key())]
+        #[deprecated(
+            note = "creates an unrestricted session key; use `add_session_key_with_filter`"
+        )]
+        pub fn add_session_key(
+            origin: OriginFor<T>,
+            session: AccountIdLookupOf<T>,
+            duration: Option<BlockNumberFor<T, I>>,
+        ) -> DispatchResult {
+            ensure!(
+                T::UnrestrictedSessionKeys::get(),
+                Error::<T, I>::UnrestrictedSessionKeysDisabled
+            );
+            let address = &Self::ensure_signer_is_pass_account(origin)?;
+            Self::ensure_legacy_authorization(address)?;
+            let session_key = &T::Lookup::lookup(session)?;
+            Self::try_add_session_key(address, session_key, duration, DeviceFilter::Admin)
+        }
+
+        #[pallet::call_index(4)]
+        pub fn remove_session_key(
+            origin: OriginFor<T>,
+            session_key: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::try_remove_session_key(&session_key)
+        }
+
+        /// Add a new device with a call filter. The caller's device filter
+        /// must be a superset of the new device's filter (no-escalation).
+        /// The caller's device is determined by `AuthenticatedDevice` storage,
+        /// which is set by the `PassAuthenticate` transaction extension.
+        #[pallet::call_index(5)]
+        #[pallet::weight(
+            T::WeightInfo::add_device_with_filter()
+                .saturating_add(<T::Authenticator as Authenticator>::verification_weight(attestation))
+        )]
+        pub fn add_device_with_filter(
             origin: OriginFor<T>,
             attestation: DeviceAttestationOf<T, I>,
             filter: DeviceFilterOf<T, I>,
@@ -352,16 +484,11 @@ pub mod pallet {
             Self::try_add_device(&address, attestation, filter)
         }
 
-        #[pallet::call_index(2)]
-        pub fn remove_device(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
-            let address = Self::ensure_signer_is_pass_account(origin)?;
-            Self::try_remove_device(&address, &device_id)
-        }
-
         /// Add a session key with a mandatory call filter.
         /// `Admin` filter is not allowed for session keys.
-        #[pallet::call_index(3)]
-        pub fn add_session_key(
+        #[pallet::call_index(6)]
+        #[pallet::weight(T::WeightInfo::add_session_key_with_filter())]
+        pub fn add_session_key_with_filter(
             origin: OriginFor<T>,
             session: AccountIdLookupOf<T>,
             duration: Option<BlockNumberFor<T, I>>,
@@ -379,52 +506,51 @@ pub mod pallet {
             // No-escalation: caller can only grant permissions it has
             Self::check_no_escalation(address, &filter)?;
 
-            // We must ensure that there is no account registered for that session key.
+            Self::try_add_session_key(address, session_key, duration, filter)
+        }
+
+        /// Changes the filter of one of the account's devices.
+        ///
+        /// The device that authenticated the call must have a filter that is a superset of both
+        /// the target's current filter and the new one (no-escalation, both ways): a device can
+        /// neither grant what it does not have, nor touch a device that can do more than it.
+        /// A device without a filter (one not yet migrated) counts as `Admin` for this purpose,
+        /// so only an `Admin` device can change it.
+        ///
+        /// An account must keep at least one `Admin` device: downgrading the last one fails with
+        /// [`LastAdminDevice`][Error::LastAdminDevice].
+        #[pallet::call_index(7)]
+        #[pallet::weight(T::WeightInfo::set_device_filter())]
+        pub fn set_device_filter(
+            origin: OriginFor<T>,
+            device_id: DeviceId,
+            filter: DeviceFilterOf<T, I>,
+        ) -> DispatchResult {
+            let address = Self::ensure_signer_is_pass_account(origin)?;
+            let caller_filter = Self::authenticated_device_filter(&address)?;
+
             ensure!(
-                !frame_system::Pallet::<T>::account_exists(session_key),
-                Error::<T, I>::AccountForSessionKeyAlreadyExists
+                Devices::<T, I>::contains_key(&address, device_id),
+                Error::<T, I>::DeviceNotFound
+            );
+            let current = DeviceFilters::<T, I>::get(&address, device_id);
+            ensure!(
+                caller_filter.is_superset_of(current.as_ref().unwrap_or(&DeviceFilter::Admin))
+                    && caller_filter.is_superset_of(&filter),
+                Error::<T, I>::PermissionEscalation
             );
 
-            if let Some((account, _, _)) = SessionKeys::<T, I>::get(session_key) {
-                // Ensure another user is not using this session key.
-                ensure!(&account == address, Error::<T, I>::SessionKeyInUse);
-
-                // Let's try to remove an existing session that uses the same session key (if any).
-                Self::try_remove_session_key(session_key)?;
+            if current == Some(DeviceFilter::Admin) && filter != DeviceFilter::Admin {
+                Self::ensure_another_admin(&address, &device_id)?;
             }
 
-            let devices_count = AccountSessionsCount::<T, I>::get(address);
-            ensure!(
-                devices_count < T::MaxSessionsPerAccount::get(),
-                Error::<T, I>::MaxSessionsExceeded
-            );
-            AccountSessionsCount::<T, I>::insert(
-                address,
-                AccountSessionsCount::<T, I>::get(address).saturating_add(1),
-            );
-
-            let until = duration
-                .unwrap_or(T::MaxSessionDuration::get())
-                .min(T::MaxSessionDuration::get());
-
-            SessionKeys::<T, I>::insert(session_key.clone(), (address.clone(), until, filter));
-            Self::schedule_next_removal(session_key, duration)?;
-
-            Self::deposit_event(Event::<T, I>::SessionCreated {
-                session_key_hash: T::Hashing::hash(&session_key.encode()),
-                until,
+            DeviceFilters::<T, I>::insert(&address, device_id, filter);
+            Self::deposit_event(Event::<T, I>::DeviceFilterUpdated {
+                who: address,
+                device_id,
             });
 
             Ok(())
-        }
-
-        #[pallet::call_index(4)]
-        pub fn remove_session_key(
-            origin: OriginFor<T>,
-            session_key: T::AccountId,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            Self::try_remove_session_key(&session_key)
         }
     }
 }
@@ -441,12 +567,19 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         SessionKeys::<T, I>::get(who).map(|(account, _, filter)| (account, filter))
     }
 
-    /// Verify the no-escalation invariant: the authenticated device's filter must
-    /// be a superset of the requested filter.
-    fn check_no_escalation(
+    /// The filter of the device that authenticated the current transaction, which must belong
+    /// to `address`.
+    fn authenticated_device_filter(
         address: &T::AccountId,
-        requested: &DeviceFilterOf<T, I>,
-    ) -> DispatchResult {
+    ) -> Result<DeviceFilterOf<T, I>, DispatchError> {
+        Self::authenticated_device(address).map(|(_, filter)| filter)
+    }
+
+    /// The id and filter of the device that authenticated the current transaction, which must
+    /// belong to `address`.
+    fn authenticated_device(
+        address: &T::AccountId,
+    ) -> Result<(DeviceId, DeviceFilterOf<T, I>), DispatchError> {
         let (auth_account, caller_device_id) =
             AuthenticatedDevice::<T, I>::get().ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
         // Stale authentication context from a different account is ignored.
@@ -458,13 +591,45 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Devices::<T, I>::contains_key(address, caller_device_id),
             Error::<T, I>::DeviceNotFound
         );
-        let caller_filter = DeviceFilters::<T, I>::get(address, caller_device_id)
+        let filter = DeviceFilters::<T, I>::get(address, caller_device_id)
             .ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
+        Ok((caller_device_id, filter))
+    }
+
+    /// Verify the no-escalation invariant: the authenticated device's filter must
+    /// be a superset of the requested filter.
+    fn check_no_escalation(
+        address: &T::AccountId,
+        requested: &DeviceFilterOf<T, I>,
+    ) -> DispatchResult {
         ensure!(
-            caller_filter.is_superset_of(requested),
+            Self::authenticated_device_filter(address)?.is_superset_of(requested),
             Error::<T, I>::PermissionEscalation
         );
         Ok(())
+    }
+
+    /// Ensures that an account has an `Admin` device other than `device_id`: the guard that keeps
+    /// an account from losing its last one.
+    fn ensure_another_admin(address: &T::AccountId, device_id: &DeviceId) -> DispatchResult {
+        ensure!(
+            DeviceFilters::<T, I>::iter_prefix(address)
+                .any(|(id, filter)| &id != device_id && filter == DeviceFilter::Admin),
+            Error::<T, I>::LastAdminDevice
+        );
+        Ok(())
+    }
+
+    /// The authorization of the legacy (unfiltered) `add_device` and `add_session_key` calls.
+    ///
+    /// They create an `Admin` device or session key, so the caller must itself be an `Admin`
+    /// device: the no-escalation check against [`DeviceFilter::Admin`]. In 2.x they only
+    /// required a Pass account as signer, which today would let a device or session key whose
+    /// filter allows the Pass pallet create an `Admin` device.
+    ///
+    /// Kept in one function so the rule can be relaxed in a single place.
+    fn ensure_legacy_authorization(address: &T::AccountId) -> DispatchResult {
+        Self::check_no_escalation(address, &DeviceFilter::Admin)
     }
 
     /// Ensure that the signed origin maps onto an already existing pass account.
@@ -566,6 +731,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Devices::<T, I>::contains_key(address, id),
             Error::<T, I>::DeviceNotFound
         );
+        // An account must keep an `Admin` device.
+        if DeviceFilters::<T, I>::get(address, id) == Some(DeviceFilter::Admin) {
+            Self::ensure_another_admin(address, id)?;
+        }
 
         ConsiderationHandler::<
             T::AccountId,
@@ -581,6 +750,53 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Self::deposit_event(Event::<T, I>::DeviceRemoved {
             who: address.clone(),
             device_id: *id,
+        });
+
+        Ok(())
+    }
+
+    /// Creates a session key for `address` with the given filter. The caller of this function
+    /// is responsible for authorizing the filter.
+    fn try_add_session_key(
+        address: &T::AccountId,
+        session_key: &T::AccountId,
+        duration: Option<types::BlockNumberFor<T, I>>,
+        filter: DeviceFilterOf<T, I>,
+    ) -> DispatchResult {
+        // We must ensure that there is no account registered for that session key.
+        ensure!(
+            !frame_system::Pallet::<T>::account_exists(session_key),
+            Error::<T, I>::AccountForSessionKeyAlreadyExists
+        );
+
+        if let Some((account, _, _)) = SessionKeys::<T, I>::get(session_key) {
+            // Ensure another user is not using this session key.
+            ensure!(&account == address, Error::<T, I>::SessionKeyInUse);
+
+            // Let's try to remove an existing session that uses the same session key (if any).
+            Self::try_remove_session_key(session_key)?;
+        }
+
+        let devices_count = AccountSessionsCount::<T, I>::get(address);
+        ensure!(
+            devices_count < T::MaxSessionsPerAccount::get(),
+            Error::<T, I>::MaxSessionsExceeded
+        );
+        AccountSessionsCount::<T, I>::insert(
+            address,
+            AccountSessionsCount::<T, I>::get(address).saturating_add(1),
+        );
+
+        let until = duration
+            .unwrap_or(T::MaxSessionDuration::get())
+            .min(T::MaxSessionDuration::get());
+
+        SessionKeys::<T, I>::insert(session_key.clone(), (address.clone(), until, filter));
+        Self::schedule_next_removal(session_key, duration)?;
+
+        Self::deposit_event(Event::<T, I>::SessionCreated {
+            session_key_hash: T::Hashing::hash(&session_key.encode()),
+            until,
         });
 
         Ok(())
