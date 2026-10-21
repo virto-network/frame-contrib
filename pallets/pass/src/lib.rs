@@ -408,28 +408,34 @@ pub mod pallet {
             Self::try_add_device(&address, attestation, DeviceFilter::Admin)
         }
 
-        /// Removes a device. An account must keep at least one `Admin` device: removing the last
-        /// one fails with [`LastAdminDevice`][Error::LastAdminDevice].
+        /// Removes a device.
+        ///
+        /// The device that authenticated the call can always remove itself. To remove another
+        /// one, its filter must be a superset of the target's (a device without a filter counts
+        /// as `Admin`). An account must keep at least one `Admin` device: removing the last one
+        /// fails with [`LastAdminDevice`][Error::LastAdminDevice].
+        ///
+        /// A call that no device authenticated (e.g. one signed by a session key) fails with
+        /// [`NotAuthenticatedByDevice`][Error::NotAuthenticatedByDevice]. This is a deliberate
+        /// tightening versus 2.x, where any signer that was a Pass account could remove devices.
         #[pallet::call_index(2)]
         pub fn remove_device(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
             let address = Self::ensure_signer_is_pass_account(origin)?;
+            let (caller_device_id, caller_filter) = Self::authenticated_device(&address)?;
+            if caller_device_id != device_id {
+                ensure!(
+                    Devices::<T, I>::contains_key(&address, device_id),
+                    Error::<T, I>::DeviceNotFound
+                );
+                let target = DeviceFilters::<T, I>::get(&address, device_id);
+                ensure!(
+                    caller_filter.is_superset_of(target.as_ref().unwrap_or(&DeviceFilter::Admin)),
+                    Error::<T, I>::PermissionEscalation
+                );
+            }
             Self::try_remove_device(&address, &device_id)
         }
 
-        /// Adds a session key with an unrestricted (`Admin`) filter.
-        ///
-        /// **Deprecated**: a session key is a bearer key held outside the authenticator, so an
-        /// unrestricted one gives full control of the account if it leaks. Use
-        /// [`add_session_key_with_filter`][Self::add_session_key_with_filter]. This call is only
-        /// available while [`Config::UnrestrictedSessionKeys`] is `true`, and will be removed in
-        /// the next major version.
-        ///
-        /// # Authorization
-        ///
-        /// Like [`add_device`][Self::add_device], it must be made through an `Admin` device
-        /// (see `Pallet::ensure_legacy_authorization`), where 2.x only asked for a Pass
-        /// account. A call signed by a session key fails with
-        /// [`NotAuthenticatedByDevice`][Error::NotAuthenticatedByDevice].
         #[pallet::call_index(3)]
         #[pallet::weight(T::WeightInfo::add_session_key())]
         #[deprecated(
@@ -566,6 +572,14 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     fn authenticated_device_filter(
         address: &T::AccountId,
     ) -> Result<DeviceFilterOf<T, I>, DispatchError> {
+        Self::authenticated_device(address).map(|(_, filter)| filter)
+    }
+
+    /// The id and filter of the device that authenticated the current transaction, which must
+    /// belong to `address`.
+    fn authenticated_device(
+        address: &T::AccountId,
+    ) -> Result<(DeviceId, DeviceFilterOf<T, I>), DispatchError> {
         let (auth_account, caller_device_id) =
             AuthenticatedDevice::<T, I>::get().ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
         // Stale authentication context from a different account is ignored.
@@ -577,8 +591,9 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Devices::<T, I>::contains_key(address, caller_device_id),
             Error::<T, I>::DeviceNotFound
         );
-        Ok(DeviceFilters::<T, I>::get(address, caller_device_id)
-            .ok_or(Error::<T, I>::NotAuthenticatedByDevice)?)
+        let filter = DeviceFilters::<T, I>::get(address, caller_device_id)
+            .ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
+        Ok((caller_device_id, filter))
     }
 
     /// Verify the no-escalation invariant: the authenticated device's filter must

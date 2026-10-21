@@ -3077,6 +3077,7 @@ mod last_admin_device {
     #[test]
     fn the_only_admin_cannot_be_removed() {
         prepare(AccountNameA::get()).execute_with(|| {
+            authenticated_as(THE_DEVICE);
             assert_noop!(remove(THE_DEVICE), Error::<Test>::LastAdminDevice);
             assert!(DeviceFilters::<Test>::get(Address::get(), THE_DEVICE).is_some());
         })
@@ -3125,6 +3126,144 @@ mod last_admin_device {
                 Error::<Test>::LastAdminDevice
             );
             assert_ok!(remove(OTHER_DEVICE));
+        })
+    }
+}
+
+/// Who can remove which device.
+mod remove_device {
+    use super::*;
+    use crate::DeviceFilters;
+
+    fn remove(device_id: DeviceId) -> frame_support::dispatch::DispatchResult {
+        Pass::remove_device(RuntimeOrigin::signed(Address::get()), device_id)
+    }
+
+    /// `THE_DEVICE` (`Admin`) and `OTHER_DEVICE` (with `filter`).
+    fn with_other_device(filter: crate::DeviceFilterOf<Test>) -> sp_io::TestExternalities {
+        let mut ext = prepare(AccountNameA::get());
+        ext.execute_with(|| {
+            fund_address();
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_device_with_filter(
+                RuntimeOrigin::signed(Address::get()),
+                attestation(OTHER_DEVICE),
+                filter,
+            ));
+            crate::AuthenticatedDevice::<Test>::kill();
+        });
+        ext
+    }
+
+    fn exists(device_id: DeviceId) -> bool {
+        crate::Devices::<Test>::contains_key(Address::get(), device_id)
+    }
+
+    #[test]
+    fn a_limited_device_cannot_remove_an_admin_device() {
+        with_other_device(pallets_filter(&[PASS_PALLET])).execute_with(|| {
+            authenticated_as(OTHER_DEVICE);
+            assert_noop!(remove(THE_DEVICE), Error::<Test>::PermissionEscalation);
+            assert!(exists(THE_DEVICE));
+        })
+    }
+
+    #[test]
+    fn a_limited_device_can_remove_itself() {
+        with_other_device(pallets_filter(&[PASS_PALLET])).execute_with(|| {
+            authenticated_as(OTHER_DEVICE);
+            assert_ok!(remove(OTHER_DEVICE));
+            assert!(!exists(OTHER_DEVICE));
+            assert!(exists(THE_DEVICE));
+        })
+    }
+
+    #[test]
+    fn a_device_can_remove_one_with_an_equal_or_narrower_filter() {
+        for other in [
+            pallets_filter(&[PASS_PALLET]),
+            DeviceFilter::Calls(
+                [(PASS_PALLET, 7u8)]
+                    .into_iter()
+                    .collect::<alloc::collections::BTreeSet<_>>()
+                    .try_into()
+                    .unwrap(),
+            ),
+        ] {
+            with_other_device(other).execute_with(|| {
+                // Neither device is `Admin`, so the account would break the guard only if the
+                // target was one.
+                DeviceFilters::<Test>::insert(
+                    Address::get(),
+                    THE_DEVICE,
+                    pallets_filter(&[PASS_PALLET]),
+                );
+                authenticated_as(THE_DEVICE);
+                assert_ok!(remove(OTHER_DEVICE));
+                assert!(!exists(OTHER_DEVICE));
+            })
+        }
+    }
+
+    #[test]
+    fn a_device_cannot_remove_one_it_does_not_cover() {
+        with_other_device(pallets_filter(&[0, PASS_PALLET])).execute_with(|| {
+            DeviceFilters::<Test>::insert(
+                Address::get(),
+                THE_DEVICE,
+                pallets_filter(&[PASS_PALLET]),
+            );
+            authenticated_as(THE_DEVICE);
+            assert_noop!(remove(OTHER_DEVICE), Error::<Test>::PermissionEscalation);
+
+            // A device without a filter counts as `Admin`.
+            DeviceFilters::<Test>::remove(Address::get(), OTHER_DEVICE);
+            assert_noop!(remove(OTHER_DEVICE), Error::<Test>::PermissionEscalation);
+        })
+    }
+
+    #[test]
+    fn an_admin_removes_anything_but_the_last_admin() {
+        with_other_device(pallets_filter(&[PASS_PALLET])).execute_with(|| {
+            authenticated_as(THE_DEVICE);
+            assert_ok!(remove(OTHER_DEVICE));
+            assert_noop!(remove(THE_DEVICE), Error::<Test>::LastAdminDevice);
+            assert_noop!(remove(THIRD_DEVICE), Error::<Test>::DeviceNotFound);
+            assert!(exists(THE_DEVICE));
+        })
+    }
+
+    #[test]
+    fn needs_a_device_to_authenticate_the_call() {
+        with_other_device(remark_only_filter()).execute_with(|| {
+            assert_noop!(
+                remove(OTHER_DEVICE),
+                Error::<Test>::NotAuthenticatedByDevice
+            );
+            assert!(exists(OTHER_DEVICE));
+        })
+    }
+
+    #[test]
+    fn a_session_key_cannot_call_it() {
+        with_other_device(remark_only_filter()).execute_with(|| {
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_session_key_with_filter(
+                RuntimeOrigin::signed(Address::get()),
+                OTHER,
+                None,
+                pallets_filter(&[PASS_PALLET]),
+            ));
+            crate::AuthenticatedDevice::<Test>::kill();
+
+            let call = crate::Call::<Test>::remove_device {
+                device_id: OTHER_DEVICE,
+            };
+            assert_eq!(
+                signed(OTHER, call.into()).unwrap().unwrap_err().error,
+                Error::<Test>::NotAuthenticatedByDevice.into()
+            );
+            assert!(exists(OTHER_DEVICE));
         })
     }
 }
