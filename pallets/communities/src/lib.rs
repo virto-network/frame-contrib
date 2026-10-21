@@ -217,10 +217,8 @@ pub mod pallet {
         /// unassigned memberships) is what `add_member` assigns from, and a member
         /// transfers a membership as the community's transfer policy allows.
         ///
-        /// From 2.4.0 it must also implement `InspectEnumerable` and `Transfer`, so
-        /// a runtime that binds the deprecated `NonFungiblesMemberships`, which
-        /// implements neither, binds `GroupCollectionMemberships` (migrating its
-        /// data) when it takes 2.4.0.
+        /// It must also implement `InspectEnumerable` and `Transfer`, as
+        /// `GroupCollectionMemberships` does.
         type MemberMgmt: Inspect<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>
             + InspectEnumerable<
                 Self::AccountId,

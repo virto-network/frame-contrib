@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 //! # Memberships
 //!
-//! Traits to manage the memberships of groups, and two implementations over a
+//! Traits to manage the memberships of groups, and an implementation over a
 //! [`nonfungibles_v2`](frame_support::traits::tokens::nonfungibles_v2) collection system (such as
 //! `pallet-nfts`):
 //!
@@ -19,9 +19,6 @@
 //!   `AttributeKeys` parameter; none by default). A release and a burn clear those keys, and the
 //!   membership's rank, so a membership leaves its holder with nothing its manager wrote for
 //!   them. A transfer keeps them: they travel with the membership.
-//! - `NonFungiblesMemberships` (deprecated): the earlier model, with a manager collection and a
-//!   twin item per assigned membership. It does not implement [`Transfer`], so it cannot be bound
-//!   to a consumer that needs transfers, such as `fc-pallet-communities` from 2.4.0.
 extern crate alloc;
 
 #[cfg(test)]
@@ -37,10 +34,6 @@ use frame_support::{dispatch::DispatchResult, sp_runtime::DispatchError, Paramet
 
 mod group_collection;
 pub use group_collection::GroupCollectionMemberships;
-
-mod impl_nonfungibles;
-#[allow(deprecated)]
-pub use impl_nonfungibles::NonFungiblesMemberships;
 
 mod hooks;
 mod impls;

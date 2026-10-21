@@ -1,6 +1,6 @@
 # Memberships
 
-Traits to manage the memberships of groups, as non-fungible items, and two implementations over
+Traits to manage the memberships of groups, as non-fungible items, and an implementation over
 a `nonfungibles_v2` collection system such as `pallet-nfts`:
 
 - `GroupCollectionMemberships`: each group's memberships live in the group's own collection. The
@@ -20,7 +20,3 @@ a `nonfungibles_v2` collection system such as `pallet-nfts`:
   them. `Inspect::user_memberships_bounded` enumerates an account's memberships reading at most a
   given number of items, skipped ones (a group account's own stock) included, and says when it
   reached that bound.
-- `NonFungiblesMemberships` (deprecated since 2.4.0): a manager collection with a twin item per
-  assigned membership. It does not implement `Transfer`, so it cannot be bound to
-  `fc-pallet-communities` from 2.4.0, which requires `GroupCollectionMemberships` (or another
-  implementation of `Transfer`).
