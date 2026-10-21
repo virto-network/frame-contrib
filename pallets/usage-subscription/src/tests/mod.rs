@@ -16,6 +16,7 @@ use frame_support::{
 use sp_runtime::DispatchError;
 
 mod amendments;
+mod capacity;
 mod contracts;
 mod offers;
 mod payment_step;
