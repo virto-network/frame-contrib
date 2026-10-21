@@ -10,6 +10,7 @@ use alloc::boxed::Box;
 use fc_pallet_communities::origin::{EnsureCommunity, EnsureSignedPays};
 use fc_pallet_listings::{InventoryId, InventoryIdFor, ItemIdOf};
 use fc_pallet_pass::FirstItemIsFree;
+#[allow(deprecated)]
 use frame_contrib_traits::{
     authn::util::{dummy::Dummy, AuthorityFromPalletId},
     gas_tank::{NonFungibleGasTank, SelectNonFungibleItem},
@@ -337,6 +338,7 @@ parameter_types! {
     pub const CommunityDeposit: Balance = 10 * UNITS;
 }
 
+#[allow(deprecated)]
 pub type MembershipsManager = NonFungiblesMemberships<Memberships, pallet_nfts::ItemConfig>;
 
 impl fc_pallet_communities::Config for Runtime {

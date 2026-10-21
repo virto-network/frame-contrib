@@ -5,11 +5,30 @@ use frame_support::traits::Get;
 
 /// Extends a structure that already implements [`Manager`], and [`Rank`] to support
 /// hooks that are triggered after changes in memberships or ranks happen.
-pub struct WithHooks<T, OnMembershipAssigned = NoOp, OnMembershipReleased = NoOp, OnRankSet = NoOp>(
-    PhantomData<(T, OnMembershipAssigned, OnMembershipReleased, OnRankSet)>,
+///
+/// Each hook runs after the change it reports succeeded, and a hook's error fails the call:
+/// - `OnMembershipAssigned` after [`Manager::assign`], and `OnMembershipReleased` after
+///   [`Manager::release`];
+/// - `OnRankSet` after [`Rank::set_rank`], and after a [`Transfer::transfer`] whose group's
+///   policy resets the rank (with [`GenericRank::MIN`]);
+/// - `OnMembershipTransferred` after [`Transfer::transfer`], with the recipient.
+pub struct WithHooks<
+    T,
+    OnMembershipAssigned = NoOp,
+    OnMembershipReleased = NoOp,
+    OnRankSet = NoOp,
+    OnMembershipTransferred = NoOp,
+>(
+    PhantomData<(
+        T,
+        OnMembershipAssigned,
+        OnMembershipReleased,
+        OnRankSet,
+        OnMembershipTransferred,
+    )>,
 );
 
-impl<T, MA, MR, RS, AccountId> Inspect<AccountId> for WithHooks<T, MA, MR, RS>
+impl<T, MA, MR, RS, MT, AccountId> Inspect<AccountId> for WithHooks<T, MA, MR, RS, MT>
 where
     T: Inspect<AccountId>,
 {
@@ -27,8 +46,23 @@ where
         T::is_member_of(group, who)
     }
 
+    fn user_memberships_bounded(
+        who: &AccountId,
+        max_reads: u32,
+    ) -> BoundedMemberships<Self::Group, Self::Membership>
+    where
+        Self::Group: 'static,
+        Self::Membership: 'static,
+    {
+        T::user_memberships_bounded(who, max_reads)
+    }
+
     fn check_membership(who: &AccountId, m: &Self::Membership) -> Option<Self::Group> {
         T::check_membership(who, m)
+    }
+
+    fn holds(group: &Self::Group, who: &AccountId, m: &Self::Membership) -> bool {
+        T::holds(group, who, m)
     }
 
     fn members_total(group: &Self::Group) -> u32 {
@@ -36,7 +70,7 @@ where
     }
 }
 
-impl<T, MA, MR, RS, AccountId> InspectEnumerable<AccountId> for WithHooks<T, MA, MR, RS>
+impl<T, MA, MR, RS, MT, AccountId> InspectEnumerable<AccountId> for WithHooks<T, MA, MR, RS, MT>
 where
     AccountId: Clone,
     T: InspectEnumerable<AccountId>,
@@ -55,7 +89,7 @@ where
     }
 }
 
-impl<T, MA, MR, RS, AccountId> Attributes<AccountId> for WithHooks<T, MA, MR, RS>
+impl<T, MA, MR, RS, MT, AccountId> Attributes<AccountId> for WithHooks<T, MA, MR, RS, MT>
 where
     AccountId: Clone,
     T: Attributes<AccountId>,
@@ -86,7 +120,7 @@ where
     }
 }
 
-impl<T, MA, MR, RS, AccountId> Manager<AccountId> for WithHooks<T, MA, MR, RS>
+impl<T, MA, MR, RS, MT, AccountId> Manager<AccountId> for WithHooks<T, MA, MR, RS, MT>
 where
     AccountId: Clone,
     T: Manager<AccountId>,
@@ -110,7 +144,44 @@ where
     }
 }
 
-impl<T, MA, MR, RS, R, AccountId> Rank<AccountId, R> for WithHooks<T, MA, MR, RS>
+/// A transfer fires `OnMembershipTransferred` with the recipient, then, if the group's policy
+/// resets the rank, `OnRankSet` with [`GenericRank::MIN`], as any rank change does.
+impl<T, MA, MR, RS, MT, AccountId> Transfer<AccountId> for WithHooks<T, MA, MR, RS, MT>
+where
+    AccountId: Clone,
+    T: Transfer<AccountId>,
+    MA: Get<Box<dyn OnMembershipAssigned<AccountId, T::Group, T::Membership>>>,
+    MR: Get<Box<dyn OnMembershipReleased<T::Group, T::Membership>>>,
+    RS: Get<Box<dyn OnRankSet<T::Group, T::Membership, GenericRank>>>,
+    MT: Get<Box<dyn OnMembershipTransferred<AccountId, T::Group, T::Membership>>>,
+{
+    fn transfer_policy(group: &Self::Group) -> TransferPolicy {
+        T::transfer_policy(group)
+    }
+
+    fn set_transfer_policy(
+        group: &Self::Group,
+        policy: TransferPolicy,
+    ) -> Result<(), DispatchError> {
+        T::set_transfer_policy(group, policy)
+    }
+
+    fn transfer(
+        group: &Self::Group,
+        m: &Self::Membership,
+        to: &AccountId,
+    ) -> Result<(), DispatchError> {
+        let resets_rank = T::transfer_policy(group).rank == RankOnTransfer::Reset;
+        T::transfer(group, m, to)?;
+        MT::get().on_membership_transferred(to.clone(), group.clone(), m.clone())?;
+        if resets_rank {
+            RS::get().on_rank_set(group.clone(), m.clone(), GenericRank::MIN)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T, MA, MR, RS, MT, R, AccountId> Rank<AccountId, R> for WithHooks<T, MA, MR, RS, MT>
 where
     AccountId: Clone,
     R: Ord + Clone,
