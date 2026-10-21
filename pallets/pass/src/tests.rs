@@ -7,7 +7,7 @@ use codec::{Encode, MaxEncodedLen};
 use fc_traits_authn::{Challenger, DeviceId, HashedUserId};
 use frame_support::{
     assert_noop, assert_ok,
-    dispatch::PostDispatchInfo,
+    dispatch::{GetDispatchInfo, PostDispatchInfo},
     parameter_types,
     traits::{fungible::Mutate, Footprint},
 };
@@ -188,6 +188,43 @@ fn prepare(user_id: HashedUserId) -> sp_io::TestExternalities {
 }
 
 const DURATION: u64 = 10;
+
+/// Applies `call` as an extrinsic authenticated with a device credential.
+fn authenticate(
+    device_id: DeviceId,
+    credentials: PassCredential,
+    call: RuntimeCall,
+) -> ApplyExtrinsicResultWithInfo<PostDispatchInfo> {
+    let extensions: TxExtensions = (
+        PassAuthenticate::<Test>::from(device_id, credentials),
+        pallet_transaction_payment::ChargeTransactionPayment::from(0),
+    );
+
+    let xt = CheckedExtrinsic {
+        format: ExtrinsicFormat::General(ExtensionVariant::V0(extensions)),
+        function: call.clone(),
+    };
+
+    xt.apply::<Test>(&call.get_dispatch_info(), call.encoded_size())
+}
+
+/// Applies `call` as an extrinsic signed by `session_key`.
+fn signed(
+    session_key: AccountId,
+    call: RuntimeCall,
+) -> ApplyExtrinsicResultWithInfo<PostDispatchInfo> {
+    let extensions: TxExtensions = (
+        PassAuthenticate::<Test>::default(),
+        pallet_transaction_payment::ChargeTransactionPayment::from(0),
+    );
+
+    let xt = CheckedExtrinsic {
+        format: ExtrinsicFormat::Signed(session_key, extensions),
+        function: call.clone(),
+    };
+
+    xt.apply::<Test>(&call.get_dispatch_info(), call.encoded_size())
+}
 
 mod authenticate {
     use super::*;
@@ -550,7 +587,7 @@ parameter_types! {
     pub AddressB: AccountId = Pass::address_for(AccountNameB::get());
 }
 
-mod add_device {
+mod add_device_with_filter {
     use super::*;
     use crate::DeviceOf;
 
@@ -559,7 +596,7 @@ mod add_device {
         prepare(AccountNameA::get()).execute_with(|| {
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
-                Pass::add_device(
+                Pass::add_device_with_filter(
                     RuntimeOrigin::root(),
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
@@ -573,7 +610,7 @@ mod add_device {
             );
 
             assert_noop!(
-                Pass::add_device(
+                Pass::add_device_with_filter(
                     RuntimeOrigin::signed(OTHER),
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
@@ -593,7 +630,7 @@ mod add_device {
         prepare(AccountNameA::get()).execute_with(|| {
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
-                Pass::add_device(
+                Pass::add_device_with_filter(
                     RuntimeOrigin::signed(Address::get()),
                     PassDeviceAttestation::AuthenticatorB(authenticator_b::DeviceAttestation {
                         device_id: OTHER_DEVICE,
@@ -615,7 +652,7 @@ mod add_device {
         prepare(AccountNameA::get()).execute_with(|| {
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
-                Pass::add_device(
+                Pass::add_device_with_filter(
                     RuntimeOrigin::signed(Address::get()),
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
@@ -643,7 +680,7 @@ mod add_device {
             ));
 
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_device(
+            assert_ok!(Pass::add_device_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
@@ -677,7 +714,7 @@ mod add_device {
             ));
 
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_device(
+            assert_ok!(Pass::add_device_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
@@ -690,7 +727,7 @@ mod add_device {
 
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
-                Pass::add_device(
+                Pass::add_device_with_filter(
                     RuntimeOrigin::signed(Address::get()),
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
@@ -706,7 +743,7 @@ mod add_device {
     }
 }
 
-mod add_session_key {
+mod add_session_key_with_filter {
     use super::*;
     use sp_core::H256;
     use sp_io::hashing::blake2_256;
@@ -715,7 +752,7 @@ mod add_session_key {
     fn fails_if_bad_origin() {
         prepare(AccountNameA::get()).execute_with(|| {
             assert_noop!(
-                Pass::add_session_key(
+                Pass::add_session_key_with_filter(
                     RuntimeOrigin::root(),
                     OTHER,
                     Some(DURATION),
@@ -724,7 +761,7 @@ mod add_session_key {
                 DispatchError::BadOrigin
             );
             assert_noop!(
-                Pass::add_session_key(
+                Pass::add_session_key_with_filter(
                     RuntimeOrigin::signed(OTHER),
                     OTHER,
                     Some(DURATION),
@@ -741,7 +778,7 @@ mod add_session_key {
             assert_ok!(Balances::mint_into(&CHARLIE, ExistentialDeposit::get()));
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
-                Pass::add_session_key(
+                Pass::add_session_key_with_filter(
                     RuntimeOrigin::signed(Address::get()),
                     CHARLIE,
                     Some(DURATION),
@@ -756,7 +793,7 @@ mod add_session_key {
     fn it_works() {
         prepare(AccountNameA::get()).execute_with(|| {
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_session_key(
+            assert_ok!(Pass::add_session_key_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 Some(DURATION),
@@ -788,7 +825,7 @@ mod add_session_key {
             ));
 
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_session_key(
+            assert_ok!(Pass::add_session_key_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 Some(DURATION),
@@ -797,7 +834,7 @@ mod add_session_key {
 
             crate::AuthenticatedDevice::<Test>::put((AddressB::get(), OTHER_DEVICE));
             assert_noop!(
-                Pass::add_session_key(
+                Pass::add_session_key_with_filter(
                     RuntimeOrigin::signed(AddressB::get()),
                     OTHER,
                     Some(DURATION),
@@ -812,7 +849,7 @@ mod add_session_key {
     fn max_sessions_per_account_works() {
         prepare(AccountNameA::get()).execute_with(|| {
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_session_key(
+            assert_ok!(Pass::add_session_key_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 SIGNER,
                 None,
@@ -820,7 +857,7 @@ mod add_session_key {
             ));
 
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_session_key(
+            assert_ok!(Pass::add_session_key_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
@@ -831,7 +868,7 @@ mod add_session_key {
 
             // Extending a session key works
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_session_key(
+            assert_ok!(Pass::add_session_key_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
@@ -842,7 +879,7 @@ mod add_session_key {
 
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
             assert_noop!(
-                Pass::add_session_key(
+                Pass::add_session_key_with_filter(
                     RuntimeOrigin::signed(Address::get()),
                     CHARLIE,
                     None,
@@ -856,7 +893,7 @@ mod add_session_key {
             // Sessions count of an account changes once the session of an already existing session
             // expires.
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_session_key(
+            assert_ok!(Pass::add_session_key_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 CHARLIE,
                 None,
@@ -869,7 +906,6 @@ mod add_session_key {
 mod dispatch {
     use super::*;
     use crate::SessionKeys;
-    use frame_support::dispatch::GetDispatchInfo;
     use sp_io::hashing::blake2_256;
     use sp_runtime::transaction_validity::InvalidTransaction;
 
@@ -881,41 +917,6 @@ mod dispatch {
             sender: Address::get(),
             hash: <Test as frame_system::Config>::Hashing::hash(&*b"Hello, world"),
         }.into();
-    }
-
-    fn authenticate(
-        device_id: DeviceId,
-        credentials: PassCredential,
-        call: RuntimeCall,
-    ) -> ApplyExtrinsicResultWithInfo<PostDispatchInfo> {
-        let extensions: TxExtensions = (
-            PassAuthenticate::<Test>::from(device_id, credentials),
-            pallet_transaction_payment::ChargeTransactionPayment::from(0),
-        );
-
-        let xt = CheckedExtrinsic {
-            format: ExtrinsicFormat::General(ExtensionVariant::V0(extensions)),
-            function: call.clone(),
-        };
-
-        xt.apply::<Test>(&call.get_dispatch_info(), call.encoded_size())
-    }
-
-    fn signed(
-        session_key: AccountId,
-        call: RuntimeCall,
-    ) -> ApplyExtrinsicResultWithInfo<PostDispatchInfo> {
-        let extensions: TxExtensions = (
-            PassAuthenticate::<Test>::default(),
-            pallet_transaction_payment::ChargeTransactionPayment::from(0),
-        );
-
-        let xt = CheckedExtrinsic {
-            format: ExtrinsicFormat::Signed(session_key, extensions),
-            function: call.clone(),
-        };
-
-        xt.apply::<Test>(&call.get_dispatch_info(), call.encoded_size())
     }
 
     #[test]
@@ -940,7 +941,7 @@ mod dispatch {
             assert_ok!(Balances::mint_into(&Address::get(), Balance::MAX));
 
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_session_key(
+            assert_ok!(Pass::add_session_key_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
@@ -1059,7 +1060,7 @@ mod dispatch {
                 authenticate(
                     THE_DEVICE,
                     credentials,
-                    crate::Call::add_device {
+                    crate::Call::add_device_with_filter {
                         attestation: PassDeviceAttestation::AuthenticatorAAuthenticator(
                             authenticator_a::DeviceAttestation {
                                 device_id: OTHER_DEVICE,
@@ -1104,7 +1105,7 @@ mod dispatch {
                     user_id: AccountNameA::get(),
                     challenge: authenticator_a::Authenticator::generate(&(), &[]),
                 }),
-                crate::Call::<Test>::add_session_key {
+                crate::Call::<Test>::add_session_key_with_filter {
                     session: SIGNER,
                     duration: None,
                     filter: remark_only_filter(),
@@ -1126,7 +1127,7 @@ mod dispatch {
                     user_id: AccountNameA::get(),
                     challenge: authenticator_a::Authenticator::generate(&(), &[]),
                 }),
-                crate::Call::<Test>::add_session_key {
+                crate::Call::<Test>::add_session_key_with_filter {
                     session: OTHER,
                     duration: Some(7),
                     filter: remark_only_filter(),
@@ -1181,7 +1182,7 @@ mod device_filters {
             );
 
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_device(
+            assert_ok!(Pass::add_device_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
@@ -1220,7 +1221,7 @@ mod device_filters {
                     .unwrap(),
             );
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_device(
+            assert_ok!(Pass::add_device_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
@@ -1234,7 +1235,7 @@ mod device_filters {
             // Now try to use that restricted device to add an Admin device — must fail
             crate::AuthenticatedDevice::<Test>::put((Address::get(), OTHER_DEVICE));
             assert_noop!(
-                Pass::add_device(
+                Pass::add_device_with_filter(
                     RuntimeOrigin::signed(Address::get()),
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
@@ -1307,7 +1308,7 @@ mod device_filters {
                 .unwrap(),
             );
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_device(
+            assert_ok!(Pass::add_device_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
@@ -1328,7 +1329,7 @@ mod device_filters {
             );
             crate::AuthenticatedDevice::<Test>::put((Address::get(), OTHER_DEVICE));
             assert_noop!(
-                Pass::add_device(
+                Pass::add_device_with_filter(
                     RuntimeOrigin::signed(Address::get()),
                     PassDeviceAttestation::AuthenticatorAAuthenticator(
                         authenticator_a::DeviceAttestation {
@@ -1410,7 +1411,7 @@ mod device_filters {
     fn session_key_cannot_have_admin_filter() {
         setup_with_admin_device().execute_with(|| {
             assert_noop!(
-                Pass::add_session_key(
+                Pass::add_session_key_with_filter(
                     RuntimeOrigin::signed(Address::get()),
                     SIGNER,
                     Some(5),
@@ -1432,7 +1433,7 @@ mod device_filters {
             crate::AuthenticatedDevice::<Test>::put((other_account, THE_DEVICE));
 
             assert_noop!(
-                Pass::add_session_key(
+                Pass::add_session_key_with_filter(
                     RuntimeOrigin::signed(Address::get()),
                     SIGNER,
                     Some(5),
@@ -1460,7 +1461,7 @@ mod device_filters {
                     .unwrap(),
             );
             crate::AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_session_key(
+            assert_ok!(Pass::add_session_key_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 SIGNER,
                 Some(5),
@@ -1666,7 +1667,7 @@ mod extension_weights {
 
             // A session key allowed to call anything in `pallet-pass`.
             AuthenticatedDevice::<Test>::put((Address::get(), THE_DEVICE));
-            assert_ok!(Pass::add_session_key(
+            assert_ok!(Pass::add_session_key_with_filter(
                 RuntimeOrigin::signed(Address::get()),
                 OTHER,
                 None,
@@ -1688,7 +1689,7 @@ mod extension_weights {
             System::set_block_number(n);
             Pass::on_initialize(n);
 
-            let call: RuntimeCall = crate::Call::<Test>::add_device {
+            let call: RuntimeCall = crate::Call::<Test>::add_device_with_filter {
                 attestation: PassDeviceAttestation::AuthenticatorAAuthenticator(
                     authenticator_a::DeviceAttestation {
                         device_id: OTHER_DEVICE,
@@ -1773,21 +1774,22 @@ mod authenticator_weights {
     }
 
     #[test]
-    fn add_device_charges_what_the_authenticator_reports() {
+    fn add_device_with_filter_charges_what_the_authenticator_reports() {
         new_test_ext().execute_with(|| {
             assert_eq!(
-                call_weight(crate::Call::add_device {
+                call_weight(crate::Call::add_device_with_filter {
                     attestation: attestation_a(),
                     filter: DeviceFilter::Admin,
                 }),
-                Weights::add_device().saturating_add(authenticator_a::ATTESTATION_WEIGHT)
+                Weights::add_device_with_filter()
+                    .saturating_add(authenticator_a::ATTESTATION_WEIGHT)
             );
             assert_eq!(
-                call_weight(crate::Call::add_device {
+                call_weight(crate::Call::add_device_with_filter {
                     attestation: attestation_b(),
                     filter: DeviceFilter::Admin,
                 }),
-                Weights::add_device()
+                Weights::add_device_with_filter()
             );
         })
     }
@@ -1819,6 +1821,941 @@ mod authenticator_weights {
                 )),
             );
             assert_eq!(with_b.weight(&call), Weights::authenticate());
+        })
+    }
+}
+
+fn attestation(device_id: DeviceId) -> PassDeviceAttestation {
+    PassDeviceAttestation::AuthenticatorAAuthenticator(authenticator_a::DeviceAttestation {
+        device_id,
+        challenge: authenticator_a::Authenticator::generate(&(), &[]),
+    })
+}
+
+fn credential(user_id: HashedUserId) -> PassCredential {
+    PassCredential::AuthenticatorAAuthenticator(authenticator_a::Credential {
+        user_id,
+        challenge: authenticator_a::Authenticator::generate(&(), &[]),
+    })
+}
+
+fn pallets_filter(pallets: &[u8]) -> crate::DeviceFilterOf<Test> {
+    DeviceFilter::Pallets(
+        pallets
+            .iter()
+            .copied()
+            .collect::<alloc::collections::BTreeSet<_>>()
+            .try_into()
+            .unwrap(),
+    )
+}
+
+/// The index of the Pass pallet in the mock runtime.
+const PASS_PALLET: u8 = 11;
+
+/// Gives `Address` enough to pay fees and the deposit of the devices it adds.
+fn fund_address() {
+    assert_ok!(Balances::mint_into(&Address::get(), 1_000_000_000));
+}
+
+fn remark() -> RuntimeCall {
+    RuntimeCall::System(frame_system::Call::remark_with_event {
+        remark: b"Hello, world".to_vec(),
+    })
+}
+
+/// Makes `device_id` the device that authenticated the current transaction, as
+/// `PassAuthenticate` does.
+fn authenticated_as(device_id: DeviceId) {
+    crate::AuthenticatedDevice::<Test>::put((Address::get(), device_id));
+}
+
+/// The amendment that brings back the unfiltered calls, with the same indices they had in 2.x.
+#[allow(deprecated)]
+mod legacy_calls {
+    use super::*;
+    use crate::{DeviceFilters, SessionKeys};
+
+    // Call indices keep their 2.x meaning: 1 add_device(attestation), 3 add_session_key(session,
+    // duration). The filtered ones are 5 and 6.
+    #[test]
+    fn call_indices_and_arguments_are_those_of_2x() {
+        new_test_ext().execute_with(|| {
+            let encoded = |call: crate::Call<Test>| RuntimeCall::from(call).encode();
+
+            assert_eq!(
+                encoded(crate::Call::add_device {
+                    attestation: attestation(OTHER_DEVICE)
+                }),
+                [&[PASS_PALLET, 1][..], &attestation(OTHER_DEVICE).encode()].concat()
+            );
+            assert_eq!(
+                encoded(crate::Call::add_session_key {
+                    session: OTHER,
+                    duration: Some(3)
+                }),
+                [&[PASS_PALLET, 3][..], &OTHER.encode(), &Some(3u64).encode()].concat()
+            );
+            assert_eq!(
+                encoded(crate::Call::add_device_with_filter {
+                    attestation: attestation(OTHER_DEVICE),
+                    filter: DeviceFilter::Admin
+                })[..2],
+                [PASS_PALLET, 5]
+            );
+            assert_eq!(
+                encoded(crate::Call::add_session_key_with_filter {
+                    session: OTHER,
+                    duration: None,
+                    filter: DeviceFilter::Admin
+                })[..2],
+                [PASS_PALLET, 6]
+            );
+        })
+    }
+
+    #[test]
+    fn add_session_key_is_marked_deprecated_in_the_metadata() {
+        let calls = Pass::call_functions().deprecation_info;
+
+        assert!(calls.is_variant_deprecated(3));
+        for index in [0, 1, 2, 4, 5, 6] {
+            assert!(!calls.is_variant_deprecated(index), "call {index}");
+        }
+    }
+
+    mod add_device {
+        use super::*;
+
+        #[test]
+        fn stores_an_admin_filter() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                fund_address();
+                authenticated_as(THE_DEVICE);
+                assert_ok!(Pass::add_device(
+                    RuntimeOrigin::signed(Address::get()),
+                    attestation(OTHER_DEVICE)
+                ));
+
+                assert_eq!(
+                    DeviceFilters::<Test>::get(Address::get(), OTHER_DEVICE),
+                    Some(DeviceFilter::Admin)
+                );
+                System::assert_has_event(
+                    Event::<Test>::DeviceAdded {
+                        who: Address::get(),
+                        device_id: OTHER_DEVICE,
+                    }
+                    .into(),
+                );
+            })
+        }
+
+        #[test]
+        fn fails_if_not_a_pass_account() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                authenticated_as(THE_DEVICE);
+                for origin in [RuntimeOrigin::root(), RuntimeOrigin::signed(OTHER)] {
+                    assert_noop!(
+                        Pass::add_device(origin, attestation(OTHER_DEVICE)),
+                        DispatchError::BadOrigin
+                    );
+                }
+            })
+        }
+
+        // 2.x only asked for a Pass account as signer. Doing the same now would let any device
+        // whose filter allows the Pass pallet create an Admin device, so the call needs an
+        // Admin device.
+        #[test]
+        fn needs_an_admin_device() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                fund_address();
+
+                // No device authenticated the transaction.
+                assert_noop!(
+                    Pass::add_device(
+                        RuntimeOrigin::signed(Address::get()),
+                        attestation(OTHER_DEVICE)
+                    ),
+                    Error::<Test>::NotAuthenticatedByDevice
+                );
+
+                // A device that is allowed to call the pallet, but is not Admin.
+                authenticated_as(THE_DEVICE);
+                assert_ok!(Pass::add_device_with_filter(
+                    RuntimeOrigin::signed(Address::get()),
+                    attestation(OTHER_DEVICE),
+                    pallets_filter(&[PASS_PALLET]),
+                ));
+                authenticated_as(OTHER_DEVICE);
+                assert_noop!(
+                    Pass::add_device(
+                        RuntimeOrigin::signed(Address::get()),
+                        attestation(THIRD_DEVICE)
+                    ),
+                    Error::<Test>::PermissionEscalation
+                );
+            })
+        }
+
+        #[test]
+        fn an_admin_device_can_call_it_through_the_extension() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                fund_address();
+                let call = crate::Call::<Test>::add_device {
+                    attestation: attestation(OTHER_DEVICE),
+                };
+
+                assert_ok!(
+                    authenticate(THE_DEVICE, credential(AccountNameA::get()), call.into()).unwrap()
+                );
+                assert_eq!(
+                    DeviceFilters::<Test>::get(Address::get(), OTHER_DEVICE),
+                    Some(DeviceFilter::Admin)
+                );
+            })
+        }
+
+        #[test]
+        fn a_session_key_cannot_call_it() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                fund_address();
+                // The session key is allowed to call the Pass pallet.
+                authenticated_as(THE_DEVICE);
+                assert_ok!(Pass::add_session_key_with_filter(
+                    RuntimeOrigin::signed(Address::get()),
+                    OTHER,
+                    None,
+                    pallets_filter(&[PASS_PALLET]),
+                ));
+                crate::AuthenticatedDevice::<Test>::kill();
+
+                let call = crate::Call::<Test>::add_device {
+                    attestation: attestation(OTHER_DEVICE),
+                };
+                assert_eq!(
+                    signed(OTHER, call.into()).unwrap().unwrap_err().error,
+                    Error::<Test>::NotAuthenticatedByDevice.into()
+                );
+                assert!(DeviceFilters::<Test>::get(Address::get(), OTHER_DEVICE).is_none());
+            })
+        }
+
+        #[test]
+        fn a_restricted_device_cannot_call_it_through_the_extension() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                fund_address();
+                authenticated_as(THE_DEVICE);
+                assert_ok!(Pass::add_device_with_filter(
+                    RuntimeOrigin::signed(Address::get()),
+                    attestation(OTHER_DEVICE),
+                    pallets_filter(&[PASS_PALLET]),
+                ));
+                crate::AuthenticatedDevice::<Test>::kill();
+
+                let call = crate::Call::<Test>::add_device {
+                    attestation: attestation(THIRD_DEVICE),
+                };
+                assert_eq!(
+                    authenticate(OTHER_DEVICE, credential(AccountNameA::get()), call.into())
+                        .unwrap()
+                        .unwrap_err()
+                        .error,
+                    Error::<Test>::PermissionEscalation.into()
+                );
+            })
+        }
+
+        #[test]
+        fn charges_what_the_authenticator_reports() {
+            new_test_ext().execute_with(|| {
+                assert_eq!(
+                    call_weight(crate::Call::<Test>::add_device {
+                        attestation: attestation(OTHER_DEVICE),
+                    }),
+                    <() as crate::WeightInfo>::add_device()
+                        .saturating_add(authenticator_a::ATTESTATION_WEIGHT)
+                );
+            })
+        }
+
+        fn call_weight(call: crate::Call<Test>) -> frame_support::weights::Weight {
+            RuntimeCall::from(call).get_dispatch_info().call_weight
+        }
+    }
+
+    mod add_session_key {
+        use super::*;
+
+        #[test]
+        fn stores_an_admin_filter() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                authenticated_as(THE_DEVICE);
+                assert_ok!(Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    OTHER,
+                    Some(DURATION),
+                ));
+
+                assert_eq!(
+                    SessionKeys::<Test>::get(OTHER),
+                    Some((Address::get(), DURATION, DeviceFilter::Admin))
+                );
+                assert_eq!(SessionKeys::<Test>::count(), 1);
+                System::assert_has_event(
+                    Event::<Test>::SessionCreated {
+                        session_key_hash: sp_core::H256(sp_io::hashing::blake2_256(
+                            &OTHER.encode(),
+                        )),
+                        until: DURATION,
+                    }
+                    .into(),
+                );
+            })
+        }
+
+        #[test]
+        fn the_session_key_is_unrestricted() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                fund_address();
+                authenticated_as(THE_DEVICE);
+                assert_ok!(Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    OTHER,
+                    None,
+                ));
+                crate::AuthenticatedDevice::<Test>::kill();
+
+                assert_ok!(signed(OTHER, remark()).unwrap());
+            })
+        }
+
+        #[test]
+        fn keeps_the_rules_of_any_other_session() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                authenticated_as(THE_DEVICE);
+                assert_ok!(Balances::mint_into(&CHARLIE, ExistentialDeposit::get()));
+                assert_noop!(
+                    Pass::add_session_key(RuntimeOrigin::signed(Address::get()), CHARLIE, None),
+                    Error::<Test>::AccountForSessionKeyAlreadyExists
+                );
+
+                assert_ok!(Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    SIGNER,
+                    None
+                ));
+                assert_ok!(Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    OTHER,
+                    None
+                ));
+                assert_noop!(
+                    Pass::add_session_key(RuntimeOrigin::signed(Address::get()), THIRD_KEY, None),
+                    Error::<Test>::MaxSessionsExceeded
+                );
+            })
+        }
+
+        #[test]
+        fn fails_if_not_a_pass_account() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                authenticated_as(THE_DEVICE);
+                for origin in [RuntimeOrigin::root(), RuntimeOrigin::signed(OTHER)] {
+                    assert_noop!(
+                        Pass::add_session_key(origin, OTHER, None),
+                        DispatchError::BadOrigin
+                    );
+                }
+            })
+        }
+
+        // See `add_device::needs_an_admin_device`.
+        #[test]
+        fn needs_an_admin_device() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                fund_address();
+                assert_noop!(
+                    Pass::add_session_key(RuntimeOrigin::signed(Address::get()), OTHER, None),
+                    Error::<Test>::NotAuthenticatedByDevice
+                );
+
+                authenticated_as(THE_DEVICE);
+                assert_ok!(Pass::add_device_with_filter(
+                    RuntimeOrigin::signed(Address::get()),
+                    attestation(OTHER_DEVICE),
+                    pallets_filter(&[PASS_PALLET]),
+                ));
+                authenticated_as(OTHER_DEVICE);
+                assert_noop!(
+                    Pass::add_session_key(RuntimeOrigin::signed(Address::get()), OTHER, None),
+                    Error::<Test>::PermissionEscalation
+                );
+            })
+        }
+
+        #[test]
+        fn a_session_key_cannot_call_it() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                fund_address();
+                authenticated_as(THE_DEVICE);
+                assert_ok!(Pass::add_session_key_with_filter(
+                    RuntimeOrigin::signed(Address::get()),
+                    OTHER,
+                    None,
+                    pallets_filter(&[PASS_PALLET]),
+                ));
+                crate::AuthenticatedDevice::<Test>::kill();
+
+                let call = crate::Call::<Test>::add_session_key {
+                    session: SIGNER,
+                    duration: None,
+                };
+                assert_eq!(
+                    signed(OTHER, call.into()).unwrap().unwrap_err().error,
+                    Error::<Test>::NotAuthenticatedByDevice.into()
+                );
+                assert!(SessionKeys::<Test>::get(SIGNER).is_none());
+            })
+        }
+
+        #[test]
+        fn can_be_disabled_by_the_runtime() {
+            prepare(AccountNameA::get()).execute_with(|| {
+                authenticated_as(THE_DEVICE);
+                UnrestrictedSessionKeysEnabled::set(false);
+
+                assert_noop!(
+                    Pass::add_session_key(RuntimeOrigin::signed(Address::get()), OTHER, None),
+                    Error::<Test>::UnrestrictedSessionKeysDisabled
+                );
+
+                // Whatever the origin: the call is off.
+                assert_noop!(
+                    Pass::add_session_key(RuntimeOrigin::root(), OTHER, None),
+                    Error::<Test>::UnrestrictedSessionKeysDisabled
+                );
+
+                // Sessions with a filter are not affected.
+                assert_ok!(Pass::add_session_key_with_filter(
+                    RuntimeOrigin::signed(Address::get()),
+                    OTHER,
+                    None,
+                    remark_only_filter(),
+                ));
+
+                UnrestrictedSessionKeysEnabled::set(true);
+                assert_ok!(Pass::add_session_key(
+                    RuntimeOrigin::signed(Address::get()),
+                    SIGNER,
+                    None
+                ));
+            })
+        }
+    }
+
+    const THIRD_KEY: AccountId = AccountId::new([13u8; 32]);
+}
+
+/// The upgrade from storage version 0.
+mod upgrade {
+    use super::*;
+    use crate::{
+        migrations::{Cursor, CursorKey, MigrateV0ToV1, Phase},
+        DeviceFilters, Devices, SessionKeys, WeightInfo,
+    };
+    use frame_support::{
+        migrations::{SteppedMigration, SteppedMigrationError},
+        storage::unhashed,
+        traits::{GetStorageVersion, StorageVersion},
+        weights::{Weight, WeightMeter},
+    };
+
+    fn device_unit() -> Weight {
+        <() as WeightInfo>::migrate_device_filter()
+    }
+
+    fn session_key_unit() -> Weight {
+        <() as WeightInfo>::migrate_session_key()
+    }
+
+    /// A meter that fits `units` of `unit`, and nothing else.
+    fn fits(units: u64, unit: Weight) -> WeightMeter {
+        WeightMeter::with_limit(unit.saturating_mul(units))
+    }
+
+    fn step(cursor: Option<Cursor>, mut meter: WeightMeter) -> Option<Cursor> {
+        MigrateV0ToV1::<Test>::step(cursor, &mut meter).expect("the unit fits")
+    }
+
+    /// Runs the whole migration at once.
+    fn migrate() {
+        assert_eq!(step(None, WeightMeter::new()), None);
+    }
+
+    /// Storage as it was before this upgrade: devices have no `DeviceFilters` entry.
+    fn forget_filters() {
+        let _ = DeviceFilters::<Test>::clear(u32::MAX, None);
+        StorageVersion::new(0).put::<Pass>();
+    }
+
+    /// Rewrites a session key as it was stored before this upgrade: `(account, until)`.
+    fn make_old_session_key(key: &AccountId) {
+        let (account, until, _) = SessionKeys::<Test>::get(key).expect("the session exists");
+        unhashed::put_raw(
+            &SessionKeys::<Test>::hashed_key_for(key),
+            &(account, until).encode(),
+        );
+    }
+
+    fn is_old_shape(key: &AccountId) -> bool {
+        SessionKeys::<Test>::get(key).is_none()
+            && unhashed::get_raw(&SessionKeys::<Test>::hashed_key_for(key)).is_some()
+    }
+
+    fn session_key_names(n: u8) -> Vec<AccountId> {
+        (0..n).map(|i| AccountId::new([50 + i; 32])).collect()
+    }
+
+    /// Registers `n` accounts, each with one `Admin` device.
+    fn register_accounts(n: u8) -> Vec<(AccountId, DeviceId)> {
+        (0..n)
+            .map(|i| {
+                let user = <Test as frame_system::Config>::Hashing::hash(&[i]).0;
+                let device_id = [100 + i; 32];
+                assert_ok!(Pass::register(
+                    RuntimeOrigin::root(),
+                    user,
+                    attestation(device_id)
+                ));
+                (Pass::address_for(user), device_id)
+            })
+            .collect()
+    }
+
+    // The lockout that the migration exists to fix: a device created before the upgrade has
+    // no filter, and the extension denies a device without one.
+    #[test]
+    fn a_device_created_before_the_upgrade_cannot_sign_until_it_is_migrated() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            fund_address();
+            forget_filters();
+            assert!(Devices::<Test>::contains_key(Address::get(), THE_DEVICE));
+            assert!(DeviceFilters::<Test>::get(Address::get(), THE_DEVICE).is_none());
+
+            let result = authenticate(THE_DEVICE, credential(AccountNameA::get()), remark());
+            assert!(
+                matches!(
+                    result,
+                    Err(
+                        sp_runtime::transaction_validity::TransactionValidityError::Invalid(
+                            sp_runtime::transaction_validity::InvalidTransaction::Call
+                        )
+                    )
+                ),
+                "{result:?}"
+            );
+
+            migrate();
+
+            assert_ok!(
+                authenticate(THE_DEVICE, credential(AccountNameA::get()), remark()).unwrap()
+            );
+            System::assert_has_event(
+                frame_system::Event::Remarked {
+                    sender: Address::get(),
+                    hash: <Test as frame_system::Config>::Hashing::hash(b"Hello, world"),
+                }
+                .into(),
+            );
+        })
+    }
+
+    #[test]
+    fn a_migrated_device_is_admin_and_can_manage_devices() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            fund_address();
+            forget_filters();
+            migrate();
+
+            assert_eq!(
+                DeviceFilters::<Test>::get(Address::get(), THE_DEVICE),
+                Some(DeviceFilter::Admin)
+            );
+            // It can add a restricted device through the extension.
+            let call = crate::Call::<Test>::add_device_with_filter {
+                attestation: attestation(OTHER_DEVICE),
+                filter: remark_only_filter(),
+            };
+            assert_ok!(
+                authenticate(THE_DEVICE, credential(AccountNameA::get()), call.into()).unwrap()
+            );
+        })
+    }
+
+    #[test]
+    fn backfills_devices_without_a_filter_and_keeps_the_others() {
+        new_test_ext().execute_with(|| {
+            let accounts = register_accounts(2);
+
+            // Account A has a second device, which has a filter.
+            let (a, a_device) = accounts[0].clone();
+            assert_ok!(Balances::mint_into(&a, 1_000_000));
+            crate::AuthenticatedDevice::<Test>::put((a.clone(), a_device));
+            assert_ok!(Pass::add_device_with_filter(
+                RuntimeOrigin::signed(a.clone()),
+                attestation([7u8; 32]),
+                remark_only_filter(),
+            ));
+
+            // Before the upgrade, there were no filters at all, except this one.
+            let restricted = DeviceFilters::<Test>::get(&a, [7u8; 32]);
+            DeviceFilters::<Test>::remove(&a, a_device);
+            DeviceFilters::<Test>::remove(accounts[1].0.clone(), accounts[1].1);
+            StorageVersion::new(0).put::<Pass>();
+
+            migrate();
+
+            assert_eq!(
+                DeviceFilters::<Test>::get(&a, a_device),
+                Some(DeviceFilter::Admin)
+            );
+            assert_eq!(
+                DeviceFilters::<Test>::get(&accounts[1].0, accounts[1].1),
+                Some(DeviceFilter::Admin)
+            );
+            assert_eq!(DeviceFilters::<Test>::get(&a, [7u8; 32]), restricted);
+            assert_eq!(DeviceFilters::<Test>::iter().count(), 3);
+            assert_eq!(Devices::<Test>::iter().count(), 3);
+            assert_eq!(Pass::on_chain_storage_version(), StorageVersion::new(1));
+        })
+    }
+
+    #[test]
+    fn converts_session_keys_to_admin_and_keeps_the_new_ones() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            let [old, new] = [OTHER, SIGNER];
+            authenticated_as(THE_DEVICE);
+            for key in [old.clone(), new.clone()] {
+                assert_ok!(Pass::add_session_key_with_filter(
+                    RuntimeOrigin::signed(Address::get()),
+                    key,
+                    Some(DURATION),
+                    remark_only_filter(),
+                ));
+            }
+            // Only `old` was created before the upgrade.
+            make_old_session_key(&old);
+            StorageVersion::new(0).put::<Pass>();
+            let counter = SessionKeys::<Test>::count();
+            let sessions = crate::AccountSessionsCount::<Test>::get(Address::get());
+
+            migrate();
+
+            assert_eq!(
+                SessionKeys::<Test>::get(&old),
+                Some((Address::get(), DURATION, DeviceFilter::Admin))
+            );
+            // A value in the new shape starts with the old one: it must keep its filter.
+            assert_eq!(
+                SessionKeys::<Test>::get(&new),
+                Some((Address::get(), DURATION, remark_only_filter()))
+            );
+            assert_eq!(SessionKeys::<Test>::count(), counter);
+            assert_eq!(SessionKeys::<Test>::iter().count() as u32, counter);
+            assert_eq!(
+                crate::AccountSessionsCount::<Test>::get(Address::get()),
+                sessions
+            );
+        })
+    }
+
+    #[test]
+    fn a_session_key_that_cannot_be_read_is_skipped() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            authenticated_as(THE_DEVICE);
+            for key in [OTHER, SIGNER] {
+                assert_ok!(Pass::add_session_key_with_filter(
+                    RuntimeOrigin::signed(Address::get()),
+                    key.clone(),
+                    Some(DURATION),
+                    remark_only_filter(),
+                ));
+                make_old_session_key(&key);
+            }
+            let garbage = vec![1u8, 2, 3];
+            unhashed::put_raw(&SessionKeys::<Test>::hashed_key_for(OTHER), &garbage);
+
+            // Neither an error nor a stop.
+            migrate();
+
+            assert_eq!(
+                unhashed::get_raw(&SessionKeys::<Test>::hashed_key_for(OTHER)),
+                Some(garbage)
+            );
+            assert_eq!(
+                SessionKeys::<Test>::get(SIGNER),
+                Some((Address::get(), DURATION, DeviceFilter::Admin))
+            );
+            assert_eq!(Pass::on_chain_storage_version(), StorageVersion::new(1));
+        })
+    }
+
+    #[test]
+    fn a_step_that_does_not_fit_yields_the_cursor_and_resumes() {
+        new_test_ext().execute_with(|| {
+            register_accounts(3);
+            forget_filters();
+            let keys = Devices::<Test>::iter_keys()
+                .map(|(account, device)| Devices::<Test>::hashed_key_for(account, device))
+                .collect::<Vec<_>>();
+            assert_eq!(keys.len(), 3);
+
+            // Two devices fit: it stops at the second one.
+            let cursor = step(None, fits(2, device_unit()));
+            assert_eq!(
+                cursor,
+                Some((
+                    Phase::Devices,
+                    CursorKey::try_from(keys[1].clone()).unwrap()
+                ))
+            );
+            assert_eq!(DeviceFilters::<Test>::iter().count(), 2);
+            assert_eq!(Pass::on_chain_storage_version(), StorageVersion::new(0));
+
+            // It resumes from the cursor, with the third one, and finishes.
+            assert_eq!(step(cursor, WeightMeter::new()), None);
+            assert_eq!(DeviceFilters::<Test>::iter().count(), 3);
+            assert!(DeviceFilters::<Test>::iter().all(|(_, _, f)| f == DeviceFilter::Admin));
+            assert_eq!(Pass::on_chain_storage_version(), StorageVersion::new(1));
+        })
+    }
+
+    #[test]
+    fn it_can_be_stopped_after_every_single_unit() {
+        new_test_ext().execute_with(|| {
+            register_accounts(3);
+            forget_filters();
+            authenticated_as_nobody();
+            for key in session_key_names(3) {
+                SessionKeys::<Test>::insert(&key, (Address::get(), 5u64, DeviceFilter::Admin));
+                make_old_session_key(&key);
+            }
+
+            // One unit per step, the worst case for a migration that loses its progress.
+            let (mut cursor, mut steps) = (None, 0);
+            loop {
+                let unit = match cursor {
+                    Some((Phase::SessionKeys, _)) => session_key_unit(),
+                    _ => device_unit(),
+                };
+                cursor = step(cursor, fits(1, unit));
+                steps += 1;
+                assert!(steps < 100, "it does not finish");
+                if cursor.is_none() {
+                    break;
+                }
+            }
+
+            assert_eq!(DeviceFilters::<Test>::iter().count(), 3);
+            assert!(session_key_names(3).iter().all(|k| !is_old_shape(k)));
+            assert_eq!(SessionKeys::<Test>::count(), 3);
+            // 3 devices + the end of that phase, 3 session keys + the end of that phase.
+            assert_eq!(steps, 8);
+        })
+    }
+
+    fn authenticated_as_nobody() {
+        crate::AuthenticatedDevice::<Test>::kill();
+    }
+
+    #[test]
+    fn a_phase_can_end_exactly_where_a_step_does() {
+        new_test_ext().execute_with(|| {
+            register_accounts(3);
+            forget_filters();
+
+            // 3 devices, and the unit that finds there are no more.
+            let cursor = step(None, fits(4, device_unit()));
+            assert_eq!(cursor, Some((Phase::SessionKeys, CursorKey::default())));
+            assert_eq!(DeviceFilters::<Test>::iter().count(), 3);
+
+            assert_eq!(step(cursor, WeightMeter::new()), None);
+        })
+    }
+
+    #[test]
+    fn session_keys_resume_from_the_cursor() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            let names = session_key_names(3);
+            for key in &names {
+                SessionKeys::<Test>::insert(key, (Address::get(), 5u64, DeviceFilter::Admin));
+                make_old_session_key(key);
+            }
+            let raw = |key: &AccountId| {
+                CursorKey::try_from(SessionKeys::<Test>::hashed_key_for(key)).unwrap()
+            };
+            let in_order = SessionKeys::<Test>::iter_keys().collect::<Vec<_>>();
+
+            let start = Some((Phase::SessionKeys, CursorKey::default()));
+            let cursor = step(start, fits(2, session_key_unit()));
+
+            assert_eq!(cursor, Some((Phase::SessionKeys, raw(&in_order[1]))));
+            assert!(!is_old_shape(&in_order[0]) && !is_old_shape(&in_order[1]));
+            assert!(is_old_shape(&in_order[2]));
+
+            assert_eq!(step(cursor, WeightMeter::new()), None);
+            assert!(!is_old_shape(&in_order[2]));
+            assert_eq!(SessionKeys::<Test>::count(), 3);
+        })
+    }
+
+    #[test]
+    fn fails_only_if_not_even_one_unit_fits_an_empty_meter() {
+        new_test_ext().execute_with(|| {
+            register_accounts(1);
+            forget_filters();
+            let unit = device_unit();
+
+            // An empty meter that is too small for one unit: waiting will not help.
+            let mut too_small = WeightMeter::with_limit(Weight::from_parts(
+                unit.ref_time() - 1,
+                unit.proof_size(),
+            ));
+            assert_eq!(
+                MigrateV0ToV1::<Test>::step(None, &mut too_small),
+                Err(SteppedMigrationError::InsufficientWeight { required: unit })
+            );
+            let mut too_small = WeightMeter::with_limit(Weight::from_parts(
+                unit.ref_time(),
+                unit.proof_size() - 1,
+            ));
+            assert_eq!(
+                MigrateV0ToV1::<Test>::step(None, &mut too_small),
+                Err(SteppedMigrationError::InsufficientWeight { required: unit })
+            );
+            assert_eq!(DeviceFilters::<Test>::iter().count(), 0);
+
+            // A meter that other migrations have used up is not an error: it yields, and the
+            // next block starts with an empty one.
+            let mut used = fits(10, unit);
+            assert_ok!(used.try_consume(unit.saturating_mul(10)));
+            assert_eq!(
+                MigrateV0ToV1::<Test>::step(None, &mut used),
+                Ok(Some((Phase::Devices, CursorKey::default())))
+            );
+            let mut partly_used = fits(10, unit);
+            assert_ok!(partly_used.try_consume(unit.saturating_mul(10).saturating_sub(unit.div(2))));
+            assert_eq!(
+                MigrateV0ToV1::<Test>::step(None, &mut partly_used),
+                Ok(Some((Phase::Devices, CursorKey::default())))
+            );
+            assert_eq!(DeviceFilters::<Test>::iter().count(), 0);
+
+            // It does the same from the middle.
+            let cursor = step(None, fits(1, unit));
+            let mut used = fits(10, unit);
+            assert_ok!(used.try_consume(unit.saturating_mul(10)));
+            assert_eq!(
+                MigrateV0ToV1::<Test>::step(cursor.clone(), &mut used),
+                Ok(cursor)
+            );
+        })
+    }
+
+    #[test]
+    fn running_it_again_changes_nothing() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            fund_address();
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_device_with_filter(
+                RuntimeOrigin::signed(Address::get()),
+                attestation(OTHER_DEVICE),
+                remark_only_filter(),
+            ));
+            for key in [OTHER, SIGNER] {
+                assert_ok!(Pass::add_session_key_with_filter(
+                    RuntimeOrigin::signed(Address::get()),
+                    key,
+                    Some(DURATION),
+                    remark_only_filter(),
+                ));
+            }
+            make_old_session_key(&OTHER);
+            DeviceFilters::<Test>::remove(Address::get(), THE_DEVICE);
+            StorageVersion::new(0).put::<Pass>();
+
+            migrate();
+            let once = sp_io::storage::root(sp_runtime::StateVersion::V1);
+
+            StorageVersion::new(0).put::<Pass>();
+            migrate();
+            migrate();
+            assert_eq!(sp_io::storage::root(sp_runtime::StateVersion::V1), once);
+            // And what it did not touch is still there.
+            assert_eq!(
+                SessionKeys::<Test>::get(SIGNER),
+                Some((Address::get(), DURATION, remark_only_filter()))
+            );
+            assert_eq!(
+                DeviceFilters::<Test>::get(Address::get(), OTHER_DEVICE),
+                Some(remark_only_filter())
+            );
+        })
+    }
+
+    #[test]
+    fn an_empty_chain_just_gets_the_new_version() {
+        new_test_ext().execute_with(|| {
+            StorageVersion::new(0).put::<Pass>();
+            migrate();
+            assert_eq!(Pass::on_chain_storage_version(), StorageVersion::new(1));
+        })
+    }
+
+    #[test]
+    fn has_an_id_that_names_the_pallet_and_the_versions() {
+        use frame_support::traits::PalletInfoAccess;
+
+        let id = <MigrateV0ToV1<Test> as SteppedMigration>::id();
+        assert_eq!(id.pallet_id, Pass::name_hash());
+        assert_eq!((id.version_from, id.version_to), (0, 1));
+    }
+
+    // The checks that run in try-runtime must pass after the migration, and notice it was not
+    // done.
+    #[cfg(feature = "try-runtime")]
+    #[test]
+    fn try_runtime_checks() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_session_key_with_filter(
+                RuntimeOrigin::signed(Address::get()),
+                OTHER,
+                Some(DURATION),
+                remark_only_filter(),
+            ));
+            make_old_session_key(&OTHER);
+            forget_filters();
+
+            let state = <MigrateV0ToV1<Test> as SteppedMigration>::pre_upgrade().unwrap();
+            assert!(
+                <MigrateV0ToV1<Test> as SteppedMigration>::post_upgrade(state.clone()).is_err()
+            );
+
+            migrate();
+            assert_ok!(<MigrateV0ToV1<Test> as SteppedMigration>::post_upgrade(
+                state.clone()
+            ));
+
+            // A migration that damaged something would be noticed.
+            DeviceFilters::<Test>::insert(
+                Address::get(),
+                [9u8; 32],
+                DeviceFilter::<(), u128, _, _>::Admin,
+            );
+            assert!(<MigrateV0ToV1<Test> as SteppedMigration>::post_upgrade(state).is_err());
         })
     }
 }

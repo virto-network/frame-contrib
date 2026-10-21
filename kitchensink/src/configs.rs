@@ -21,8 +21,8 @@ use frame_support::{
     parameter_types,
     traits::{
         fungible::HoldConsideration, tokens::imbalance::ResolveTo, AsEnsureOriginWithArg,
-        ConstU128, ConstU32, EitherOf, EnsureOrigin, EnsureOriginWithArg, EqualPrivilegeOnly, Get,
-        LinearStoragePrice, VariantCountOf,
+        ConstBool, ConstU128, ConstU32, EitherOf, EnsureOrigin, EnsureOriginWithArg,
+        EqualPrivilegeOnly, Get, LinearStoragePrice, VariantCountOf,
     },
     weights::{
         constants::{RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND},
@@ -290,6 +290,7 @@ impl fc_pallet_pass::Config for Runtime {
     type MaxSessionDuration = ConstU32<DAYS>;
     type MaxFilteredCalls = ConstU32<32>;
     type MaxFilteredAssets = ConstU32<8>;
+    type UnrestrictedSessionKeys = ConstBool<true>;
 }
 
 // Communities
