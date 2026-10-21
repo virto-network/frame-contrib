@@ -116,43 +116,73 @@ impl<T: Config> Pallet<T> {
     /// group, the usable-group check, the contract, its subscription and, for a standard
     /// contract, its offer's amendment.
     pub(crate) fn check(who: &T::AccountId, estimate: Weight) -> Result<Ticket<T>, FeePathReason> {
+        Self::admit(who, estimate).map_err(|(reason, _)| reason)
+    }
+
+    /// [Admission](Self::check), and when it fails, with the reason the weight of the check up to
+    /// where it stopped: the fee path keeps that much of the check's declared worst case, and
+    /// refunds the rest (`CTR-FEE-5`, `CTR-FEE-6`).
+    ///
+    /// A signer holding no membership at all stops after looking for its paying group
+    /// (`fee_path_no_paying_group`). A signer whose paying group is found stops at its contract at
+    /// the latest when it holds no membership of it, the group is not usable, or the group has no
+    /// contract (`fee_path_no_contract`). Any other failure costs the worst case
+    /// (`fee_path_check`).
+    pub(crate) fn admit(
+        who: &T::AccountId,
+        estimate: Weight,
+    ) -> Result<Ticket<T>, (FeePathReason, Weight)> {
         let group = match Self::resolve_paying_group(who) {
             PayingGroupResolution::Named(group) | PayingGroupResolution::Only(group) => group,
-            _ => return Err(FeePathReason::NoPayingGroup),
+            PayingGroupResolution::NoMembership => {
+                return Err((
+                    FeePathReason::NoPayingGroup,
+                    T::WeightInfo::fee_path_no_paying_group(),
+                ))
+            }
+            _ => {
+                return Err((
+                    FeePathReason::NoPayingGroup,
+                    T::WeightInfo::fee_path_check(),
+                ))
+            }
         };
+        let up_to_contract = T::WeightInfo::fee_path_no_contract();
         let (_, membership) =
             <T::Memberships as fc_traits_memberships::Inspect<T::AccountId>>::user_memberships(
                 who,
                 Some(group),
             )
             .next()
-            .ok_or(FeePathReason::NotAMember)?;
+            .ok_or((FeePathReason::NotAMember, up_to_contract))?;
         ensure!(
             T::UsableGroup::contains(&group),
-            FeePathReason::GroupUnusable
+            (FeePathReason::GroupUnusable, up_to_contract)
         );
-        let contract = Contracts::<T>::get(group).ok_or(FeePathReason::NoContract)?;
+        let contract =
+            Contracts::<T>::get(group).ok_or((FeePathReason::NoContract, up_to_contract))?;
 
+        let worst = T::WeightInfo::fee_path_check();
         let now = Self::now();
         let subscription = <T::Subscriptions as subs::Inspect<T::AccountId>>::subscription(
             &T::OfferInventory::get(),
             &contract.offer,
             &T::GroupAccount::convert(group),
         )
-        .ok_or(FeePathReason::NoContract)?;
+        .ok_or((FeePathReason::NoContract, worst))?;
         // Usable only while *Active* and paid, from the clock (`REQ-CT-4`).
-        ensure!(subscription.is_paid(now), FeePathReason::NotPaid);
+        ensure!(subscription.is_paid(now), (FeePathReason::NotPaid, worst));
 
         let window_start = contract
             .window_at(now)
-            .ok_or(FeePathReason::AllowanceExceeded)?;
+            .ok_or((FeePathReason::AllowanceExceeded, worst))?;
         let allowance = Self::allowance_at(&contract, window_start);
         let used = contract.used_in(window_start);
         // Both components, or not at all (`REQ-PL-12`).
         let fits = used
             .checked_add(&estimate)
             .is_some_and(|total| total.all_lte(allowance));
-        ensure!(fits, FeePathReason::AllowanceExceeded);
+        ensure!(fits, (FeePathReason::AllowanceExceeded, worst));
 
         Ok(Ticket {
             who: who.clone(),
