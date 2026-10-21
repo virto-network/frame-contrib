@@ -14,6 +14,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 codec.workspace = true
 scale-info.workspace = true
+fc-pallet-fees = { workspace = true, optional = true }
 fc-traits-listings.workspace = true
 fc-traits-memberships.workspace = true
 frame-benchmarking = { workspace = true, optional = true }
@@ -37,9 +38,13 @@ sp-io.workspace = true
 
 [features]
 default = ["std"]
+# Resolves an account's community for `fc-pallet-fees` as its paying group (`PayingGroupCommunity`).
+fees = ["dep:fc-pallet-fees"]
 runtime-benchmarks = [
+  "fc-pallet-fees?/runtime-benchmarks",
   "fc-pallet-listings/runtime-benchmarks",
   "fc-pallet-payments/runtime-benchmarks",
+  "fc-traits-memberships/runtime-benchmarks",
   "frame-benchmarking/runtime-benchmarks",
   "frame-support/runtime-benchmarks",
   "frame-system/runtime-benchmarks",
@@ -54,6 +59,7 @@ runtime-benchmarks = [
 ]
 std = [
   "codec/std",
+  "fc-pallet-fees?/std",
   "fc-pallet-listings/std",
   "fc-pallet-payments/std",
   "fc-traits-listings/std",
@@ -75,6 +81,7 @@ std = [
   "sp-runtime/std",
 ]
 try-runtime = [
+  "fc-pallet-fees?/try-runtime",
   "fc-pallet-listings/try-runtime",
   "fc-pallet-payments/try-runtime",
   "frame-support/try-runtime",

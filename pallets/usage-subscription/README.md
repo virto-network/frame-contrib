@@ -469,3 +469,19 @@ writes nothing (`REQ-OB-1`):
    `CapacityPeriod` to the period operators reason in (for example a week, in ticks of the pallet's clock), and
    `CapacityAlertThreshold` to the share at which they want the alert. Nothing is capped until that origin calls
    `set_capacity`.
+
+## Community fees (the `fees` feature)
+
+`PayingGroupCommunity<T>` implements `fc_pallet_fees::AccountCommunity` over this pallet, so `fc-pallet-fees` applies
+a group's fees to the asset transfers of its members. An account's community is its **resolved paying group**
+(`REQ-PC-2`): the group it named and still belongs to, or else the only group it belongs to; with no membership, or
+several and none named, it has none. It is the resolution the `paying_group` view and the payment step make, with
+the same bounded reads (`REQ-PC-3`).
+
+The adapter is behind the optional cargo feature `fees`, which adds `fc-pallet-fees` as a dependency; without it the
+crate does not depend on that pallet. A runtime whose fees pallet has a `CommunityId` equal to the group type binds
+it there:
+
+```rust,ignore
+type CommunityDetector = fc_pallet_usage_subscription::PayingGroupCommunity<Runtime>;
+```

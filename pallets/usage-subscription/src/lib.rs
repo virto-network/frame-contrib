@@ -27,6 +27,8 @@ mod tests;
 mod admission;
 mod capacity;
 pub mod extension;
+#[cfg(feature = "fees")]
+mod fees;
 mod functions;
 mod hooks;
 mod types;
@@ -37,6 +39,8 @@ pub use admission::Ticket;
 #[cfg(feature = "runtime-benchmarks")]
 pub use benchmarking::BenchmarkHelper;
 pub use extension::{ChargeUsageSubscription, Path, PATH_MISMATCH};
+#[cfg(feature = "fees")]
+pub use fees::PayingGroupCommunity;
 pub use pallet::*;
 pub use types::*;
 pub use weights::*;
