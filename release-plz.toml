@@ -71,6 +71,10 @@ name = "fc-pallet-referenda-tracks"
 version_group = "frame-contrib"
 
 [[package]]
+name = "fc-pallet-usage-subscription"
+version_group = "frame-contrib"
+
+[[package]]
 name = "frame-contrib-traits"
 version_group = "frame-contrib"
 git_tag_enable = true
