@@ -85,6 +85,17 @@ fn max_calls_filter<T: Config<I>, I: 'static>(call: &RuntimeCallFor<T>) -> Devic
         .unwrap_or(DeviceFilter::Admin)
 }
 
+/// Fills the account's `DeviceFilters` up to `MaxDevicesPerAccount` with restricted filters: the
+/// worst case for the scan that keeps an `Admin` device. Only the filters are written, which
+/// is all that scan reads.
+fn fill_with_restricted_filters<T: Config<I>, I: 'static>(address: &T::AccountId) {
+    let filter = max_calls_filter::<T, I>(&benchmark_call::<T>());
+    let present = DeviceFilters::<T, I>::iter_prefix(address).count() as u32;
+    for i in 0..T::MaxDevicesPerAccount::get().saturating_sub(present) {
+        DeviceFilters::<T, I>::insert(address, [100u8.saturating_add(i as u8); 32], filter.clone());
+    }
+}
+
 fn hash<T: frame_system::Config>(b: &[u8]) -> HashedUserId
 where
     T::Hash: Into<HashedUserId>,
@@ -273,6 +284,8 @@ mod benchmarks {
             attestation,
             DeviceFilter::Admin,
         )?;
+        // The guard that keeps an `Admin` device scans the account's filters.
+        fill_with_restricted_filters::<T, I>(&address);
 
         #[extrinsic_call]
         _(RawOrigin::Signed(address.clone()), new_device_id);
@@ -521,6 +534,44 @@ mod benchmarks {
                 DeviceFilterOf<T, I>
             )>(&raw_key),
             Some((address, T::MaxSessionDuration::get(), DeviceFilter::Admin))
+        );
+
+        Ok(())
+    }
+
+    /// The worst case: an `Admin` device downgrades itself, so the scan for another `Admin`
+    /// device goes through an account full of restricted ones, and the filters are the largest.
+    #[benchmark]
+    pub fn set_device_filter() -> Result<(), BenchmarkError> {
+        // Setup code
+        let user_id = hash::<T>(b"my-account");
+        let admin_device_id = do_register::<T, I>(user_id)?;
+        let address = Pallet::<T, I>::address_for(user_id);
+
+        let filter = max_calls_filter::<T, I>(&benchmark_call::<T>());
+        // Another `Admin` device, so the account keeps one.
+        DeviceFilters::<T, I>::insert(&address, [99u8; 32], DeviceFilter::Admin);
+        fill_with_restricted_filters::<T, I>(&address);
+        AuthenticatedDevice::<T, I>::put((address.clone(), admin_device_id));
+
+        #[extrinsic_call]
+        _(
+            RawOrigin::Signed(address.clone()),
+            admin_device_id,
+            filter.clone(),
+        );
+
+        // Verification code
+        assert_eq!(
+            DeviceFilters::<T, I>::get(&address, admin_device_id),
+            Some(filter)
+        );
+        assert_has_event::<T, I>(
+            Event::DeviceFilterUpdated {
+                who: address,
+                device_id: admin_device_id,
+            }
+            .into(),
         );
 
         Ok(())

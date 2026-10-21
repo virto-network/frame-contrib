@@ -229,8 +229,8 @@ pub mod pallet {
     /// - **Set**: by `PassAuthenticate::prepare` when the tx was
     ///   authenticated with a device credential.
     /// - **Read**: by `check_no_escalation` during `add_device`,
-    ///   `add_device_with_filter`, `add_session_key` and
-    ///   `add_session_key_with_filter`.
+    ///   `add_device_with_filter`, `add_session_key`,
+    ///   `add_session_key_with_filter` and `set_device_filter`.
     /// - **Cleared**: in `PassAuthenticate::post_dispatch_details` of the same
     ///   transaction, AND at the start of every block in `on_initialize`
     ///   (defense-in-depth).
@@ -287,6 +287,11 @@ pub mod pallet {
         SessionRemoved {
             session_key: T::AccountId,
         },
+        /// The filter of a device was changed by `set_device_filter`.
+        DeviceFilterUpdated {
+            who: T::AccountId,
+            device_id: DeviceId,
+        },
     }
 
     #[pallet::error]
@@ -318,6 +323,9 @@ pub mod pallet {
         /// Creating unrestricted (`Admin`) session keys is disabled by the runtime
         /// ([`Config::UnrestrictedSessionKeys`]). Use `add_session_key_with_filter`.
         UnrestrictedSessionKeysDisabled,
+        /// An account must keep at least one device with an `Admin` filter. The operation would
+        /// remove or downgrade the last one.
+        LastAdminDevice,
     }
 
     #[pallet::hooks]
@@ -400,6 +408,8 @@ pub mod pallet {
             Self::try_add_device(&address, attestation, DeviceFilter::Admin)
         }
 
+        /// Removes a device. An account must keep at least one `Admin` device: removing the last
+        /// one fails with [`LastAdminDevice`][Error::LastAdminDevice].
         #[pallet::call_index(2)]
         pub fn remove_device(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
             let address = Self::ensure_signer_is_pass_account(origin)?;
@@ -492,6 +502,50 @@ pub mod pallet {
 
             Self::try_add_session_key(address, session_key, duration, filter)
         }
+
+        /// Changes the filter of one of the account's devices.
+        ///
+        /// The device that authenticated the call must have a filter that is a superset of both
+        /// the target's current filter and the new one (no-escalation, both ways): a device can
+        /// neither grant what it does not have, nor touch a device that can do more than it.
+        /// A device without a filter (one not yet migrated) counts as `Admin` for this purpose,
+        /// so only an `Admin` device can change it.
+        ///
+        /// An account must keep at least one `Admin` device: downgrading the last one fails with
+        /// [`LastAdminDevice`][Error::LastAdminDevice].
+        #[pallet::call_index(7)]
+        #[pallet::weight(T::WeightInfo::set_device_filter())]
+        pub fn set_device_filter(
+            origin: OriginFor<T>,
+            device_id: DeviceId,
+            filter: DeviceFilterOf<T, I>,
+        ) -> DispatchResult {
+            let address = Self::ensure_signer_is_pass_account(origin)?;
+            let caller_filter = Self::authenticated_device_filter(&address)?;
+
+            ensure!(
+                Devices::<T, I>::contains_key(&address, device_id),
+                Error::<T, I>::DeviceNotFound
+            );
+            let current = DeviceFilters::<T, I>::get(&address, device_id);
+            ensure!(
+                caller_filter.is_superset_of(current.as_ref().unwrap_or(&DeviceFilter::Admin))
+                    && caller_filter.is_superset_of(&filter),
+                Error::<T, I>::PermissionEscalation
+            );
+
+            if current == Some(DeviceFilter::Admin) && filter != DeviceFilter::Admin {
+                Self::ensure_another_admin(&address, &device_id)?;
+            }
+
+            DeviceFilters::<T, I>::insert(&address, device_id, filter);
+            Self::deposit_event(Event::<T, I>::DeviceFilterUpdated {
+                who: address,
+                device_id,
+            });
+
+            Ok(())
+        }
     }
 }
 
@@ -507,12 +561,11 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         SessionKeys::<T, I>::get(who).map(|(account, _, filter)| (account, filter))
     }
 
-    /// Verify the no-escalation invariant: the authenticated device's filter must
-    /// be a superset of the requested filter.
-    fn check_no_escalation(
+    /// The filter of the device that authenticated the current transaction, which must belong
+    /// to `address`.
+    fn authenticated_device_filter(
         address: &T::AccountId,
-        requested: &DeviceFilterOf<T, I>,
-    ) -> DispatchResult {
+    ) -> Result<DeviceFilterOf<T, I>, DispatchError> {
         let (auth_account, caller_device_id) =
             AuthenticatedDevice::<T, I>::get().ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
         // Stale authentication context from a different account is ignored.
@@ -524,11 +577,30 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Devices::<T, I>::contains_key(address, caller_device_id),
             Error::<T, I>::DeviceNotFound
         );
-        let caller_filter = DeviceFilters::<T, I>::get(address, caller_device_id)
-            .ok_or(Error::<T, I>::NotAuthenticatedByDevice)?;
+        Ok(DeviceFilters::<T, I>::get(address, caller_device_id)
+            .ok_or(Error::<T, I>::NotAuthenticatedByDevice)?)
+    }
+
+    /// Verify the no-escalation invariant: the authenticated device's filter must
+    /// be a superset of the requested filter.
+    fn check_no_escalation(
+        address: &T::AccountId,
+        requested: &DeviceFilterOf<T, I>,
+    ) -> DispatchResult {
         ensure!(
-            caller_filter.is_superset_of(requested),
+            Self::authenticated_device_filter(address)?.is_superset_of(requested),
             Error::<T, I>::PermissionEscalation
+        );
+        Ok(())
+    }
+
+    /// Ensures that an account has an `Admin` device other than `device_id`: the guard that keeps
+    /// an account from losing its last one.
+    fn ensure_another_admin(address: &T::AccountId, device_id: &DeviceId) -> DispatchResult {
+        ensure!(
+            DeviceFilters::<T, I>::iter_prefix(address)
+                .any(|(id, filter)| &id != device_id && filter == DeviceFilter::Admin),
+            Error::<T, I>::LastAdminDevice
         );
         Ok(())
     }
@@ -644,6 +716,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             Devices::<T, I>::contains_key(address, id),
             Error::<T, I>::DeviceNotFound
         );
+        // An account must keep an `Admin` device.
+        if DeviceFilters::<T, I>::get(address, id) == Some(DeviceFilter::Admin) {
+            Self::ensure_another_admin(address, id)?;
+        }
 
         ConsiderationHandler::<
             T::AccountId,

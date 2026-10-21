@@ -33,6 +33,8 @@ pub trait WeightInfo {
 	fn migrate_device_filter() -> Weight;
 	/// One unit of `migrations::MigrateV0ToV1`'s second phase: converting one session key.
 	fn migrate_session_key() -> Weight;
+	/// Includes the scan of the account's `DeviceFilters` that keeps one `Admin` device.
+	fn set_device_filter() -> Weight;
 }
 
 /// PLACEHOLDER weights for `fc_pallet_pass`: none of these come from a benchmark run on reference
@@ -106,6 +108,9 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Balances::Holds` (r:1 w:1)
 	/// Storage: `Pass::DeviceIds` (r:0 w:1)
 	/// Storage: `Pass::DeviceFilters` (r:0 w:1)
+	///
+	/// NOTE: it does not yet count the scan of the account's `DeviceFilters` that keeps one
+	/// `Admin` device (up to `MaxDevicesPerAccount` reads); a benchmark run covers it.
 	fn remove_device() -> Weight {
 		Weight::from_parts(100_000_000, 20_000)
 			.saturating_add(T::DbWeight::get().reads(5_u64))
@@ -186,6 +191,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	fn migrate_session_key() -> Weight {
 		Weight::from_parts(10_000_000, 5_000)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+
+	/// PLACEHOLDER: not produced by a benchmark run. Execution time and proof size are
+	/// conservative estimates; DB accesses are counted from the code path, with the scan of the
+	/// account's `DeviceFilters` (the guard that keeps one `Admin` device) at up to 10 entries:
+	/// Storage: `Pass::AuthenticatedDevice` (r:1 w:0)
+	/// Storage: `Pass::Devices` (r:2 w:0)
+	/// Storage: `Pass::DeviceFilters` (r:12 w:1)
+	fn set_device_filter() -> Weight {
+		Weight::from_parts(30_000_000, 20_000)
+			.saturating_add(T::DbWeight::get().reads(15_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 }
@@ -286,6 +303,13 @@ impl WeightInfo for () {
 	fn migrate_session_key() -> Weight {
 		Weight::from_parts(10_000_000, 5_000)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::set_device_filter`] with `RocksDbWeight`.
+	fn set_device_filter() -> Weight {
+		Weight::from_parts(30_000_000, 20_000)
+			.saturating_add(RocksDbWeight::get().reads(15_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 }

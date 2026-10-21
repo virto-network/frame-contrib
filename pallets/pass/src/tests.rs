@@ -1396,14 +1396,23 @@ mod device_filters {
     #[test]
     fn filter_is_removed_with_device() {
         setup_with_admin_device().execute_with(|| {
-            assert!(DeviceFilters::<Test>::get(Address::get(), THE_DEVICE).is_some());
+            // The only `Admin` device cannot be removed (see `last_admin_device`), so the
+            // device that goes is a second one.
+            fund_address();
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_device_with_filter(
+                RuntimeOrigin::signed(Address::get()),
+                attestation(OTHER_DEVICE),
+                remark_only_filter(),
+            ));
+            assert!(DeviceFilters::<Test>::get(Address::get(), OTHER_DEVICE).is_some());
 
             assert_ok!(Pass::remove_device(
                 RuntimeOrigin::signed(Address::get()),
-                THE_DEVICE
+                OTHER_DEVICE
             ));
 
-            assert!(DeviceFilters::<Test>::get(Address::get(), THE_DEVICE).is_none());
+            assert!(DeviceFilters::<Test>::get(Address::get(), OTHER_DEVICE).is_none());
         })
     }
 
@@ -2756,6 +2765,366 @@ mod upgrade {
                 DeviceFilter::<(), u128, _, _>::Admin,
             );
             assert!(<MigrateV0ToV1<Test> as SteppedMigration>::post_upgrade(state).is_err());
+        })
+    }
+}
+
+mod set_device_filter {
+    use super::*;
+    use crate::DeviceFilters;
+
+    /// `THE_DEVICE` (`Admin`) and `OTHER_DEVICE` (with `filter`) in the account of `Address`.
+    fn with_other_device(filter: crate::DeviceFilterOf<Test>) -> sp_io::TestExternalities {
+        let mut ext = prepare(AccountNameA::get());
+        ext.execute_with(|| {
+            fund_address();
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_device_with_filter(
+                RuntimeOrigin::signed(Address::get()),
+                attestation(OTHER_DEVICE),
+                filter,
+            ));
+            crate::AuthenticatedDevice::<Test>::kill();
+        });
+        ext
+    }
+
+    fn set(
+        device_id: DeviceId,
+        filter: crate::DeviceFilterOf<Test>,
+    ) -> frame_support::dispatch::DispatchResult {
+        Pass::set_device_filter(RuntimeOrigin::signed(Address::get()), device_id, filter)
+    }
+
+    fn filter_of(device_id: DeviceId) -> Option<crate::DeviceFilterOf<Test>> {
+        DeviceFilters::<Test>::get(Address::get(), device_id)
+    }
+
+    #[test]
+    fn an_admin_device_changes_the_filter_of_another() {
+        with_other_device(remark_only_filter()).execute_with(|| {
+            authenticated_as(THE_DEVICE);
+            let new = pallets_filter(&[0, PASS_PALLET]);
+            assert_ok!(set(OTHER_DEVICE, new.clone()));
+
+            assert_eq!(filter_of(OTHER_DEVICE), Some(new));
+            assert_eq!(filter_of(THE_DEVICE), Some(DeviceFilter::Admin));
+            System::assert_has_event(
+                Event::<Test>::DeviceFilterUpdated {
+                    who: Address::get(),
+                    device_id: OTHER_DEVICE,
+                }
+                .into(),
+            );
+
+            // And it can make it an Admin.
+            assert_ok!(set(OTHER_DEVICE, DeviceFilter::Admin));
+            assert_eq!(filter_of(OTHER_DEVICE), Some(DeviceFilter::Admin));
+        })
+    }
+
+    #[test]
+    fn a_device_can_narrow_its_own_filter() {
+        with_other_device(pallets_filter(&[0, PASS_PALLET])).execute_with(|| {
+            authenticated_as(OTHER_DEVICE);
+            assert_ok!(set(OTHER_DEVICE, calls_in_pass()));
+            assert_eq!(filter_of(OTHER_DEVICE), Some(calls_in_pass()));
+        })
+    }
+
+    fn calls_in_pass() -> crate::DeviceFilterOf<Test> {
+        DeviceFilter::Calls(
+            [(PASS_PALLET, 7u8)]
+                .into_iter()
+                .collect::<alloc::collections::BTreeSet<_>>()
+                .try_into()
+                .unwrap(),
+        )
+    }
+
+    // Neither way: the caller needs to cover what the target can do now, and what it will do.
+    #[test]
+    fn a_device_cannot_grant_more_than_it_has() {
+        with_other_device(pallets_filter(&[0, PASS_PALLET])).execute_with(|| {
+            authenticated_as(OTHER_DEVICE);
+
+            // Itself, beyond its own filter.
+            for wider in [pallets_filter(&[0, 5, PASS_PALLET]), DeviceFilter::Admin] {
+                assert_noop!(
+                    set(OTHER_DEVICE, wider),
+                    Error::<Test>::PermissionEscalation
+                );
+            }
+            assert_eq!(
+                filter_of(OTHER_DEVICE),
+                Some(pallets_filter(&[0, PASS_PALLET]))
+            );
+        })
+    }
+
+    #[test]
+    fn a_device_cannot_change_one_that_can_do_more() {
+        with_other_device(pallets_filter(&[0, PASS_PALLET])).execute_with(|| {
+            authenticated_as(OTHER_DEVICE);
+
+            // Even to something it could grant.
+            assert_noop!(
+                set(THE_DEVICE, calls_in_pass()),
+                Error::<Test>::PermissionEscalation
+            );
+            assert_eq!(filter_of(THE_DEVICE), Some(DeviceFilter::Admin));
+        })
+    }
+
+    #[test]
+    fn a_device_cannot_change_one_that_is_not_comparable_to_its_own() {
+        with_other_device(calls_in_pass()).execute_with(|| {
+            // `Calls` cannot grant `Pallets`, even covering the same pallet.
+            authenticated_as(OTHER_DEVICE);
+            assert_noop!(
+                set(OTHER_DEVICE, pallets_filter(&[PASS_PALLET])),
+                Error::<Test>::PermissionEscalation
+            );
+        })
+    }
+
+    #[test]
+    fn the_target_must_be_a_device_of_the_account() {
+        with_other_device(remark_only_filter()).execute_with(|| {
+            authenticated_as(THE_DEVICE);
+            assert_noop!(
+                set(THIRD_DEVICE, remark_only_filter()),
+                Error::<Test>::DeviceNotFound
+            );
+
+            // A device of another account is not a target either.
+            assert_ok!(Pass::register(
+                RuntimeOrigin::root(),
+                AccountNameB::get(),
+                attestation([77u8; 32])
+            ));
+            assert_noop!(
+                set([77u8; 32], remark_only_filter()),
+                Error::<Test>::DeviceNotFound
+            );
+            assert_eq!(
+                DeviceFilters::<Test>::get(AddressB::get(), [77u8; 32]),
+                Some(DeviceFilter::Admin)
+            );
+        })
+    }
+
+    #[test]
+    fn needs_a_device_to_authenticate_the_call() {
+        with_other_device(remark_only_filter()).execute_with(|| {
+            assert_noop!(
+                set(OTHER_DEVICE, remark_only_filter()),
+                Error::<Test>::NotAuthenticatedByDevice
+            );
+
+            // A context left by another account is ignored.
+            crate::AuthenticatedDevice::<Test>::put((OTHER, THE_DEVICE));
+            assert_noop!(
+                set(OTHER_DEVICE, remark_only_filter()),
+                Error::<Test>::NotAuthenticatedByDevice
+            );
+
+            authenticated_as(THE_DEVICE);
+            for origin in [RuntimeOrigin::root(), RuntimeOrigin::signed(OTHER)] {
+                assert_noop!(
+                    Pass::set_device_filter(origin, OTHER_DEVICE, remark_only_filter()),
+                    DispatchError::BadOrigin
+                );
+            }
+        })
+    }
+
+    #[test]
+    fn a_session_key_cannot_call_it() {
+        with_other_device(remark_only_filter()).execute_with(|| {
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_session_key_with_filter(
+                RuntimeOrigin::signed(Address::get()),
+                OTHER,
+                None,
+                pallets_filter(&[PASS_PALLET]),
+            ));
+            crate::AuthenticatedDevice::<Test>::kill();
+
+            let call = crate::Call::<Test>::set_device_filter {
+                device_id: OTHER_DEVICE,
+                filter: DeviceFilter::Admin,
+            };
+            assert_eq!(
+                signed(OTHER, call.into()).unwrap().unwrap_err().error,
+                Error::<Test>::NotAuthenticatedByDevice.into()
+            );
+            assert_eq!(filter_of(OTHER_DEVICE), Some(remark_only_filter()));
+        })
+    }
+
+    #[test]
+    fn a_restricted_device_cannot_escalate_through_the_extension() {
+        with_other_device(pallets_filter(&[PASS_PALLET])).execute_with(|| {
+            let call = crate::Call::<Test>::set_device_filter {
+                device_id: OTHER_DEVICE,
+                filter: DeviceFilter::Admin,
+            };
+            assert_eq!(
+                authenticate(OTHER_DEVICE, credential(AccountNameA::get()), call.into())
+                    .unwrap()
+                    .unwrap_err()
+                    .error,
+                Error::<Test>::PermissionEscalation.into()
+            );
+        })
+    }
+
+    // A device with a `Devices` entry and no filter (not yet migrated) cannot be touched by a
+    // restricted device: it counts as `Admin`.
+    #[test]
+    fn a_device_without_a_filter_can_only_be_changed_by_an_admin_device() {
+        with_other_device(pallets_filter(&[0, PASS_PALLET])).execute_with(|| {
+            DeviceFilters::<Test>::remove(Address::get(), THE_DEVICE);
+
+            authenticated_as(OTHER_DEVICE);
+            assert_noop!(
+                set(THE_DEVICE, calls_in_pass()),
+                Error::<Test>::PermissionEscalation
+            );
+
+            // An `Admin` device can.
+            DeviceFilters::<Test>::insert(Address::get(), OTHER_DEVICE, DeviceFilter::Admin);
+            assert_ok!(set(THE_DEVICE, calls_in_pass()));
+            assert_eq!(filter_of(THE_DEVICE), Some(calls_in_pass()));
+        })
+    }
+}
+
+/// An account must keep at least one `Admin` device.
+mod last_admin_device {
+    use super::*;
+    use crate::DeviceFilters;
+
+    fn set(
+        device_id: DeviceId,
+        filter: crate::DeviceFilterOf<Test>,
+    ) -> frame_support::dispatch::DispatchResult {
+        Pass::set_device_filter(RuntimeOrigin::signed(Address::get()), device_id, filter)
+    }
+
+    fn remove(device_id: DeviceId) -> frame_support::dispatch::DispatchResult {
+        Pass::remove_device(RuntimeOrigin::signed(Address::get()), device_id)
+    }
+
+    /// `THE_DEVICE` and `OTHER_DEVICE`, both `Admin`.
+    fn two_admins() -> sp_io::TestExternalities {
+        let mut ext = prepare(AccountNameA::get());
+        ext.execute_with(|| {
+            fund_address();
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_device(
+                RuntimeOrigin::signed(Address::get()),
+                attestation(OTHER_DEVICE),
+            ));
+        });
+        ext
+    }
+
+    #[test]
+    fn the_only_admin_cannot_be_downgraded() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            authenticated_as(THE_DEVICE);
+            assert_noop!(
+                set(THE_DEVICE, remark_only_filter()),
+                Error::<Test>::LastAdminDevice
+            );
+            // Setting `Admin` again is not a downgrade.
+            assert_ok!(set(THE_DEVICE, DeviceFilter::Admin));
+        })
+    }
+
+    #[test]
+    fn an_admin_can_be_downgraded_while_another_remains() {
+        two_admins().execute_with(|| {
+            authenticated_as(THE_DEVICE);
+            assert_ok!(set(OTHER_DEVICE, remark_only_filter()));
+
+            // Now `THE_DEVICE` is the last one.
+            assert_noop!(
+                set(THE_DEVICE, remark_only_filter()),
+                Error::<Test>::LastAdminDevice
+            );
+        })
+    }
+
+    #[test]
+    fn the_last_admin_cannot_be_downgraded_by_the_other_one_either() {
+        two_admins().execute_with(|| {
+            authenticated_as(OTHER_DEVICE);
+            assert_ok!(set(THE_DEVICE, remark_only_filter()));
+            assert_noop!(
+                set(OTHER_DEVICE, remark_only_filter()),
+                Error::<Test>::LastAdminDevice
+            );
+            assert_eq!(
+                DeviceFilters::<Test>::get(Address::get(), OTHER_DEVICE),
+                Some(DeviceFilter::Admin)
+            );
+        })
+    }
+
+    #[test]
+    fn the_only_admin_cannot_be_removed() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            assert_noop!(remove(THE_DEVICE), Error::<Test>::LastAdminDevice);
+            assert!(DeviceFilters::<Test>::get(Address::get(), THE_DEVICE).is_some());
+        })
+    }
+
+    #[test]
+    fn an_admin_can_be_removed_while_another_remains() {
+        two_admins().execute_with(|| {
+            assert_ok!(remove(OTHER_DEVICE));
+            assert!(DeviceFilters::<Test>::get(Address::get(), OTHER_DEVICE).is_none());
+            assert_noop!(remove(THE_DEVICE), Error::<Test>::LastAdminDevice);
+        })
+    }
+
+    #[test]
+    fn a_restricted_device_can_be_removed_whenever() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            fund_address();
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_device_with_filter(
+                RuntimeOrigin::signed(Address::get()),
+                attestation(OTHER_DEVICE),
+                remark_only_filter(),
+            ));
+
+            assert_ok!(remove(OTHER_DEVICE));
+            assert_noop!(remove(OTHER_DEVICE), Error::<Test>::DeviceNotFound);
+        })
+    }
+
+    #[test]
+    fn a_device_not_yet_migrated_is_not_an_admin() {
+        prepare(AccountNameA::get()).execute_with(|| {
+            fund_address();
+            authenticated_as(THE_DEVICE);
+            assert_ok!(Pass::add_device(
+                RuntimeOrigin::signed(Address::get()),
+                attestation(OTHER_DEVICE),
+            ));
+            // Before the upgrade, this device had no filter.
+            DeviceFilters::<Test>::remove(Address::get(), OTHER_DEVICE);
+
+            // It does not count as the Admin that the account keeps, and it can be removed.
+            assert_noop!(
+                set(THE_DEVICE, remark_only_filter()),
+                Error::<Test>::LastAdminDevice
+            );
+            assert_ok!(remove(OTHER_DEVICE));
         })
     }
 }
