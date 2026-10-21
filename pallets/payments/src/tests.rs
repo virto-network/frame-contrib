@@ -277,19 +277,21 @@ fn payment_refunded_request() {
 ///    locked from the PAYMENT_BENEFICIARY because of the incentive amount.
 /// 4) The RESOLVER, rule in favor of PAYMENT_BENEFICIARY to pay 90%.
 ///
-///     Mandatory Fees:
-///        The SENDER should pay the mandatory fee:
-///           - 15% of the payment amount (meaning 3 tokens) to the
-///             FEE_SYSTEM_ACCOUNT
-///        The PAYMENT_BENEFICIARY should pay the mandatory fee:
-///           - 15% of the payment amount (meaning 3 tokens) to the
-///             FEE_SYSTEM_ACCOUNT
+/// ```text
+/// Mandatory Fees:
+///    The SENDER should pay the mandatory fee:
+///       - 15% of the payment amount (meaning 3 tokens) to the
+///         FEE_SYSTEM_ACCOUNT
+///    The PAYMENT_BENEFICIARY should pay the mandatory fee:
+///       - 15% of the payment amount (meaning 3 tokens) to the
+///         FEE_SYSTEM_ACCOUNT
 ///
-///     Fee not deducted during dispute:
-///        SENDER's fee:
-///           - 2 tokens to the FEE_SENDER_AMOUNT
-///        PAYMENT_BENEFICIARY's fee:
-///           - 3 tokens to FEE_BENEFICIARY_AMOUNT
+/// Fee not deducted during dispute:
+///    SENDER's fee:
+///       - 2 tokens to the FEE_SENDER_AMOUNT
+///    PAYMENT_BENEFICIARY's fee:
+///       - 3 tokens to FEE_BENEFICIARY_AMOUNT
+/// ```
 ///
 /// 4.1) PAYMENT_BENEFICIARY should receive:
 ///    + 18 token (90% because of dispute ruling)
@@ -407,19 +409,21 @@ fn payment_disputed_beneficiary_wins() {
 ///    locked from the PAYMENT_BENEFICIARY because of the incentive amount.
 /// 4) The RESOLVER, rule in favor of SENDER to pay 90%.
 ///
-///     Mandatory Fees:
-///        The SENDER should pay the mandatory fee:
-///           - 15% of the payment amount (meaning 3 tokens) to the
-///             FEE_SYSTEM_ACCOUNT
-///        The PAYMENT_BENEFICIARY should pay the mandatory fee:
-///           - 15% of the payment amount (meaning 3 tokens) to the
-///             FEE_SYSTEM_ACCOUNT
+/// ```text
+/// Mandatory Fees:
+///    The SENDER should pay the mandatory fee:
+///       - 15% of the payment amount (meaning 3 tokens) to the
+///         FEE_SYSTEM_ACCOUNT
+///    The PAYMENT_BENEFICIARY should pay the mandatory fee:
+///       - 15% of the payment amount (meaning 3 tokens) to the
+///         FEE_SYSTEM_ACCOUNT
 ///
-///     Fee not deducted during dispute:
-///        SENDER's fee:
-///           - 2 tokens to the FEE_SENDER_AMOUNT
-///        PAYMENT_BENEFICIARY's fee:
-///           - 3 tokens to FEE_BENEFICIARY_AMOUNT
+/// Fee not deducted during dispute:
+///    SENDER's fee:
+///       - 2 tokens to the FEE_SENDER_AMOUNT
+///    PAYMENT_BENEFICIARY's fee:
+///       - 3 tokens to FEE_BENEFICIARY_AMOUNT
+/// ```
 ///
 /// 4.1) PAYMENT_BENEFICIARY should receive:
 ///    + 2 token (10% because of dispute ruling)
@@ -626,7 +630,7 @@ fn weights() {
     println!("max extrinsic weight: {max_extrinsic_weight}\n");
 
     let mut total = Weight::zero();
-    for (function, weight) in vec![
+    for (function, weight) in [
         // Examples: call available weight functions with various parameters (as applicable) to gauge weight usage in
         // comparison to limits
         ("pay (20)", SubstrateWeight::<Test>::pay(20_u32)),
@@ -662,4 +666,149 @@ fn weights() {
 
     // output total weight, useful for evaluating net weight changes when optimising
     println!("\ntotal weight: {total:?}");
+}
+
+/// Direct payments (`DEC-5`, `REQ-BL-3`, `REQ-BL-5`): `DirectPayment::pay` moves the amount at
+/// once, never held, settles the fees `FeeHandler` names on both sides, and keeps no record.
+mod direct_payments {
+    use super::*;
+    use fc_traits_payments::DirectPayment;
+
+    fn asset_balance(who: AccountId) -> Balance {
+        <Assets as fungibles::Inspect<_>>::balance(ASSET_ID, &who)
+    }
+
+    type AccountId = <Test as frame_system::Config>::AccountId;
+
+    // REQ-BL-3
+    #[test]
+    fn moves_the_exact_amount_and_fees_and_holds_nothing() {
+        new_test_ext().execute_with(|| {
+            let reason: &<Test as Config>::RuntimeHoldReason = &HoldReason::TransferPayment.into();
+
+            let id = <Payments as DirectPayment<_>>::pay(
+                &SENDER_ACCOUNT,
+                ASSET_ID,
+                PAYMENT_AMOUNT,
+                &PAYMENT_BENEFICIARY,
+                Some(b"remark"),
+            )
+            .expect("the sender can pay the amount and its fees");
+
+            // Sender: the amount, a fixed fee of 2 and 15% of 20 (3).
+            assert_eq!(
+                asset_balance(SENDER_ACCOUNT),
+                INITIAL_BALANCE - PAYMENT_AMOUNT - FEE_SENDER_AMOUNT - EXPECTED_SYSTEM_SENDER_FEE
+            );
+            // Beneficiary: the amount, less a fixed fee of 3 and 15% of 20 (3).
+            assert_eq!(
+                asset_balance(PAYMENT_BENEFICIARY),
+                PAYMENT_AMOUNT - FEE_BENEFICIARY_AMOUNT - SYSTEM_FEE
+            );
+            assert_eq!(asset_balance(FEE_SENDER_ACCOUNT), FEE_SENDER_AMOUNT);
+            assert_eq!(
+                asset_balance(FEE_BENEFICIARY_ACCOUNT),
+                FEE_BENEFICIARY_AMOUNT
+            );
+            assert_eq!(asset_balance(FEE_SYSTEM_ACCOUNT), EXPECTED_SYSTEM_TOTAL_FEE);
+
+            // Never held.
+            for who in [SENDER_ACCOUNT, PAYMENT_BENEFICIARY] {
+                assert_eq!(
+                    <AssetsHolder as fungibles::InspectHold<_>>::balance_on_hold(
+                        ASSET_ID, reason, &who
+                    ),
+                    0
+                );
+            }
+
+            let beneficiary_fees = FEE_BENEFICIARY_AMOUNT + SYSTEM_FEE;
+            assert_eq!(
+                Hooks::get(),
+                vec![
+                    PaymentStatusHooks::Charged(
+                        id,
+                        beneficiary_fees,
+                        PAYMENT_AMOUNT - beneficiary_fees
+                    ),
+                    PaymentStatusHooks::Released(
+                        id,
+                        beneficiary_fees,
+                        PAYMENT_AMOUNT - beneficiary_fees
+                    ),
+                ]
+            );
+            System::assert_last_event(RuntimeEvent::Payments(Event::PaymentDirect {
+                id,
+                sender: SENDER_ACCOUNT,
+                beneficiary: PAYMENT_BENEFICIARY,
+                asset: ASSET_ID,
+                amount: PAYMENT_AMOUNT,
+                fees: FEE_SENDER_AMOUNT + EXPECTED_SYSTEM_SENDER_FEE + beneficiary_fees,
+            }));
+        })
+    }
+
+    // DEC-5
+    #[test]
+    fn keeps_no_payment_record() {
+        new_test_ext().execute_with(|| {
+            let id = <Payments as DirectPayment<_>>::pay(
+                &SENDER_ACCOUNT,
+                ASSET_ID,
+                PAYMENT_AMOUNT,
+                &PAYMENT_BENEFICIARY,
+                None::<()>,
+            )
+            .expect("the sender can pay");
+
+            assert_eq!(PaymentStore::<Test>::iter().count(), 0);
+            assert_eq!(PaymentParties::<Test>::iter().count(), 0);
+            assert!(<Payments as fc_traits_payments::Inspect<_>>::details(&id).is_none());
+        })
+    }
+
+    // REQ-BL-5, DEC-5
+    #[test]
+    fn failed_payment_moves_nothing_without_a_layer_of_the_caller() {
+        new_test_ext().execute_with(|| {
+            let balances = || {
+                [
+                    SENDER_ACCOUNT,
+                    PAYMENT_BENEFICIARY,
+                    FEE_SENDER_ACCOUNT,
+                    FEE_BENEFICIARY_ACCOUNT,
+                    FEE_SYSTEM_ACCOUNT,
+                ]
+                .map(asset_balance)
+            };
+            // Called bare: no storage layer of the caller's around it.
+            let pay = |amount| {
+                <Payments as DirectPayment<_>>::pay(
+                    &SENDER_ACCOUNT,
+                    ASSET_ID,
+                    amount,
+                    &PAYMENT_BENEFICIARY,
+                    None::<()>,
+                )
+            };
+            let before = balances();
+            let events_before = System::events().len();
+
+            // The fees (2 + 14) can be paid, but the amount cannot: the payment's own layer undoes
+            // every fee transfer that already happened.
+            assert_err!(pay(96), Error::<Test>::TransferFailed);
+            assert_eq!(balances(), before);
+
+            // 85 + 2 + 12 leaves the minimum balance; 86 + 2 + 12 does not, and the amount is
+            // moved with `Preserve`.
+            assert_err!(pay(86), Error::<Test>::TransferFailed);
+            assert_eq!(balances(), before);
+            assert!(Hooks::get().is_empty());
+            assert_eq!(System::events().len(), events_before);
+
+            assert_ok!(pay(85));
+            assert_eq!(asset_balance(SENDER_ACCOUNT), 1);
+        })
+    }
 }
