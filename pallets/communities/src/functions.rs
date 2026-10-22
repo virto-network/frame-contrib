@@ -10,7 +10,7 @@ use frame_support::{
         Polling,
     },
 };
-use sp_runtime::traits::{AccountIdConversion, Dispatchable};
+use sp_runtime::traits::{AccountIdConversion, Convert, Dispatchable};
 
 impl<T: Config> Pallet<T> {
     #[inline]
@@ -91,7 +91,10 @@ impl<T: Config> Pallet<T> {
     ) -> DispatchResult {
         T::Polls::try_access_poll(poll_index, |poll_status| {
             let (tally, class) = poll_status.ensure_ongoing().ok_or(Error::<T>::NotOngoing)?;
-            ensure!(community_id == &class, Error::<T>::InvalidTrack);
+            ensure!(
+                T::CommunityOfClass::convert(class).as_ref() == Some(community_id),
+                Error::<T>::InvalidTrack
+            );
 
             let vote_multiplier: VoteWeight = match CommunityDecisionMethod::<T>::get(community_id)
             {
@@ -132,7 +135,10 @@ impl<T: Config> Pallet<T> {
     ) -> DispatchResult {
         T::Polls::try_access_poll(poll_index, |poll_status| {
             let (tally, class) = poll_status.ensure_ongoing().ok_or(Error::<T>::NotOngoing)?;
-            ensure!(community_id == &class, Error::<T>::InvalidTrack);
+            ensure!(
+                T::CommunityOfClass::convert(class).as_ref() == Some(community_id),
+                Error::<T>::InvalidTrack
+            );
 
             let (vote, voter) = CommunityVotes::<T>::get(poll_index, membership_id)
                 .ok_or(Error::<T>::NoVoteCasted)?;

@@ -22,6 +22,8 @@ use sp_runtime::{
 };
 
 pub type CommunityId = u16;
+/// A track id is the community (the group) in its high half, and a sub-track in its low half.
+pub type TrackId = u32;
 pub type MembershipId = u64;
 
 use crate::{
@@ -232,6 +234,20 @@ impl pallet_scheduler::Config for Test {
     type BlockNumberProvider = System;
 }
 
+/// The community is the group half of the track id. Group `0` (the one that `Root` creates tracks
+/// in) belongs to no community.
+pub struct CommunityOfTrack;
+impl Convert<TrackId, Option<CommunityId>> for CommunityOfTrack {
+    fn convert(track: TrackId) -> Option<CommunityId> {
+        Some(fc_pallet_referenda_tracks::SplitId::split(track).0).filter(|group| *group != 0)
+    }
+}
+
+/// The id of the (first) track of a community.
+pub fn track_of(community_id: CommunityId) -> TrackId {
+    fc_pallet_referenda_tracks::SplitId::combine(community_id, 0)
+}
+
 pub struct EnsureOriginToTrack;
 impl EnsureOriginWithArg<RuntimeOrigin, TrackIdOf<Test, ()>> for EnsureOriginToTrack {
     type Success = ();
@@ -249,7 +265,8 @@ impl EnsureOriginWithArg<RuntimeOrigin, TrackIdOf<Test, ()>> for EnsureOriginToT
 
     #[cfg(feature = "runtime-benchmarks")]
     fn try_successful_origin(id: &TrackIdOf<Test, ()>) -> Result<RuntimeOrigin, ()> {
-        Ok(pallet_communities::Origin::<Test>::new(*id).into())
+        let community_id = CommunityOfTrack::convert(*id).ok_or(())?;
+        Ok(pallet_communities::Origin::<Test>::new(community_id).into())
     }
 }
 
@@ -274,7 +291,7 @@ pub struct EnsureRootReturnGroupId;
 impl EnsureOriginWithArg<RuntimeOrigin, pallet_referenda::PalletsOriginOf<Test>>
     for EnsureRootReturnGroupId
 {
-    type Success = <CommunityId as fc_pallet_referenda_tracks::SplitId>::Half;
+    type Success = <TrackId as fc_pallet_referenda_tracks::SplitId>::Half;
 
     fn try_origin(
         o: RuntimeOrigin,
@@ -296,7 +313,7 @@ impl fc_pallet_referenda_tracks::Config for Test {
     type GroupManagerCreateOrigin = EnsureRootReturnGroupId;
     type GroupManagerOrigin = EnsureOriginToTrack;
     type RemoveGroupOrigin = frame_support::traits::AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
-    type TrackId = CommunityId;
+    type TrackId = TrackId;
     type MaxTracks = MaxTracks;
 
     #[cfg(feature = "runtime-benchmarks")]
@@ -384,7 +401,7 @@ impl BenchmarkHelper<Test> for CommunityBenchmarkHelper {
     }
 
     fn prepare_track(track_origin: PalletsOriginOf<Test>) -> Result<(), BenchmarkError> {
-        let id = Self::community_id();
+        let id = track_of(Self::community_id());
         let info = TrackInfo {
             name: sp_runtime::str_array("Community"),
             max_deciding: 1,
@@ -483,6 +500,7 @@ impl Config for Test {
     type MemberMgmt = MembershipsManager;
 
     type Polls = Referenda;
+    type CommunityOfClass = CommunityOfTrack;
     type Assets = Assets;
     type AssetsFreezer = AssetsFreezer;
     type Balances = Balances;
@@ -520,7 +538,7 @@ pub(crate) struct TestEnvBuilder {
         alloc::collections::btree_map::BTreeMap<CommunityId, DecisionMethod<AssetId, Balance>>,
     members: Vec<(CommunityId, AccountId)>,
     memberships: Vec<(CommunityId, MembershipId)>,
-    tracks: Vec<(TrackIdOf<Test, ()>, TrackInfoOf<Test>)>,
+    tracks: Vec<(CommunityId, TrackInfoOf<Test>)>,
 }
 
 impl TestEnvBuilder {
@@ -657,7 +675,7 @@ impl TestEnvBuilder {
 
                 for (_, track_info) in self.tracks.iter().filter(|(cid, _)| cid == community_id) {
                     Tracks::do_insert(
-                        *community_id,
+                        track_of(*community_id),
                         track_info.clone(),
                         community_origin.caller.clone(),
                     )

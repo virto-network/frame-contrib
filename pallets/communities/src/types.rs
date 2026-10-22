@@ -20,6 +20,9 @@ pub type CommunityIdOf<T> = <T as Config>::CommunityId;
 pub type VoteOf<T> = Vote<AssetIdOf<T>, AssetBalanceOf<T>, NativeBalanceOf<T>>;
 pub type DecisionMethodFor<T> = DecisionMethod<AssetIdOf<T>, AssetBalanceOf<T>>;
 pub type PollIndexOf<T> = <<T as Config>::Polls as Polling<Tally<T>>>::Index;
+/// The class of the polls of a runtime, typically a referenda track id. See
+/// [`Config::CommunityOfClass`] for how it relates to a community.
+pub type PollClassOf<T> = <<T as Config>::Polls as Polling<Tally<T>>>::Class;
 pub type AccountIdLookupOf<T> = <<T as frame_system::Config>::Lookup as StaticLookup>::Source;
 pub type PalletsOriginOf<T> =
     <<T as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin;
@@ -42,6 +45,16 @@ pub struct CommunityAccount<T>(PhantomData<T>);
 impl<T: Config> Convert<CommunityIdOf<T>, AccountIdOf<T>> for CommunityAccount<T> {
     fn convert(community_id: CommunityIdOf<T>) -> AccountIdOf<T> {
         crate::Pallet::<T>::community_account(&community_id)
+    }
+}
+
+/// Identifies the class of a poll with the community that owns it, for runtimes that keep flat ids
+/// (a referenda track id _is_ the community id). Use it as
+/// [`Config::CommunityOfClass`].
+pub struct IdentityClass;
+impl<C> Convert<C, Option<C>> for IdentityClass {
+    fn convert(class: C) -> Option<C> {
+        Some(class)
     }
 }
 
@@ -227,4 +240,18 @@ pub trait BenchmarkHelper<T: Config> {
     ) -> Result<PollIndexOf<T>, BenchmarkError>;
 
     fn finish_poll(index: PollIndexOf<T>) -> Result<(), BenchmarkError>;
+}
+
+#[cfg(test)]
+mod identity_class_tests {
+    use super::*;
+
+    #[test]
+    fn identity_class_relates_a_class_to_the_community_of_the_same_id() {
+        // W3b: flat ids, the class is the community id.
+        assert_eq!(IdentityClass::convert(0u16), Some(0u16));
+        assert_eq!(IdentityClass::convert(1786u16), Some(1786u16));
+        // ...and only that community.
+        assert_ne!(IdentityClass::convert(2u16), Some(1u16));
+    }
 }
