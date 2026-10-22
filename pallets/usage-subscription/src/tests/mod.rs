@@ -18,6 +18,8 @@ use sp_runtime::DispatchError;
 mod amendments;
 mod capacity;
 mod contracts;
+#[cfg(feature = "fees")]
+mod fees;
 mod offers;
 mod payment_step;
 mod trials;
