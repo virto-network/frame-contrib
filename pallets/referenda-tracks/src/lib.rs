@@ -28,6 +28,13 @@
 //! Sub-tracks are added to an existing group afterwards with
 //! [`add_sub_track`][`crate::Pallet::add_sub_track`].
 //!
+//! ### Migrating from storage version 0
+//!
+//! Chains that had flat track ids need [`migration::MigrateV0ToV1`], a stepped migration to be
+//! registered in `pallet_migrations` in the same runtime upgrade that brings this version. Old
+//! track `n` becomes track `0` of group `n`. See the [`migration`] module for the contract and
+//! how to register it.
+//!
 //! ## Interface
 //!
 //! ### Dispatchable Functions

@@ -1449,88 +1449,150 @@ mod group_allocation {
 
 mod migration {
     use super::*;
-    use crate::migration::v0;
-    use frame_support::{traits::UncheckedOnRuntimeUpgrade, BoundedVec};
+    use crate::{
+        migration::{v0, Cursor, CursorKey, MigrateV0ToV1, Phase, TryIntoGroup},
+        WeightInfo,
+    };
+    use frame_support::{
+        migrations::{SteppedMigration, SteppedMigrationError},
+        storage::unhashed,
+        traits::{GetStorageVersion, StorageVersion},
+        weights::{Weight, WeightMeter},
+        BoundedVec,
+    };
+    use sp_runtime::traits::Convert;
+    use sp_runtime::StateVersion;
 
-    #[test]
-    fn v0_to_v1_works() {
-        new_test_ext(None).execute_with(|| {
-            // Simulate v0 state: flat track IDs stored in old format
-            // Old track 1 and 2 (these were group IDs in old model)
-            let old_ids: BoundedVec<u32, MaxTracks> =
-                BoundedVec::try_from(vec![1u32, 2u32]).unwrap();
-            v0::TracksIds::<Test, ()>::put(&old_ids);
-            v0::Tracks::<Test, ()>::insert(1u32, TRACK);
-            v0::Tracks::<Test, ()>::insert(2u32, TRACK);
+    type Migration = MigrateV0ToV1<Test, (), u16, TryIntoGroup>;
 
-            // Set up OriginToTrackId with old IDs
-            crate::OriginToTrackId::<Test, ()>::insert(&ORIGIN_SIGNED_1, 1u32);
-            crate::OriginToTrackId::<Test, ()>::insert(&ORIGIN_SIGNED_2, 2u32);
-
-            // Run migration
-            crate::migration::MigrateV0ToV1::<Test, ()>::on_runtime_upgrade();
-
-            // Verify: old track 1 -> combine(1, 0) = 65536
-            // old track 2 -> combine(2, 0) = 131072
-            let new_id_1 = u32::combine(1, 0);
-            let new_id_2 = u32::combine(2, 0);
-            assert_eq!(new_id_1, 65536);
-            assert_eq!(new_id_2, 131072);
-
-            // Tracks accessible via new DoubleMap
-            assert_eq!(
-                ReferendaTracks::<Test>::get_track_info(new_id_1),
-                Some(TRACK)
-            );
-            assert_eq!(
-                ReferendaTracks::<Test>::get_track_info(new_id_2),
-                Some(TRACK)
-            );
-
-            // TracksIds updated to BoundedBTreeSet with new IDs
-            let ids = crate::TracksIds::<Test, ()>::get();
-            assert_eq!(ids.len(), 2);
-            assert!(ids.contains(&new_id_1));
-            assert!(ids.contains(&new_id_2));
-
-            // OriginToTrackId updated to new IDs
-            assert_eq!(
-                crate::OriginToTrackId::<Test, ()>::get(&ORIGIN_SIGNED_1),
-                Some(new_id_1)
-            );
-            assert_eq!(
-                crate::OriginToTrackId::<Test, ()>::get(&ORIGIN_SIGNED_2),
-                Some(new_id_2)
-            );
-
-            // TrackIdToOrigin populated
-            assert_eq!(
-                crate::TrackIdToOrigin::<Test, ()>::get(new_id_1),
-                Some(ORIGIN_SIGNED_1)
-            );
-            assert_eq!(
-                crate::TrackIdToOrigin::<Test, ()>::get(new_id_2),
-                Some(ORIGIN_SIGNED_2)
-            );
-
-            // NextGroupId set to max(1,2) + 1 = 3
-            assert_eq!(crate::NextGroupId::<Test, ()>::get(), 3u16);
-
-            // Old Tracks storage cleared
-            assert!(v0::Tracks::<Test, ()>::get(1u32).is_none());
-            assert!(v0::Tracks::<Test, ()>::get(2u32).is_none());
-        });
+    /// Accepts ids below 1000 only.
+    struct Below1000;
+    impl Convert<u16, Option<u16>> for Below1000 {
+        fn convert(id: u16) -> Option<u16> {
+            (id < 1000).then_some(id)
+        }
     }
 
-    #[test]
-    fn v0_to_v1_empty_state() {
-        new_test_ext(None).execute_with(|| {
-            // No tracks in v0
-            crate::migration::MigrateV0ToV1::<Test, ()>::on_runtime_upgrade();
+    // The ids of the 23 community tracks: 20 small ones, and 444, 777 and 1786, which don't fit a
+    // `u8` group.
+    fn live_ids() -> Vec<u16> {
+        (1..=20).chain([444, 777, 1786]).collect()
+    }
 
-            assert_eq!(crate::TracksIds::<Test, ()>::get().len(), 0);
-            // NextGroupId: default(0).increment() = 1
-            assert_eq!(crate::NextGroupId::<Test, ()>::get(), 1u16);
+    fn origin_of(id: u16) -> OriginCaller {
+        OriginCaller::system(RawOrigin::Signed(10_000 + id as u64))
+    }
+
+    fn info_of(id: u16) -> pallet_referenda::TrackInfoOf<Test, ()> {
+        pallet_referenda::TrackInfoOf::<Test, ()> {
+            decision_deposit: id as u64,
+            ..TRACK
+        }
+    }
+
+    fn new_id(id: u16) -> u32 {
+        u32::combine(id, 0)
+    }
+
+    /// Writes the storage of version 0: flat `u16` ids, in `Tracks`, `TracksIds` and in the
+    /// values of `OriginToTrackId`.
+    fn put_v0(ids: &[u16]) {
+        StorageVersion::new(0).put::<crate::Pallet<Test, ()>>();
+        let bounded: BoundedVec<u16, MaxTracks> = BoundedVec::try_from(ids.to_vec()).unwrap();
+        v0::TracksIds::<Test, (), u16>::put(bounded);
+        for id in ids {
+            v0::Tracks::<Test, (), u16>::insert(id, info_of(*id));
+            unhashed::put(
+                &crate::OriginToTrackId::<Test, ()>::hashed_key_for(origin_of(*id)),
+                id,
+            );
+        }
+    }
+
+    fn run_all<M>() -> Option<Cursor>
+    where
+        M: SteppedMigration<Cursor = Cursor>,
+    {
+        M::step(None, &mut WeightMeter::new()).expect("the migration doesn't fail")
+    }
+
+    /// The raw keys of `Tracks` of the shape of version 0.
+    fn v0_keys() -> Vec<Vec<u8>> {
+        let prefix = frame_support::storage::storage_prefix(b"Tracks", b"Tracks");
+        let mut keys = vec![];
+        let mut key = prefix.to_vec();
+        while let Some(next) = sp_io::storage::next_key(&key) {
+            if !next.starts_with(&prefix) {
+                break;
+            }
+            if next.len() == 32 + 16 + 2 {
+                keys.push(next.clone());
+            }
+            key = next;
+        }
+        keys
+    }
+
+    fn root() -> Vec<u8> {
+        sp_io::storage::root(StateVersion::V1)
+    }
+
+    fn assert_migrated(ids: &[u16]) {
+        for id in ids {
+            let new = new_id(*id);
+            assert_eq!(
+                ReferendaTracks::<Test>::get_track_info(new),
+                Some(info_of(*id)),
+                "track {id}"
+            );
+            assert_eq!(
+                crate::OriginToTrackId::<Test, ()>::get(origin_of(*id)),
+                Some(new)
+            );
+            assert_eq!(
+                crate::TrackIdToOrigin::<Test, ()>::get(new),
+                Some(origin_of(*id))
+            );
+            assert!(!v0::Tracks::<Test, (), u16>::contains_key(id));
+        }
+        let expected: Vec<u32> = ids.iter().map(|id| new_id(*id)).collect();
+        let mut stored: Vec<u32> = crate::TracksIds::<Test, ()>::get().into_iter().collect();
+        stored.sort();
+        let mut expected = expected;
+        expected.sort();
+        assert_eq!(stored, expected);
+    }
+
+    // Ids: 1..=20, 444, 777, 1786 (23 tracks, the shape of Kreivo). Old `n` becomes group `n`,
+    // track 0, which for a `u32` id is `n << 16`.
+    #[test]
+    fn migrates_the_live_shaped_state() {
+        new_test_ext(None).execute_with(|| {
+            let ids = live_ids();
+            assert_eq!(ids.len(), 23);
+            put_v0(&ids);
+
+            #[cfg(feature = "try-runtime")]
+            let state = Migration::pre_upgrade().expect("pre_upgrade");
+
+            assert_eq!(run_all::<Migration>(), None);
+
+            assert_migrated(&ids);
+            assert_eq!(new_id(444), 444 << 16);
+            assert_eq!(new_id(1786), 1786 << 16);
+            assert_eq!(crate::NextGroupId::<Test, ()>::get(), 1787);
+            assert_eq!(ReferendaTracks::<Test>::on_chain_storage_version(), 1);
+            assert!(v0_keys().is_empty());
+
+            #[cfg(feature = "try-runtime")]
+            Migration::post_upgrade(state).expect("post_upgrade");
+
+            // The group-first model works on it: a sub-track is added to a group afterwards.
+            assert_ok!(ReferendaTracks::<Test, ()>::add_sub_track(
+                RuntimeOrigin::root(),
+                OriginCaller::system(RawOrigin::Signed(1)),
+                TRACK,
+            ));
         });
     }
 
@@ -1539,19 +1601,242 @@ mod migration {
         use pallet_referenda::TracksInfo;
 
         new_test_ext(None).execute_with(|| {
-            let old_ids: BoundedVec<u32, MaxTracks> = BoundedVec::try_from(vec![1u32]).unwrap();
-            v0::TracksIds::<Test, ()>::put(&old_ids);
-            v0::Tracks::<Test, ()>::insert(1u32, TRACK);
-            crate::OriginToTrackId::<Test, ()>::insert(&ORIGIN_SIGNED_1, 1u32);
+            put_v0(&[444]);
+            run_all::<Migration>();
 
-            crate::migration::MigrateV0ToV1::<Test, ()>::on_runtime_upgrade();
-
-            let new_id = u32::combine(1, 0);
             assert_eq!(
-                <ReferendaTracks<Test> as TracksInfo<u64, u64>>::track_for(&ORIGIN_SIGNED_1),
-                Ok(new_id)
+                <ReferendaTracks<Test> as TracksInfo<u64, u64>>::track_for(&origin_of(444)),
+                Ok(new_id(444))
             );
         });
+    }
+
+    // Steps of two units each, from the 23 tracks of the live shape to the end. After each, what
+    // is at or before the cursor is migrated, and what is after it is untouched; and the final
+    // state is that of one step with no limit.
+    #[test]
+    fn yields_midway_and_resumes_at_the_cursor() {
+        let unlimited = new_test_ext(None).execute_with(|| {
+            put_v0(&live_ids());
+            run_all::<Migration>();
+            root()
+        });
+
+        let resumed = new_test_ext(None).execute_with(|| {
+            put_v0(&live_ids());
+            let mut cursor: Option<Cursor> = None;
+            let mut phases = vec![];
+            let mut steps = 0;
+            loop {
+                steps += 1;
+                assert!(steps < 100, "it doesn't end");
+                let before = v0_keys();
+                let unit = match cursor.as_ref().map(|(phase, _)| phase) {
+                    None | Some(Phase::Tracks) => <() as WeightInfo>::migrate_track(),
+                    Some(Phase::Origins) => <() as WeightInfo>::migrate_origin(),
+                    Some(Phase::Finish) => <() as WeightInfo>::migrate_finalize(MaxTracks::get()),
+                };
+                let mut meter = WeightMeter::with_limit(unit.saturating_mul(2));
+                cursor = Migration::step(cursor, &mut meter).expect("the unit fits");
+                let Some((phase, key)) = cursor.clone() else {
+                    break;
+                };
+                if phases.last() != Some(&phase) {
+                    phases.push(phase);
+                }
+                if phase == Phase::Tracks && !key.is_empty() {
+                    // Before the cursor: moved. After it: untouched.
+                    let after = v0_keys();
+                    assert!(after.iter().all(|k| k.as_slice() > key.as_slice()));
+                    assert_eq!(
+                        after,
+                        before
+                            .iter()
+                            .filter(|k| k.as_slice() > key.as_slice())
+                            .cloned()
+                            .collect::<Vec<_>>()
+                    );
+                }
+            }
+            assert_eq!(phases, vec![Phase::Tracks, Phase::Origins, Phase::Finish]);
+            assert_migrated(&live_ids());
+            root()
+        });
+
+        assert_eq!(unlimited, resumed);
+    }
+
+    // One unit fits, a second doesn't: it yields in the middle of a phase.
+    #[test]
+    fn yields_when_the_next_unit_does_not_fit() {
+        new_test_ext(None).execute_with(|| {
+            put_v0(&[1, 2, 3]);
+            let unit = <() as WeightInfo>::migrate_track();
+
+            let mut meter = WeightMeter::with_limit(unit);
+            let cursor = Migration::step(None, &mut meter).expect("it doesn't fail");
+
+            let (phase, key) = cursor.expect("it is not done");
+            assert_eq!(phase, Phase::Tracks);
+            assert!(!key.is_empty());
+            assert_eq!(v0_keys().len(), 2);
+        });
+    }
+
+    // Not even one unit fits an empty meter: waiting doesn't help, so it's an error. A meter that
+    // is only used up is not: it yields.
+    #[test]
+    fn fails_if_not_even_one_unit_fits() {
+        new_test_ext(None).execute_with(|| {
+            put_v0(&[1]);
+
+            for (cursor, required) in [
+                (None, <() as WeightInfo>::migrate_track()),
+                (
+                    Some((Phase::Origins, CursorKey::default())),
+                    <() as WeightInfo>::migrate_origin(),
+                ),
+                (
+                    Some((Phase::Finish, CursorKey::default())),
+                    <() as WeightInfo>::migrate_finalize(MaxTracks::get()),
+                ),
+            ] {
+                let mut meter = WeightMeter::with_limit(Weight::zero());
+                assert_eq!(
+                    Migration::step(cursor.clone(), &mut meter),
+                    Err(SteppedMigrationError::InsufficientWeight { required })
+                );
+            }
+            assert_eq!(v0_keys().len(), 1);
+
+            let mut used_up = WeightMeter::with_limit(<() as WeightInfo>::migrate_track());
+            used_up.consume(<() as WeightInfo>::migrate_track());
+            assert_eq!(
+                Migration::step(None, &mut used_up),
+                Ok(Some((Phase::Tracks, CursorKey::default())))
+            );
+        });
+    }
+
+    // Ids: 1, 777, 1786, 4000. With `Below1000`, 1786 and 4000 don't convert: they are left as
+    // they were, and the migration finishes.
+    #[test]
+    fn skips_ids_that_do_not_fit_a_group() {
+        type Strict = MigrateV0ToV1<Test, (), u16, Below1000>;
+
+        new_test_ext(None).execute_with(|| {
+            let ids = [1u16, 777, 1786, 4000];
+            put_v0(&ids);
+
+            #[cfg(feature = "try-runtime")]
+            let state = Strict::pre_upgrade().expect("pre_upgrade");
+
+            assert_eq!(run_all::<Strict>(), None);
+
+            assert_migrated(&[1, 777]);
+            for skipped in [1786u16, 4000] {
+                assert_eq!(
+                    v0::Tracks::<Test, (), u16>::get(skipped),
+                    Some(info_of(skipped))
+                );
+                assert_eq!(
+                    unhashed::get::<u16>(&crate::OriginToTrackId::<Test, ()>::hashed_key_for(
+                        origin_of(skipped)
+                    )),
+                    Some(skipped)
+                );
+                assert!(ReferendaTracks::<Test>::get_track_info(new_id(skipped)).is_none());
+            }
+            assert_eq!(v0_keys().len(), 2);
+            assert_eq!(ReferendaTracks::<Test>::on_chain_storage_version(), 1);
+            assert_eq!(crate::NextGroupId::<Test, ()>::get(), 778);
+
+            #[cfg(feature = "try-runtime")]
+            Strict::post_upgrade(state).expect("post_upgrade");
+        });
+    }
+
+    // A second run recognises what is migrated (by the length and the hash of the keys, and by
+    // the reverse map) and changes nothing; also when it begins from the first step.
+    #[test]
+    fn running_again_changes_nothing() {
+        new_test_ext(None).execute_with(|| {
+            put_v0(&live_ids());
+            run_all::<Migration>();
+            let migrated = root();
+
+            // With the version bumped, it doesn't even start.
+            assert_eq!(run_all::<Migration>(), None);
+            assert_eq!(root(), migrated);
+
+            // With the version back at 0, it walks everything and finds nothing to do.
+            StorageVersion::new(0).put::<crate::Pallet<Test, ()>>();
+            #[cfg(feature = "try-runtime")]
+            let state = Migration::pre_upgrade().expect("pre_upgrade");
+            assert_eq!(run_all::<Migration>(), None);
+            assert_eq!(root(), migrated);
+            #[cfg(feature = "try-runtime")]
+            Migration::post_upgrade(state).expect("post_upgrade");
+        });
+    }
+
+    // Stopped in the middle, begun again from the start (as if the cursor was lost): the entries
+    // that were moved are not moved twice.
+    #[test]
+    fn restarting_midway_ends_in_the_same_state() {
+        let once = new_test_ext(None).execute_with(|| {
+            put_v0(&live_ids());
+            run_all::<Migration>();
+            root()
+        });
+
+        let restarted = new_test_ext(None).execute_with(|| {
+            put_v0(&live_ids());
+            let mut meter =
+                WeightMeter::with_limit(<() as WeightInfo>::migrate_track().saturating_mul(10));
+            Migration::step(None, &mut meter).expect("it doesn't fail");
+            assert!(v0_keys().len() < 23);
+            run_all::<Migration>();
+            root()
+        });
+
+        assert_eq!(once, restarted);
+    }
+
+    // A chain that never had version 0 is at version 1 from genesis: nothing to do.
+    #[test]
+    fn does_nothing_if_there_was_no_version_0() {
+        new_test_ext(Some(vec![
+            (TRACK, ORIGIN_SIGNED_1),
+            (TRACK, ORIGIN_SIGNED_2),
+        ]))
+        .execute_with(|| {
+            assert_eq!(ReferendaTracks::<Test>::on_chain_storage_version(), 1);
+            let before = root();
+
+            assert_eq!(run_all::<Migration>(), None);
+
+            assert_eq!(root(), before);
+        });
+    }
+
+    // An empty v0 state gets to version 1 with nothing created.
+    #[test]
+    fn migrates_an_empty_state() {
+        new_test_ext(None).execute_with(|| {
+            put_v0(&[]);
+
+            assert_eq!(run_all::<Migration>(), None);
+
+            assert_eq!(crate::TracksIds::<Test, ()>::get().len(), 0);
+            assert_eq!(crate::NextGroupId::<Test, ()>::get(), 0);
+            assert_eq!(ReferendaTracks::<Test>::on_chain_storage_version(), 1);
+        });
+    }
+
+    #[test]
+    fn keys_of_the_cursor_fit() {
+        Migration::integrity_test();
     }
 }
 
