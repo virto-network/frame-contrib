@@ -3598,6 +3598,9 @@ mod nested_calls {
                 // This is the hole that closing needs a runtime matcher for: nothing
                 // here looks inside the batch.
                 assert_dispatched(send(signer, call.clone()));
+                // The forbidden `transfer_all` really ran through the wrapper.
+                assert!(Balances::free_balance(CHARLIE) > AMOUNT);
+                assert_eq!(Balances::free_balance(Address::get()), 0);
                 assert_rejected(send(signer, transfer_all()));
                 assert_rejected(send(signer, opaque()));
             });
@@ -3621,14 +3624,16 @@ mod nested_calls {
         }
     }
 
-    // W2b-10: nesting far beyond the bound is rejected, and without recursing: the call is built
-    // iteratively and never dropped or encoded, because those are recursive. Extrinsics
-    // are already capped at 256 levels when decoded; this is the extension's own guard.
+    // W2b-10: nesting far beyond the bound is rejected. The call is built iteratively and never
+    // dropped (dropping recurses). The traversal itself keeps its stack on the heap and is
+    // checked with a deeper call in `filter::tests`; this matcher also encodes each visited
+    // call (`ScaleCallMatcher`), which recurses over its subtree, so the depth stays modest.
+    // Extrinsics are capped at 256 levels when decoded anyway.
     #[test]
     fn nesting_far_beyond_the_bound_is_rejected_without_overflowing_the_stack() {
         let filter = allowing(&[transfer_keep_alive(), proxy(opaque())]);
         let mut call = transfer_keep_alive();
-        for _ in 0..5_000 {
+        for _ in 0..256 {
             call = proxy(call);
         }
 
@@ -3638,15 +3643,23 @@ mod nested_calls {
                 Err(crate::CallTreeError::TooDeep)
             );
         });
-        // Dropping it would recurse 5,000 levels.
+        // Dropping it would recurse 256 levels.
         core::mem::forget(call);
     }
 
-    // W2b-11: the transaction pays for what it carries, not for what the filter inspects.
+    // W2b-11: whichever the cause, the failure is the one of a filter rejection.
     #[test]
     fn the_failure_is_the_one_of_a_filter_rejection() {
-        with_device_filter(&[transfer_keep_alive(), batch(vec![])]).execute_with(|| {
-            // Too deep, too many, opaque, forbidden: all `Call`, indistinguishable on chain.
+        let allowed = [
+            transfer_keep_alive(),
+            batch(vec![]),
+            proxy(opaque()),
+            opaque(),
+        ];
+        with_device_filter(&allowed).execute_with(|| {
+            // The filter allows every call below, but for the forbidden one: each is rejected
+            // for its own cause (too deep, too many, opaque, forbidden), and all the same.
+            assert_dispatched(send(Device, batch(vec![proxy(transfer_keep_alive())])));
             MaxNestedCallDepth::set(1);
             assert_rejected(send(Device, proxied(2, transfer_keep_alive())));
             MaxNestedCalls::set(1);

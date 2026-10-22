@@ -234,13 +234,18 @@ impl<C> SpendMatcher<C> for () {
 ///                 | pallet_utility::Call::force_batch { calls },
 ///             ) => NestedCalls::Many(calls),
 ///             RuntimeCall::Utility(pallet_utility::Call::as_derivative { call, .. })
-///             | RuntimeCall::Proxy(pallet_proxy::Call::proxy { call, .. }) => {
+///             | RuntimeCall::Proxy(pallet_proxy::Call::proxy { call, .. })
+///             | RuntimeCall::Scheduler(pallet_scheduler::Call::schedule { call, .. }) => {
 ///                 NestedCalls::One(call)
 ///             }
-///             // The call is only a hash: it can't be inspected.
-///             RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named_after { .. }) => {
-///                 NestedCalls::Opaque
+///             // Two separate calls
+///             RuntimeCall::Utility(pallet_utility::Call::if_else { main, fallback }) => {
+///                 NestedCalls::from_calls([&**main, &**fallback].into_iter())
 ///             }
+///             // The call is only a hash (and its length): it can't be inspected.
+///             RuntimeCall::Whitelist(
+///                 pallet_whitelist::Call::dispatch_whitelisted_call { .. },
+///             ) => NestedCalls::Opaque,
 ///             _ => NestedCalls::None,
 ///         }
 ///     }
@@ -412,9 +417,12 @@ impl<
     ///
     /// `Admin` is unrestricted, so its calls aren't inspected at all.
     ///
-    /// Spending limits are checked per call: a `Spend` filter allows a wrapper only if
-    /// `S::spending_amount` reports a spend for the wrapper itself, and it does not add up the
-    /// amounts of the calls inside.
+    /// Spending limits are checked **per call**, not per transaction: the amounts of the calls
+    /// inside a wrapper are not added up. With a `SpendMatcher` that reports no spend for
+    /// wrappers (as `()` and any matcher that only knows transfers), a `Spend` device can't use
+    /// wrappers at all, which keeps its limit per transaction. A `SpendMatcher` that does report
+    /// wrappers as spends turns the limit into a per-call one: a batch of `MaxNestedCalls`
+    /// spends of the limit would pass.
     pub fn allows_call<Call, M, S>(
         &self,
         call: &Call,
@@ -662,9 +670,9 @@ mod tests {
     }
 
     #[test]
-    fn spend_limits_apply_to_the_nested_calls_if_the_matcher_lets_wrappers_spend() {
-        // A runtime whose matcher reports wrappers as spends of zero (they move no funds
-        // themselves) gets each nested spend checked against the limit.
+    fn a_matcher_that_reports_wrappers_as_spends_makes_the_limit_per_call() {
+        // Pins down what such a matcher means (see `allows_call`): each nested spend is
+        // checked against the limit on its own, and they are not added up.
         struct WrappersSpendNothing;
         impl SpendMatcher<MockCall> for WrappersSpendNothing {
             type AssetId = u32;
@@ -686,7 +694,7 @@ mod tests {
             ])),
             Err(CallTreeError::Denied)
         );
-        // Each call is checked on its own: the amounts are not added up.
+        // Not added up: three spends of the limit in one transaction.
         assert_eq!(check(Batch(vec![Leaf(1, 1, Some(100)); 3])), Ok(()));
     }
 
