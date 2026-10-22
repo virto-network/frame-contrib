@@ -126,7 +126,12 @@ mod benchmarks {
     use super::*;
 
     #[benchmark]
-    pub fn new_group_with_track() {
+    pub fn new_group_with_track() -> Result<(), BenchmarkError> {
+        // The origin to associate with the new group does not depend on the origin that dispatches.
+        let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
+        let caller = T::CreateOrigin::try_successful_origin(&origin)
+            .map_err(|_| BenchmarkError::Weightless)?;
+
         // The worst case of the allocator: every group from the first one up to the last-but-one
         // that fits has a track, so it skips as many as `MaxTracks` allows.
         let track = track_info_of::<T, I>();
@@ -148,21 +153,24 @@ mod benchmarks {
             TrackIdToOrigin::<T, I>::insert(id, origin);
         }
 
-        let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
-
         #[extrinsic_call]
-        _(RawOrigin::Root, origin, track);
+        _(caller as T::RuntimeOrigin, origin, track);
 
         assert_eq!(TracksIds::<T, I>::get().len() as u32, max_tracks::<T, I>());
+        Ok(())
     }
 
     #[benchmark]
-    pub fn add_sub_track() {
+    pub fn add_sub_track() -> Result<(), BenchmarkError> {
         let track = track_info_of::<T, I>();
         let sub_origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
+        let caller = T::GroupManagerCreateOrigin::try_successful_origin(&sub_origin)
+            .map_err(|_| BenchmarkError::Weightless)?;
 
         #[extrinsic_call]
-        _(RawOrigin::Root, sub_origin, track);
+        _(caller as T::RuntimeOrigin, sub_origin, track);
+
+        Ok(())
     }
 
     #[benchmark]
@@ -179,12 +187,14 @@ mod benchmarks {
     }
 
     #[benchmark]
-    pub fn set_decision_deposit() {
+    pub fn set_decision_deposit() -> Result<(), BenchmarkError> {
         let id = prepare_tracks::<T, I>(true).expect("full prepare returns id");
+        let caller = T::GroupManagerOrigin::try_successful_origin(&id)
+            .map_err(|_| BenchmarkError::Weightless)?;
         let deposit: BalanceOf<T, I> = 1000u32.into();
 
         #[extrinsic_call]
-        _(RawOrigin::Root, id, deposit);
+        _(caller as T::RuntimeOrigin, id, deposit);
 
         assert_last_event::<T, I>(
             Event::Updated {
@@ -193,17 +203,20 @@ mod benchmarks {
             }
             .into(),
         );
+        Ok(())
     }
 
     #[benchmark]
-    pub fn set_periods() {
+    pub fn set_periods() -> Result<(), BenchmarkError> {
         let id = prepare_tracks::<T, I>(true).expect("full prepare returns id");
+        let caller = T::GroupManagerOrigin::try_successful_origin(&id)
+            .map_err(|_| BenchmarkError::Weightless)?;
         let prepare_period: BlockNumberFor<T, I> = 20u32.into();
         let decision_period: BlockNumberFor<T, I> = 200u32.into();
 
         #[extrinsic_call]
         _(
-            RawOrigin::Root,
+            caller as T::RuntimeOrigin,
             id,
             Some(prepare_period),
             Some(decision_period),
@@ -218,11 +231,14 @@ mod benchmarks {
             }
             .into(),
         );
+        Ok(())
     }
 
     #[benchmark]
-    pub fn set_curves() {
+    pub fn set_curves() -> Result<(), BenchmarkError> {
         let id = prepare_tracks::<T, I>(true).expect("full prepare returns id");
+        let caller = T::GroupManagerOrigin::try_successful_origin(&id)
+            .map_err(|_| BenchmarkError::Weightless)?;
         let curve = Curve::LinearDecreasing {
             length: Perbill::from_percent(80),
             floor: Perbill::from_percent(40),
@@ -230,7 +246,7 @@ mod benchmarks {
         };
 
         #[extrinsic_call]
-        _(RawOrigin::Root, id, Some(curve), None);
+        _(caller as T::RuntimeOrigin, id, Some(curve), None);
 
         assert_last_event::<T, I>(
             Event::Updated {
@@ -239,19 +255,17 @@ mod benchmarks {
             }
             .into(),
         );
+        Ok(())
     }
 
     /// `n` is the number of tracks in the group: its first track plus `n - 1` sub-tracks.
     #[benchmark]
-    pub fn remove_group(n: Linear<1, { max_tracks::<T, I>() }>) {
+    pub fn remove_group(n: Linear<1, { max_tracks::<T, I>() }>) -> Result<(), BenchmarkError> {
         let track = track_info_of::<T, I>();
         let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
-        ReferendaTracks::<T, I>::new_group_with_track(
-            RawOrigin::Root.into(),
-            origin,
-            track.clone(),
-        )
-        .expect("inserts track");
+        // Set-up only: insert through the pallet's internals, not through an origin.
+        let first = ReferendaTracks::<T, I>::next_group_track_id().expect("a group is available");
+        ReferendaTracks::<T, I>::do_insert(first, track.clone(), origin).expect("inserts track");
 
         let id = TracksIds::<T, I>::get()
             .into_iter()
@@ -269,18 +283,24 @@ mod benchmarks {
         }
         assert_eq!(Tracks::<T, I>::iter_key_prefix(&group).count() as u32, n);
 
+        let caller = T::RemoveGroupOrigin::try_successful_origin(&group)
+            .map_err(|_| BenchmarkError::Weightless)?;
+
         #[extrinsic_call]
-        _(RawOrigin::Root, group.clone(), n);
+        _(caller as T::RuntimeOrigin, group.clone(), n);
 
         assert_eq!(Tracks::<T, I>::iter_key_prefix(&group).count(), 0);
+        Ok(())
     }
 
     #[benchmark]
-    pub fn set_max_deciding() {
+    pub fn set_max_deciding() -> Result<(), BenchmarkError> {
         let id = prepare_tracks::<T, I>(true).expect("full prepare returns id");
+        let caller = T::GroupManagerOrigin::try_successful_origin(&id)
+            .map_err(|_| BenchmarkError::Weightless)?;
 
         #[extrinsic_call]
-        _(RawOrigin::Root, id, 5u32);
+        _(caller as T::RuntimeOrigin, id, 5u32);
 
         assert_last_event::<T, I>(
             Event::Updated {
@@ -289,6 +309,7 @@ mod benchmarks {
             }
             .into(),
         );
+        Ok(())
     }
 
     /// One unit of the first phase of `MigrateV0ToV1`.
@@ -410,6 +431,34 @@ mod benchmarks {
         }
 
         assert_eq!(ReferendaTracks::<T, I>::on_chain_storage_version(), 1);
+    }
+
+    /// Tests for the origins the benchmarks dispatch with.
+    #[cfg(test)]
+    mod origin_tests {
+        use super::*;
+        use crate::mock::{new_test_ext, CreateIsNever, Test};
+
+        /// A runtime that binds `CreateOrigin` to `EnsureNever` has no origin to dispatch
+        /// `new_group_with_track` with: the benchmark is `Weightless`, not a failure.
+        #[test]
+        fn unreachable_call_is_weightless() {
+            new_test_ext(None).execute_with(|| {
+                CreateIsNever::set(true);
+                assert!(matches!(
+                    Pallet::<Test>::test_bench_by_name(b"new_group_with_track"),
+                    Err(BenchmarkError::Weightless)
+                ));
+            });
+        }
+
+        #[test]
+        fn reachable_call_is_benchmarked() {
+            new_test_ext(None).execute_with(|| {
+                CreateIsNever::set(false);
+                assert!(Pallet::<Test>::test_bench_by_name(b"new_group_with_track").is_ok());
+            });
+        }
     }
 
     impl_benchmark_test_suite!(

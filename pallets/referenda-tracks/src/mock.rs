@@ -236,9 +236,40 @@ impl EnsureOriginWithArg<RuntimeOrigin, TrackId> for RemoveByRootOrManager {
     }
 }
 
+parameter_types! {
+    /// When `true`, [`CreateByRootUnlessNever`] behaves as `EnsureNever`: it rejects every origin
+    /// and has no successful origin. It models a runtime where only the runtime itself allocates
+    /// groups.
+    pub static CreateIsNever: bool = false;
+}
+
+/// Authorizes creating a group: root, unless `CreateIsNever`.
+pub struct CreateByRootUnlessNever;
+impl EnsureOriginWithArg<RuntimeOrigin, PalletsOriginOf<Test>> for CreateByRootUnlessNever {
+    type Success = ();
+
+    fn try_origin(
+        o: RuntimeOrigin,
+        arg: &PalletsOriginOf<Test>,
+    ) -> Result<Self::Success, RuntimeOrigin> {
+        if CreateIsNever::get() {
+            return Err(o);
+        }
+        AsEnsureOriginWithArg::<EnsureRoot<AccountId>>::try_origin(o, arg)
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin(_arg: &PalletsOriginOf<Test>) -> Result<RuntimeOrigin, ()> {
+        if CreateIsNever::get() {
+            return Err(());
+        }
+        Ok(RuntimeOrigin::root())
+    }
+}
+
 impl Config for Test {
     type WeightInfo = ();
-    type CreateOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
+    type CreateOrigin = CreateByRootUnlessNever;
     type GroupManagerCreateOrigin = GroupManagerCreateOrRoot;
     type GroupManagerOrigin = GroupManagerOrRoot;
     type RemoveOrigin = RemoveByRootOrManager;
