@@ -211,11 +211,37 @@ impl EnsureOriginWithArg<RuntimeOrigin, TrackId> for GroupManagerOrRoot {
     }
 }
 
+parameter_types! {
+    /// When `true`, the manager of a track's group can also remove the track (the behavior of a
+    /// single origin for every call). Otherwise only root can.
+    pub static ManagerCanRemove: bool = false;
+}
+
+/// Authorizes removing a track: root, plus the group manager if `ManagerCanRemove`.
+pub struct RemoveByRootOrManager;
+impl EnsureOriginWithArg<RuntimeOrigin, TrackId> for RemoveByRootOrManager {
+    type Success = ();
+
+    fn try_origin(o: RuntimeOrigin, id: &TrackId) -> Result<Self::Success, RuntimeOrigin> {
+        if ManagerCanRemove::get() {
+            GroupManagerOrRoot::try_origin(o, id)
+        } else {
+            AsEnsureOriginWithArg::<EnsureRoot<AccountId>>::try_origin(o, id)
+        }
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin(_id: &TrackId) -> Result<RuntimeOrigin, ()> {
+        Ok(RuntimeOrigin::root())
+    }
+}
+
 impl Config for Test {
     type WeightInfo = ();
     type CreateOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type GroupManagerCreateOrigin = GroupManagerCreateOrRoot;
     type GroupManagerOrigin = GroupManagerOrRoot;
+    type RemoveOrigin = RemoveByRootOrManager;
     type RemoveGroupOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type TrackId = TrackId;
     type MaxTracks = MaxTracks;

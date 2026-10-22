@@ -435,6 +435,7 @@ impl fc_pallet_referenda_tracks::Config for Runtime {
     type CreateOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type GroupManagerCreateOrigin = EnsureRootReturnsFirstGroup;
     type GroupManagerOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
+    type RemoveOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type RemoveGroupOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type TrackId = TrackId;
     type MaxTracks = ConstU32<{ u8::MAX as u32 }>;

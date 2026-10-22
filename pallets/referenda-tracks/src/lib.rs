@@ -35,6 +35,22 @@
 //! track `n` becomes track `0` of group `n`. See the [`migration`] module for the contract and
 //! how to register it.
 //!
+//! ### Who can do what
+//!
+//! Each kind of call has its own origin, so a runtime can let a community configure its track
+//! without letting it delete the track:
+//!
+//! | Call | Origin |
+//! | --- | --- |
+//! | `new_group_with_track` | [`Config::CreateOrigin`] |
+//! | `add_sub_track` | [`Config::GroupManagerCreateOrigin`] |
+//! | `set_decision_deposit`, `set_periods`, `set_curves`, `set_max_deciding` | [`Config::GroupManagerOrigin`] |
+//! | `remove` | [`Config::RemoveOrigin`] |
+//! | `remove_group` | [`Config::RemoveGroupOrigin`] |
+//!
+//! `RemoveOrigin` is typically root. If it also accepts the track's manager, that manager can
+//! remove its own track, and a group left without tracks cannot submit proposals.
+//!
 //! ## Interface
 //!
 //! ### Dispatchable Functions
@@ -103,7 +119,13 @@ pub mod pallet {
             PalletsOriginOf<Self>,
             Success = GroupIdOf<Self, I>,
         >;
+        /// An origin that is authorized to configure a single track: `set_decision_deposit`,
+        /// `set_periods`, `set_curves` and `set_max_deciding`.
         type GroupManagerOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, Self::TrackId>;
+        /// An origin that is authorized to remove a single track. Typically root: a community's
+        /// own origin should be able to configure its track (see [`Config::GroupManagerOrigin`]),
+        /// but not delete it.
+        type RemoveOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, Self::TrackId>;
         /// An origin that is authorized to remove an entire group and reclaim its storage.
         /// Typically root or the protocol governance, used when a community is deleted.
         type RemoveGroupOrigin: EnsureOriginWithArg<Self::RuntimeOrigin, GroupIdOf<Self, I>>;
@@ -262,6 +284,8 @@ pub mod pallet {
 
         /// Remove an existing track.
         ///
+        /// Authorized by [`Config::RemoveOrigin`], not by [`Config::GroupManagerOrigin`].
+        ///
         /// Parameters:
         /// - `id`: The Id of the track to be deleted.
         ///
@@ -270,7 +294,7 @@ pub mod pallet {
         /// Weight: `O(MaxTracks)`
         #[pallet::call_index(2)]
         pub fn remove(origin: OriginFor<T>, id: TrackIdOf<T, I>) -> DispatchResult {
-            T::GroupManagerOrigin::ensure_origin(origin, &id)?;
+            T::RemoveOrigin::ensure_origin(origin, &id)?;
             Self::do_remove(id)
         }
 
