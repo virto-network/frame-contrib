@@ -1484,6 +1484,7 @@ version = "3.0.0-pre.2"
 dependencies = [
  "frame-contrib-traits",
  "pallet-balances",
+ "pallet-nfts",
  "pallet-transaction-payment",
  "parity-scale-codec",
  "polkadot-sdk-frame",
