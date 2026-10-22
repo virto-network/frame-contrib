@@ -714,6 +714,8 @@ impl Contains<CommunityId> for ActiveCommunity {
 parameter_types! {
     /// The inventory of the usage-subscription offers: each offer is one of its items.
     pub const UsageOfferInventory: (MerchantId, u32) = (USAGE_MERCHANT, 0);
+    /// The alert mark of the sales capacity: 80 % of the capacity, in either component.
+    pub const UsageCapacityAlertThreshold: Perbill = Perbill::from_percent(80);
 }
 
 impl fc_pallet_usage_subscription::Config for Runtime {
@@ -733,6 +735,8 @@ impl fc_pallet_usage_subscription::Config for Runtime {
     type TerminateOrigin = EnsureRoot<AccountId>;
     type AmendOrigin = EnsureRoot<AccountId>;
     type GroupOrigin = EnsureCommunity<Self>;
+    // Root, for the example: a deployment binds the origin that governs its execution capacity.
+    type CapacityOrigin = EnsureRoot<AccountId>;
     type BlockNumberProvider = System;
     type MinUsagePeriod = ConstU32<HOURS>;
     // Must exceed listings' `RenewalLead` (a day): a billing period no longer than the lead would
@@ -743,6 +747,9 @@ impl fc_pallet_usage_subscription::Config for Runtime {
     type MaxMembershipScan = ConstU32<4>;
     type MaxPayingGroupChanges = ConstU32<3>;
     type MaxOffersPerPage = ConstU32<50>;
+    // Allowances and the capacity read per week.
+    type CapacityPeriod = ConstU32<{ 7 * DAYS }>;
+    type CapacityAlertThreshold = UsageCapacityAlertThreshold;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = benchmark_helpers::UsageSubscriptionBenchmarkHelper;
 }

@@ -14,7 +14,7 @@ use frame_support::{
 use frame_system::pallet_prelude::*;
 use sp_runtime::{
     traits::{BlockNumberProvider, Convert, Zero},
-    ArithmeticError,
+    ArithmeticError, Perbill,
 };
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -25,6 +25,7 @@ mod mock;
 mod tests;
 
 mod admission;
+mod capacity;
 pub mod extension;
 mod functions;
 mod hooks;
@@ -111,6 +112,9 @@ pub mod pallet {
         type AmendOrigin: EnsureOrigin<Self::RuntimeOrigin>;
         /// A group's administrative origin, resolving to the group.
         type GroupOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = GroupOf<Self>>;
+        /// The origin that declares or schedules the capacity the allowance sold is capped
+        /// against (`REQ-CP-2`, `DEC-40`).
+        type CapacityOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
         // The clock.
 
@@ -143,6 +147,16 @@ pub mod pallet {
         /// Non-zero.
         #[pallet::constant]
         type MaxOffersPerPage: Get<u32>;
+        /// The period every allowance is normalized to for the committed load and the capacity,
+        /// in ticks: for example a week, so figures read as "so much execution a week"
+        /// (`DEC-39`). Non-zero.
+        #[pallet::constant]
+        type CapacityPeriod: Get<MomentOf<Self>>;
+        /// The share of the binding capacity (the one sales are checked against), in either
+        /// component, at which the committed load emits [`Event::CapacityThresholdCrossed`]
+        /// (`REQ-CP-5`, `DEC-44`).
+        #[pallet::constant]
+        type CapacityAlertThreshold: Get<Perbill>;
 
         // Benchmarking.
 
@@ -186,6 +200,25 @@ pub mod pallet {
     #[pallet::storage]
     pub type OfferAmendment<T: Config> =
         StorageMap<_, Blake2_128Concat, OfferIdOf<T>, OfferAmendmentOf<T>>;
+
+    /// The committed load: the sum, over the contracts that count, of their allowances
+    /// normalized to [`Config::CapacityPeriod`], per component (`REQ-CP-1`, `DEC-39`). Kept
+    /// whether or not a capacity is set.
+    #[pallet::storage]
+    pub type CommittedLoad<T: Config> = StorageValue<_, Weight, ValueQuery>;
+
+    /// How many contracts to each offer count toward the committed load: those *Active* or
+    /// *Suspended*, not *Defaulted*. An offer's amendment that raises the allowance adds its
+    /// increase once for each (`REQ-CP-3`). Kept where the load is, in O(1); a subscription to
+    /// the offer's item made outside this pallet is no contract, and is not counted.
+    #[pallet::storage]
+    pub type ContractsOnOffer<T: Config> =
+        StorageMap<_, Blake2_128Concat, OfferIdOf<T>, u32, ValueQuery>;
+
+    /// The capacity the allowance sold is capped against, and its one scheduled change
+    /// (`REQ-CP-2`, `DEC-40`). No cap by default.
+    #[pallet::storage]
+    pub type Capacity<T: Config> = StorageValue<_, CapacityStateOf<T>, ValueQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -294,6 +327,18 @@ pub mod pallet {
             weight: Weight,
             remaining: Weight,
         },
+        /// The capacity was declared, now. `None` removed the cap.
+        CapacitySet { capacity: Option<Weight> },
+        /// A capacity was scheduled from `from` on, replacing any change pending. `None` removes
+        /// the cap then.
+        CapacityScheduled {
+            capacity: Option<Weight>,
+            from: MomentOf<T>,
+        },
+        /// The committed load reached [`Config::CapacityAlertThreshold`] of `capacity`, the binding
+        /// capacity sales are checked against, in some component, from below it. Not emitted
+        /// again until the load falls below the mark.
+        CapacityThresholdCrossed { load: Weight, capacity: Weight },
     }
 
     #[pallet::error]
@@ -329,6 +374,12 @@ pub mod pallet {
         TrialUsed,
         /// The account holds no valid membership of the named group.
         NotAMember,
+        /// The sale would take the committed load above the binding capacity in some component:
+        /// the current capacity, or a scheduled one below it.
+        CapacityExceeded,
+        /// The capacity, declared now or scheduled, is below the committed load in some
+        /// component.
+        CapacityBelowLoad,
     }
 
     #[pallet::call(weight(<T as Config>::WeightInfo))]
@@ -434,8 +485,10 @@ pub mod pallet {
         ///
         /// Refused, with nothing changed, if the group is not usable, the offer is unknown,
         /// withdrawn or not for the group, the group has a contract (a *Defaulted* one past its
-        /// commitment end excepted, `REQ-CT-12`), period 0 cannot be charged, or the group's
-        /// account cannot pay the deposit the subscriptions system holds for the subscription.
+        /// commitment end excepted, `REQ-CT-12`), the contract or the named conversion does not
+        /// fit the capacity ([`Error::CapacityExceeded`]), period 0 cannot be charged, or the
+        /// group's account cannot pay the deposit the subscriptions system holds for the
+        /// subscription.
         #[pallet::call_index(2)]
         pub fn subscribe(
             origin: OriginFor<T>,
@@ -467,6 +520,19 @@ pub mod pallet {
                     trial && Self::is_valid_conversion(&conversion, &group),
                     Error::<T>::InvalidConversion
                 );
+            }
+
+            // The contract is a sale, and so is the trial's conversion, checked now and again at
+            // its boundary (`REQ-CP-3`).
+            Self::ensure_fits(
+                Weight::zero(),
+                Self::normalized(target.allowance, target.usage_period),
+            )?;
+            if let Some(conversion) = converts_into.and_then(Offers::<T>::get) {
+                Self::ensure_fits(
+                    Weight::zero(),
+                    Self::normalized(conversion.allowance, conversion.usage_period),
+                )?;
             }
 
             Self::start_contract(group, &account, offer, &target, now)?;
@@ -520,6 +586,9 @@ pub mod pallet {
         /// Schedules a switch of the origin's group's *Active* contract to `offer`, at the first
         /// billing boundary at or after both its `paid through` and its commitment end, if the new
         /// contract's first charge succeeds then (`REQ-CT-7`).
+        ///
+        /// A switch that raises the committed load must fit the capacity, now and at its
+        /// boundary ([`Error::CapacityExceeded`]).
         #[pallet::call_index(4)]
         pub fn switch_offer(origin: OriginFor<T>, offer: OfferIdOf<T>) -> DispatchResult {
             let group = T::GroupOrigin::ensure_origin(origin)?;
@@ -572,6 +641,12 @@ pub mod pallet {
                 .is_none(),
                 Error::<T>::ChangePending
             );
+            // A switch to a larger allowance is a sale: checked now, and again at its boundary
+            // (`REQ-CP-3`).
+            Self::ensure_fits(
+                Self::committed_by(&contract),
+                Self::normalized(target.allowance, target.usage_period),
+            )?;
 
             // A trial does not renew: a switch scheduled during it takes effect at its end
             // (`REQ-CT-9`).
@@ -622,7 +697,7 @@ pub mod pallet {
                 {
                     return Err(Self::listings_error(e, Error::<T>::NoContract));
                 }
-                Self::end_contract(&group, &account, EndReason::Terminated);
+                Self::end_contract(&group, &account, &contract, EndReason::Terminated);
             }
             Ok(())
         }
@@ -672,6 +747,9 @@ pub mod pallet {
         /// boundary at least one billing period from now (`REQ-CT-14`), for the price, and the
         /// first usage window starting at or after it, for the allowance. Until then the group may
         /// cancel with its commitment waived (`REQ-CT-15`). A pending switch is dropped.
+        ///
+        /// An increase of the allowance must fit the capacity ([`Error::CapacityExceeded`]), and
+        /// counts from now; a decrease counts once in force.
         #[pallet::call_index(7)]
         pub fn amend_contract(
             origin: OriginFor<T>,
@@ -679,7 +757,7 @@ pub mod pallet {
             terms: TermsOf<T>,
         ) -> DispatchResult {
             T::AmendOrigin::ensure_origin(origin)?;
-            let contract = Contracts::<T>::get(group).ok_or(Error::<T>::NoContract)?;
+            let mut contract = Contracts::<T>::get(group).ok_or(Error::<T>::NoContract)?;
             let account = T::GroupAccount::convert(group);
             let inventory = T::OfferInventory::get();
             let now = Self::now();
@@ -726,6 +804,15 @@ pub mod pallet {
                 Error::<T>::ChangePending
             );
 
+            // The last amendment's allowance, in force, releases what it lowered first. An
+            // increase is a sale, counted from the enactment; a decrease counts once in force
+            // (`REQ-CP-1`, `REQ-CP-3`, `DEC-42`).
+            Self::fold_next_allowance(&mut contract, now);
+            let increase = Self::normalized(terms.allowance, contract.usage_period)
+                .saturating_sub(Self::committed_by(&contract));
+            Self::ensure_fits(Weight::zero(), increase)?;
+            Contracts::<T>::insert(group, &contract);
+
             // Listings drops a pending switch, and reports the enactment.
             let effective_at = <T::Subscriptions as subs::Mutate<T::AccountId>>::amend(
                 &inventory,
@@ -737,6 +824,9 @@ pub mod pallet {
 
             Contracts::<T>::mutate(group, |maybe_contract| {
                 if let Some(contract) = maybe_contract {
+                    if let Some(load) = contract.load {
+                        Self::set_contract_load(contract, load.saturating_add(increase));
+                    }
                     contract.pending = Some(PendingChange::Amend {
                         allowance: terms.allowance,
                         effective_at,
@@ -785,6 +875,11 @@ pub mod pallet {
         /// loop over contracts. A second amendment waits (`ChangePending`) until every contract
         /// made from the offer before the first has applied it, or ended, and until the
         /// allowance it brought is in force for each of them (`DEC-3`, `DEC-34`).
+        ///
+        /// An increase of the allowance, times the offer's contracts that count toward the
+        /// committed load ([`ContractsOnOffer`]), must fit the capacity
+        /// ([`Error::CapacityExceeded`]), and counts from now; a decrease counts for each contract
+        /// once in force.
         #[pallet::call_index(9)]
         pub fn amend_offer(
             origin: OriginFor<T>,
@@ -824,6 +919,16 @@ pub mod pallet {
                 ensure!(Self::now() >= in_force_by, Error::<T>::ChangePending);
             }
 
+            // An increase is a sale for every contract the amendment covers, counted from the
+            // enactment; a decrease counts for each contract once in force (`REQ-CP-3`,
+            // `DEC-42`).
+            let load_increase = Self::normalized(terms.allowance, record.usage_period)
+                .saturating_sub(Self::normalized(record.allowance, record.usage_period));
+            let added = load_increase
+                .checked_mul(ContractsOnOffer::<T>::get(offer).into())
+                .ok_or(Error::<T>::CapacityExceeded)?;
+            Self::ensure_fits(Weight::zero(), added)?;
+
             // Listings refuses it too while any contract has not applied the previous one.
             let amendment = <T::Subscriptions as subs::Mutate<T::AccountId>>::amend_item(
                 &inventory,
@@ -832,6 +937,7 @@ pub mod pallet {
             )
             .map_err(|e| Self::listings_error(e, Error::<T>::InvalidTerms))?;
 
+            Self::update_load(Weight::zero(), added);
             record.allowance = terms.allowance;
             Offers::<T>::insert(offer, record);
             OfferAmendment::<T>::insert(
@@ -840,6 +946,7 @@ pub mod pallet {
                     seq: amendment.seq,
                     terms,
                     enacted_at: amendment.enacted_at,
+                    load_increase,
                 },
             );
             Self::deposit_event(Event::<T>::OfferAmended {
@@ -848,6 +955,32 @@ pub mod pallet {
                 last_boundary: amendment.last_boundary(AMENDMENT_NOTICE_PERIODS),
             });
             Ok(())
+        }
+
+        /// Declares the capacity the allowance sold is capped against, per component, or
+        /// schedules it (`REQ-CP-2`, `DEC-40`). Only [`Config::CapacityOrigin`] may. `None`
+        /// removes the cap.
+        ///
+        /// With `from` `None`, it applies now, and a pending scheduled change stays pending.
+        /// With `from` in the future, it is scheduled from then, replacing the pending change:
+        /// the first read at or after `from` applies it. With `from` already reached, it
+        /// replaces the pending change and applies now. To drop a pending change, pass `from` =
+        /// now.
+        ///
+        /// A capacity below the committed load in either component, now or scheduled, is refused
+        /// with [`Error::CapacityBelowLoad`] (`REQ-CP-4`): releasing capacity needs the load to
+        /// fit first.
+        ///
+        /// A capacity with a zero component stops all sales in that component, since every
+        /// allowance is non-zero in both; meanwhile the alert reads the load as above the mark.
+        #[pallet::call_index(10)]
+        pub fn set_capacity(
+            origin: OriginFor<T>,
+            capacity: Option<Weight>,
+            from: Option<MomentOf<T>>,
+        ) -> DispatchResult {
+            T::CapacityOrigin::ensure_origin(origin)?;
+            Self::do_set_capacity(capacity, from)
         }
     }
 
@@ -907,6 +1040,13 @@ pub mod pallet {
         pub fn would_waive(account: T::AccountId, estimate: Weight) -> Waiver<GroupOf<T>> {
             Self::waiver(&account, estimate)
         }
+
+        /// The committed load, the capacity now (`None`: no cap) and the pending scheduled
+        /// change, if any (`REQ-CP-6`, `DEC-43`). A change whose moment has come reads as
+        /// applied.
+        pub fn capacity() -> CapacityInfoOf<T> {
+            Self::capacity_info()
+        }
     }
 
     #[pallet::hooks]
@@ -927,6 +1067,10 @@ pub mod pallet {
             assert!(
                 T::MaxOffersPerPage::get() > 0,
                 "`MaxOffersPerPage` must be non-zero"
+            );
+            assert!(
+                !T::CapacityPeriod::get().is_zero(),
+                "`CapacityPeriod` must be non-zero"
             );
         }
     }
