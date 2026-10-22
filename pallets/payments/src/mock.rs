@@ -221,33 +221,25 @@ pub struct OnPaymentStatusHooks;
 impl fc_traits_payments::OnPaymentStatusChanged<PaymentId, Balance> for OnPaymentStatusHooks {
     fn on_payment_created(id: &PaymentId) {
         let mut hooks = Hooks::get();
-        hooks.push(PaymentStatusHooks::Created(id.clone()));
+        hooks.push(PaymentStatusHooks::Created(*id));
         Hooks::set(&hooks);
     }
 
     fn on_payment_charge_success(id: &PaymentId, fees: Balance, resulting_amount: Balance) {
         let mut hooks = Hooks::get();
-        hooks.push(PaymentStatusHooks::Charged(
-            id.clone(),
-            fees,
-            resulting_amount,
-        ));
+        hooks.push(PaymentStatusHooks::Charged(*id, fees, resulting_amount));
         Hooks::set(&hooks);
     }
 
     fn on_payment_cancelled(_id: &PaymentId) {
         let mut hooks = Hooks::get();
-        hooks.push(PaymentStatusHooks::Cancelled(_id.clone()));
+        hooks.push(PaymentStatusHooks::Cancelled(*_id));
         Hooks::set(&hooks);
     }
 
     fn on_payment_released(id: &PaymentId, fees: Balance, resulting_amount: Balance) {
         let mut hooks = Hooks::get();
-        hooks.push(PaymentStatusHooks::Released(
-            id.clone(),
-            fees,
-            resulting_amount,
-        ));
+        hooks.push(PaymentStatusHooks::Released(*id, fees, resulting_amount));
         Hooks::set(&hooks);
     }
 }
