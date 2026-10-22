@@ -3267,3 +3267,392 @@ mod remove_device {
         })
     }
 }
+
+/// Wrapper calls (`batch`, `proxy`, ...) dispatch the calls they carry with the origin they
+/// receive, so a restricted filter must allow every call of a transaction, not only the outer
+/// one (W2b).
+mod nested_calls {
+    use super::*;
+    use crate::{CallMatcher, DeviceFilters, NestedCalls, ScaleCallMatcher, SessionKeys};
+    use sp_runtime::transaction_validity::{InvalidTransaction, TransactionValidityError};
+
+    const AMOUNT: Balance = 5_000;
+
+    fn transfer_keep_alive() -> RuntimeCall {
+        RuntimeCall::Balances(pallet_balances::Call::transfer_keep_alive {
+            dest: CHARLIE,
+            value: AMOUNT,
+        })
+    }
+
+    fn transfer_all() -> RuntimeCall {
+        RuntimeCall::Balances(pallet_balances::Call::transfer_all {
+            dest: CHARLIE,
+            keep_alive: false,
+        })
+    }
+
+    fn batch(calls: Vec<RuntimeCall>) -> RuntimeCall {
+        RuntimeCall::Wrapper(crate::mock::WrapperCall::batch { calls })
+    }
+
+    fn proxy(call: RuntimeCall) -> RuntimeCall {
+        RuntimeCall::Wrapper(crate::mock::WrapperCall::proxy {
+            call: Box::new(call),
+        })
+    }
+
+    fn opaque() -> RuntimeCall {
+        RuntimeCall::Wrapper(crate::mock::WrapperCall::opaque { hash: [0; 32] })
+    }
+
+    /// `leaf` inside `depth` proxies.
+    fn proxied(depth: usize, leaf: RuntimeCall) -> RuntimeCall {
+        (0..depth).fold(leaf, |call, _| proxy(call))
+    }
+
+    fn indices(call: &RuntimeCall) -> (u8, u8) {
+        ScaleCallMatcher::call_indices(call)
+    }
+
+    /// A `Calls` filter that allows exactly the kind of each of `calls`.
+    fn allowing(calls: &[RuntimeCall]) -> crate::DeviceFilterOf<Test> {
+        DeviceFilter::Calls(
+            calls
+                .iter()
+                .map(indices)
+                .collect::<alloc::collections::BTreeSet<_>>()
+                .try_into()
+                .unwrap(),
+        )
+    }
+
+    /// A funded pass account whose device `THE_DEVICE` and session key `OTHER` both have `filter`.
+    fn with_filter(filter: crate::DeviceFilterOf<Test>) -> sp_io::TestExternalities {
+        let mut ext = prepare(AccountNameA::get());
+        ext.execute_with(|| {
+            fund_address();
+            DeviceFilters::<Test>::insert(Address::get(), THE_DEVICE, filter.clone());
+            SessionKeys::<Test>::insert(OTHER, (Address::get(), 1_000u64, filter));
+        });
+        ext
+    }
+
+    fn with_device_filter(calls: &[RuntimeCall]) -> sp_io::TestExternalities {
+        with_filter(allowing(calls))
+    }
+
+    /// Sends `call` signed by the device, or by the session key.
+    #[derive(Clone, Copy, Debug)]
+    enum Signer {
+        Device,
+        SessionKey,
+    }
+    use Signer::*;
+
+    fn send(signer: Signer, call: RuntimeCall) -> ApplyExtrinsicResultWithInfo<PostDispatchInfo> {
+        match signer {
+            Device => authenticate(THE_DEVICE, credential(AccountNameA::get()), call),
+            SessionKey => signed(OTHER, call),
+        }
+    }
+
+    #[track_caller]
+    fn assert_rejected(result: ApplyExtrinsicResultWithInfo<PostDispatchInfo>) {
+        assert!(
+            matches!(
+                result,
+                Err(TransactionValidityError::Invalid(InvalidTransaction::Call))
+            ),
+            "{result:?}"
+        );
+    }
+
+    #[track_caller]
+    fn assert_dispatched(result: ApplyExtrinsicResultWithInfo<PostDispatchInfo>) {
+        assert!(matches!(result, Ok(Ok(_))), "{result:?}");
+    }
+
+    const BOTH: [Signer; 2] = [Device, SessionKey];
+
+    // W2b-1: the outer call being allowed is not enough.
+    #[test]
+    fn a_wrapper_cannot_carry_a_call_the_filter_forbids() {
+        for signer in BOTH {
+            with_device_filter(&[transfer_keep_alive(), batch(vec![]), proxy(opaque())])
+                .execute_with(|| {
+                    let before = Balances::free_balance(Address::get());
+
+                    assert_rejected(send(
+                        signer,
+                        batch(vec![transfer_keep_alive(), transfer_all()]),
+                    ));
+                    assert_rejected(send(signer, proxy(transfer_all())));
+                    // Nothing was dispatched: the whole transaction is invalid.
+                    assert_eq!(Balances::free_balance(Address::get()), before);
+                    assert_eq!(Balances::free_balance(CHARLIE), 0);
+                })
+        }
+    }
+
+    // W2b-2: the wrapper itself must be allowed too.
+    #[test]
+    fn an_allowed_call_in_a_wrapper_needs_the_wrapper_to_be_allowed() {
+        for signer in BOTH {
+            with_device_filter(&[transfer_keep_alive()]).execute_with(|| {
+                assert_rejected(send(signer, batch(vec![transfer_keep_alive()])));
+                assert_rejected(send(signer, proxy(transfer_keep_alive())));
+                assert_eq!(Balances::free_balance(CHARLIE), 0);
+            });
+
+            with_device_filter(&[transfer_keep_alive(), batch(vec![])]).execute_with(|| {
+                assert_dispatched(send(signer, batch(vec![transfer_keep_alive()])));
+                assert_eq!(Balances::free_balance(CHARLIE), AMOUNT);
+                // The wrapper allowed is `batch`, not `proxy`.
+                assert_rejected(send(signer, proxy(transfer_keep_alive())));
+            });
+        }
+    }
+
+    // W2b-3: every level is checked, wherever the forbidden call is.
+    #[test]
+    fn a_nested_batch_inside_a_proxy_inside_a_batch_is_checked_at_every_level() {
+        // The tree is five levels deep.
+        MaxNestedCallDepth::set(5);
+        let tree = |inner: Vec<RuntimeCall>| {
+            batch(vec![
+                transfer_keep_alive(),
+                proxy(batch(vec![transfer_keep_alive(), proxy(batch(inner))])),
+            ])
+        };
+        let all = [transfer_keep_alive(), batch(vec![]), proxy(opaque())];
+
+        for signer in BOTH {
+            with_device_filter(&all).execute_with(|| {
+                assert_dispatched(send(signer, tree(vec![transfer_keep_alive()])));
+                assert_eq!(Balances::free_balance(CHARLIE), 3 * AMOUNT);
+
+                // The forbidden call at the deepest level
+                assert_rejected(send(
+                    signer,
+                    tree(vec![transfer_keep_alive(), transfer_all()]),
+                ));
+                // At the deepest level, but nested in other wrappers
+                assert_rejected(send(signer, tree(vec![proxy(transfer_all())])));
+                assert_rejected(send(signer, tree(vec![batch(vec![transfer_all()])])));
+            });
+
+            // Each of the wrappers that the tree uses must be allowed.
+            with_device_filter(&[transfer_keep_alive(), proxy(opaque())]).execute_with(|| {
+                assert_rejected(send(signer, tree(vec![transfer_keep_alive()])));
+            });
+            with_device_filter(&[transfer_keep_alive(), batch(vec![])]).execute_with(|| {
+                assert_rejected(send(signer, tree(vec![transfer_keep_alive()])));
+            });
+        }
+    }
+
+    // W2b-4: a filter by pallet is checked the same way.
+    #[test]
+    fn a_pallet_filter_checks_the_pallet_of_every_call() {
+        let wrapper_pallet = indices(&batch(vec![])).0;
+        for signer in BOTH {
+            with_filter(pallets_filter(&[wrapper_pallet])).execute_with(|| {
+                assert_dispatched(send(signer, batch(vec![proxy(batch(vec![]))])));
+            });
+            with_filter(pallets_filter(&[wrapper_pallet])).execute_with(|| {
+                assert_rejected(send(signer, batch(vec![transfer_keep_alive()])));
+                assert_rejected(send(signer, proxy(batch(vec![remark(), transfer_all()]))));
+            });
+        }
+    }
+
+    // W2b-5: the bounds. At the bound it passes, one over it is rejected.
+    #[test]
+    fn the_depth_bound_is_enforced() {
+        for signer in BOTH {
+            for depth in [0usize, 1, 2, 4] {
+                MaxNestedCallDepth::set(depth as u32);
+                with_device_filter(&[transfer_keep_alive(), proxy(opaque())]).execute_with(|| {
+                    assert_dispatched(send(signer, proxied(depth, transfer_keep_alive())));
+                    assert_rejected(send(signer, proxied(depth + 1, transfer_keep_alive())));
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn the_depth_bound_counts_levels_through_batches_too() {
+        MaxNestedCallDepth::set(2);
+        for signer in BOTH {
+            with_device_filter(&[transfer_keep_alive(), proxy(opaque()), batch(vec![])])
+                .execute_with(|| {
+                    assert_dispatched(send(signer, batch(vec![proxy(transfer_keep_alive())])));
+                    assert_rejected(send(
+                        signer,
+                        batch(vec![proxy(batch(vec![transfer_keep_alive()]))]),
+                    ));
+                    // An empty wrapper at the bound is fine; its children would be one over.
+                    assert_dispatched(send(signer, batch(vec![batch(vec![])])));
+                })
+        }
+    }
+
+    #[test]
+    fn the_calls_bound_is_enforced_and_counts_wrappers_too() {
+        MaxNestedCalls::set(3);
+        let allowed = [transfer_keep_alive(), proxy(opaque()), batch(vec![])];
+        for signer in BOTH {
+            with_device_filter(&allowed).execute_with(|| {
+                // Three calls under the outer one
+                assert_dispatched(send(signer, batch(vec![transfer_keep_alive(); 3])));
+                assert_rejected(send(signer, batch(vec![transfer_keep_alive(); 4])));
+
+                // A proxy and a batch under it with two calls: three, then the fourth
+                let wrapped = |n| proxy(batch(vec![transfer_keep_alive(); n]));
+                assert_dispatched(send(signer, wrapped(2)));
+                assert_rejected(send(signer, wrapped(3)));
+
+                // Wrappers without leaves count: they can't be used to make the work unbounded.
+                assert_dispatched(send(signer, batch(vec![batch(vec![]); 3])));
+                assert_rejected(send(signer, batch(vec![batch(vec![]); 4])));
+            });
+        }
+    }
+
+    // W2b-6: what can't be inspected is denied, even when its wrapper is allowed.
+    #[test]
+    fn an_opaque_wrapper_is_denied() {
+        for signer in BOTH {
+            let all = [
+                transfer_keep_alive(),
+                batch(vec![]),
+                proxy(opaque()),
+                opaque(),
+            ];
+            with_device_filter(&all).execute_with(|| {
+                assert_rejected(send(signer, opaque()));
+                assert_rejected(send(signer, batch(vec![transfer_keep_alive(), opaque()])));
+                assert_rejected(send(signer, proxy(opaque())));
+            });
+            // Allowing everything by pallet doesn't change it either.
+            with_filter(pallets_filter(&[
+                indices(&opaque()).0,
+                indices(&transfer_all()).0,
+            ]))
+            .execute_with(|| {
+                assert_rejected(send(signer, batch(vec![opaque()])));
+            });
+        }
+    }
+
+    // W2b-7: `Admin` is not inspected.
+    #[test]
+    fn an_admin_device_is_unaffected() {
+        MaxNestedCallDepth::set(0);
+        MaxNestedCalls::set(0);
+        // The device that `prepare` registers is `Admin`.
+        prepare(AccountNameA::get()).execute_with(|| {
+            fund_address();
+            assert_eq!(
+                DeviceFilters::<Test>::get(Address::get(), THE_DEVICE),
+                Some(DeviceFilter::Admin)
+            );
+            assert_dispatched(authenticate(
+                THE_DEVICE,
+                credential(AccountNameA::get()),
+                batch(vec![
+                    transfer_keep_alive(),
+                    proxy(batch(vec![transfer_keep_alive()])),
+                ]),
+            ));
+            assert_eq!(Balances::free_balance(CHARLIE), 2 * AMOUNT);
+            assert_dispatched(authenticate(
+                THE_DEVICE,
+                credential(AccountNameA::get()),
+                batch(vec![opaque()]),
+            ));
+        });
+
+        // So are the (deprecated) `Admin` session keys.
+        with_filter(DeviceFilter::Admin).execute_with(|| {
+            assert_dispatched(signed(
+                OTHER,
+                batch(vec![opaque(), proxy(transfer_keep_alive())]),
+            ));
+        });
+    }
+
+    // W2b-8: the default matcher knows no wrapper, and behaves as it always did.
+    #[test]
+    fn a_matcher_that_reports_no_nested_calls_checks_the_outer_call_only() {
+        let call = batch(vec![transfer_keep_alive(), transfer_all()]);
+        assert!(matches!(
+            <ScaleCallMatcher as CallMatcher<RuntimeCall>>::nested_calls(&call),
+            NestedCalls::None
+        ));
+
+        NestedCallsAreReported::set(false);
+        for signer in BOTH {
+            with_device_filter(&[batch(vec![])]).execute_with(|| {
+                // This is the hole that closing needs a runtime matcher for: nothing
+                // here looks inside the batch.
+                assert_dispatched(send(signer, call.clone()));
+                assert_rejected(send(signer, transfer_all()));
+                assert_rejected(send(signer, opaque()));
+            });
+        }
+    }
+
+    // W2b-9: a restricted device that doesn't use wrappers is not charged for them.
+    #[test]
+    fn calls_without_wrappers_are_checked_as_before() {
+        for signer in BOTH {
+            with_device_filter(&[transfer_keep_alive()]).execute_with(|| {
+                assert_dispatched(send(signer, transfer_keep_alive()));
+                assert_rejected(send(signer, transfer_all()));
+            });
+            MaxNestedCallDepth::set(0);
+            MaxNestedCalls::set(0);
+            with_device_filter(&[transfer_keep_alive()]).execute_with(|| {
+                assert_dispatched(send(signer, transfer_keep_alive()));
+                assert_rejected(send(signer, transfer_all()));
+            });
+        }
+    }
+
+    // W2b-10: nesting far beyond the bound is rejected, and without recursing: the call is built
+    // iteratively and never dropped or encoded, because those are recursive. Extrinsics
+    // are already capped at 256 levels when decoded; this is the extension's own guard.
+    #[test]
+    fn nesting_far_beyond_the_bound_is_rejected_without_overflowing_the_stack() {
+        let filter = allowing(&[transfer_keep_alive(), proxy(opaque())]);
+        let mut call = transfer_keep_alive();
+        for _ in 0..5_000 {
+            call = proxy(call);
+        }
+
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                filter.allows_call::<_, MockCallMatcher, ()>(&call, 4, 64),
+                Err(crate::CallTreeError::TooDeep)
+            );
+        });
+        // Dropping it would recurse 5,000 levels.
+        core::mem::forget(call);
+    }
+
+    // W2b-11: the transaction pays for what it carries, not for what the filter inspects.
+    #[test]
+    fn the_failure_is_the_one_of_a_filter_rejection() {
+        with_device_filter(&[transfer_keep_alive(), batch(vec![])]).execute_with(|| {
+            // Too deep, too many, opaque, forbidden: all `Call`, indistinguishable on chain.
+            MaxNestedCallDepth::set(1);
+            assert_rejected(send(Device, proxied(2, transfer_keep_alive())));
+            MaxNestedCalls::set(1);
+            assert_rejected(send(Device, batch(vec![transfer_keep_alive(); 2])));
+            assert_rejected(send(Device, batch(vec![opaque()])));
+            assert_rejected(send(Device, batch(vec![transfer_all()])));
+        });
+    }
+}

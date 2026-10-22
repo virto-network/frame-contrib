@@ -25,6 +25,8 @@ use sp_runtime::{
 };
 
 mod authenticators;
+mod wrappers;
+pub use wrappers::{Call as WrapperCall, MockCallMatcher};
 
 pub type TxExtensions = (
     PassAuthenticate<Test>,
@@ -66,6 +68,8 @@ mod runtime {
     pub type Balances = pallet_balances;
     #[runtime::pallet_index(11)]
     pub type Pass = pallet_pass;
+    #[runtime::pallet_index(12)]
+    pub type Wrapper = wrappers;
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
@@ -92,6 +96,10 @@ impl pallet_transaction_payment::Config for Test {
     type OnChargeTransaction = pallet_transaction_payment::FungibleAdapter<Balances, ()>;
     type WeightToFee = FixedFee<1, Balance>;
     type LengthToFee = FixedFee<0, Balance>;
+}
+
+impl wrappers::Config for Test {
+    type RuntimeCall = RuntimeCall;
 }
 
 parameter_types! {
@@ -124,6 +132,13 @@ parameter_types! {
 parameter_types! {
     /// Whether the legacy `add_session_key` call is available. Tests change it.
     pub static UnrestrictedSessionKeysEnabled: bool = true;
+    /// How many levels of wrapper calls a restricted device may nest. Tests change it.
+    pub static MaxNestedCallDepth: u32 = 4;
+    /// How many calls a restricted device may carry. Tests change it.
+    pub static MaxNestedCalls: u32 = 64;
+    /// Whether `MockCallMatcher` reports the calls that wrappers carry. When `false`, it behaves
+    /// as the default matcher (`ScaleCallMatcher`), which knows no wrappers.
+    pub static NestedCallsAreReported: bool = true;
 }
 
 composite_authenticators! {
@@ -197,11 +212,13 @@ impl Config for Test {
     type SessionKeyConsideration =
         FirstItemIsFree<HoldConsideration<AccountId, Balances, HoldSessionKeys, ItemStoragePrice>>;
     type SpendMatcher = ();
-    type CallMatcher = crate::filter::ScaleCallMatcher;
+    type CallMatcher = MockCallMatcher;
     type PalletId = PassPalletId;
     type MaxDevicesPerAccount = ConstU32<2>;
     type MaxSessionsPerAccount = ConstU32<2>;
     type MaxSessionDuration = ConstU64<10>;
+    type MaxNestedCallDepth = MaxNestedCallDepth;
+    type MaxNestedCalls = MaxNestedCalls;
     type MaxFilteredCalls = ConstU32<10>;
     type MaxFilteredAssets = ConstU32<5>;
     type UnrestrictedSessionKeys = UnrestrictedSessionKeysEnabled;

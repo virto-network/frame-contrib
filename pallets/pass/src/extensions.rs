@@ -1,6 +1,6 @@
 use crate::{
-    AuthenticatedDevice, CallMatcher, Config, CredentialOf, DeviceFilters, DeviceOf, Pallet,
-    SpendMatcher, WeightInfo,
+    AuthenticatedDevice, CallTreeError, Config, CredentialOf, DeviceFilterOf, DeviceFilters,
+    DeviceOf, Pallet, WeightInfo,
 };
 use codec::{Decode, DecodeWithMemTracking, Encode};
 use fc_traits_authn::{DeviceId, UserAuthenticator};
@@ -122,11 +122,8 @@ where
             // Check the device's call filter (missing filter = denied)
             let filter = DeviceFilters::<T, I>::get(&address, params.device_id)
                 .ok_or(TransactionValidityError::from(InvalidTransaction::Call))?;
-            if !filter.allows(
-                T::CallMatcher::call_indices(call),
-                T::SpendMatcher::spending_amount(call),
-            ) {
-                log::error!(target: "pallet_pass", "Device filter rejected call");
+            if let Err(e) = Self::check_filter(&filter, call) {
+                log::error!(target: "pallet_pass", "Device filter rejected call: {:?}", e);
                 return Err(InvalidTransaction::Call.into());
             }
 
@@ -140,10 +137,8 @@ where
             if let Ok(who) = ensure_signed(origin.clone()) {
                 if let Some((account, filter)) = Pallet::<T, I>::pass_account_from_session_key(&who)
                 {
-                    if !filter.allows(
-                        T::CallMatcher::call_indices(call),
-                        T::SpendMatcher::spending_amount(call),
-                    ) {
+                    if let Err(e) = Self::check_filter(&filter, call) {
+                        log::error!(target: "pallet_pass", "Session key filter rejected call: {:?}", e);
                         return Err(InvalidTransaction::Call.into());
                     }
                     Ok(((None, Weight::zero()), RawOrigin::Signed(account).into()))
@@ -201,6 +196,20 @@ where
     T: Config<I>,
     I: 'static,
 {
+    /// Checks that `filter` allows `call` and every call it wraps, up to the pallet's
+    /// [`MaxNestedCallDepth`][Config::MaxNestedCallDepth] and
+    /// [`MaxNestedCalls`][Config::MaxNestedCalls] (see [`CallMatcher::nested_calls`]).
+    fn check_filter(
+        filter: &DeviceFilterOf<T, I>,
+        call: &RuntimeCallFor<T>,
+    ) -> Result<(), CallTreeError> {
+        filter.allows_call::<_, T::CallMatcher, T::SpendMatcher>(
+            call,
+            T::MaxNestedCallDepth::get(),
+            T::MaxNestedCalls::get(),
+        )
+    }
+
     /// The part of [`WeightInfo::authenticate_none`] that an unsigned origin
     /// does not spend: the `SessionKeys` read (and its proof), which only
     /// happens for signed origins.
