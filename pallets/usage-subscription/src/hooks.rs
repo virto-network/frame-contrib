@@ -97,9 +97,74 @@ impl<T: Config>
         }
     }
 
-    /// A switch took effect: the old contract ended (*switched*), and a contract to `new_item`
-    /// started at `new_anchor` with its period 0 charged, copying the new offer's terms as they
-    /// stand now (`REQ-CT-7`, `INV-9`).
+    /// An amendment of a custom contract was enacted (`REQ-CT-8`). The pallet records it when
+    /// the amendment returns.
+    fn on_amendment_enacted(
+        inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
+        item: &OfferIdOf<T>,
+        who: &T::AccountId,
+        effective_at: MomentOf<T>,
+    ) {
+        if let Some((group, _)) = Self::contract_of(inventory, item, who) {
+            Self::deposit_event(Event::<T>::ContractAmended {
+                group,
+                effective_at,
+            });
+        }
+    }
+
+    /// An amendment came into force at the contract's effective boundary: the amended allowance
+    /// applies from the first usage window starting at or after it (`REQ-CT-8`, `INV-20`). For a
+    /// custom contract it comes from its `pending` slot; for a standard one, from its offer's
+    /// amendment, which it has now applied.
+    fn on_amendment_in_force(
+        inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
+        item: &OfferIdOf<T>,
+        who: &T::AccountId,
+        effective_at: MomentOf<T>,
+    ) {
+        let Some((group, mut contract)) = Self::contract_of(inventory, item, who) else {
+            return;
+        };
+        let now = Self::now();
+        Self::fold_next_allowance(&mut contract, now);
+
+        let amended = match contract.pending {
+            Some(PendingChange::Amend {
+                allowance,
+                from_window,
+                ..
+            }) => {
+                contract.pending = None;
+                Some((allowance, from_window))
+            }
+            _ => OfferAmendment::<T>::get(contract.offer)
+                .filter(|amendment| amendment.seq > contract.amendment_seq)
+                .map(|amendment| {
+                    contract.amendment_seq = amendment.seq;
+                    (
+                        amendment.terms.allowance,
+                        first_window_from(contract.anchor, contract.usage_period, effective_at),
+                    )
+                }),
+        };
+        if let Some((allowance, from_window)) = amended {
+            contract.next_allowance = Some(NextAllowance {
+                allowance,
+                from_window,
+            });
+            Self::fold_next_allowance(&mut contract, now);
+        }
+        Contracts::<T>::insert(group, contract);
+        Self::deposit_event(Event::<T>::ContractAmendmentInForce {
+            group,
+            effective_at,
+        });
+    }
+
+    /// A switch or conversion took effect: the old contract ended (*switched* or *converted*),
+    /// and a contract to `new_item` started at `new_anchor` with its period 0 charged, copying the
+    /// new offer's terms as they stand now (`REQ-CT-7`, `REQ-CT-13`, `INV-9`).
     fn on_replaced(
         inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
         item: &OfferIdOf<T>,
@@ -107,10 +172,14 @@ impl<T: Config>
         new_item: &OfferIdOf<T>,
         new_anchor: MomentOf<T>,
     ) {
-        let Some((group, _)) = Self::contract_of(inventory, item, who) else {
+        let Some((group, contract)) = Self::contract_of(inventory, item, who) else {
             return;
         };
-        Self::end_contract(&group, who, EndReason::Switched);
+        let reason = match contract.pending {
+            Some(PendingChange::Convert(_)) => EndReason::Converted,
+            _ => EndReason::Switched,
+        };
+        Self::end_contract(&group, who, reason);
 
         // `allow_replacement` only lets a known offer take effect.
         let Some(record) = Offers::<T>::get(new_item) else {
@@ -125,13 +194,16 @@ impl<T: Config>
             group,
             offer: *new_item,
         });
-        if let OfferKind::Custom(_) = record.kind {
-            Self::mark_accepted(new_item);
+        match record.kind {
+            OfferKind::Custom(_) => Self::mark_accepted(new_item),
+            OfferKind::Trial => TrialUsed::<T>::insert(group, ()),
+            OfferKind::Standard => {}
         }
     }
 
-    /// A switch takes effect only into an open offer the group is still eligible for, while the
-    /// group is still usable.
+    /// A switch or conversion takes effect only into an open offer the group is still eligible
+    /// for, while the group is still usable (`REQ-CT-13`). The refusal is the reason it is
+    /// dropped.
     fn allow_replacement(
         inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
         item: &OfferIdOf<T>,
@@ -151,10 +223,15 @@ impl<T: Config>
             Self::is_eligible(&record.kind, &group),
             Error::<T>::NotEligible
         );
+        ensure!(
+            record.kind != OfferKind::Trial || !TrialUsed::<T>::contains_key(group),
+            Error::<T>::TrialUsed
+        );
         Ok(())
     }
 
-    /// The pending switch is cleared: cancelled by the group, or dropped with the reason.
+    /// The pending switch or conversion is cleared: cancelled by the group, or dropped with the
+    /// reason (`AC-B8.2`, `AC-B8.3`).
     fn on_replacement_dropped(
         inventory: &(MerchantIdOf<T>, InventoryIdOf<T>),
         item: &OfferIdOf<T>,
@@ -165,16 +242,28 @@ impl<T: Config>
         let Some((group, mut contract)) = Self::contract_of(inventory, item, who) else {
             return;
         };
-        if matches!(contract.pending, Some(PendingChange::Switch(_))) {
+        let conversion = matches!(contract.pending, Some(PendingChange::Convert(_)));
+        if matches!(
+            contract.pending,
+            Some(PendingChange::Switch(_) | PendingChange::Convert(_))
+        ) {
             contract.pending = None;
             Contracts::<T>::insert(group, contract);
         }
         let offer = *new_item;
-        Self::deposit_event(match reason {
-            ReplacementDropReason::ReplacementCancelled => {
+        Self::deposit_event(match (reason, conversion) {
+            (ReplacementDropReason::ReplacementCancelled, false) => {
                 Event::<T>::SwitchCancelled { group, offer }
             }
-            reason => Event::<T>::SwitchDropped {
+            (ReplacementDropReason::ReplacementCancelled, true) => {
+                Event::<T>::ConversionCancelled { group, offer }
+            }
+            (reason, false) => Event::<T>::SwitchDropped {
+                group,
+                offer,
+                reason,
+            },
+            (reason, true) => Event::<T>::ConversionDropped {
                 group,
                 offer,
                 reason,
