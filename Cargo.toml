@@ -56,6 +56,7 @@ pallet-nfts = { version = "43.0.0", default-features = false }
 pallet-preimage = { version = "49.0.0", default-features = false }
 pallet-referenda = { version = "49.0.0", default-features = false }
 pallet-scheduler = { version = "50.0.0", default-features = false }
+pallet-skip-feeless-payment = { version = "23.0.0", default-features = false }
 pallet-timestamp = { version = "48.0.0", default-features = false }
 pallet-transaction-payment = { version = "49.0.0", default-features = false }
 pallet-transaction-payment-rpc-runtime-api = { version = "49.0.0", default-features = false }
