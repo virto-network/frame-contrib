@@ -40,6 +40,26 @@
 //! - **Decision Method:** Can be either rank weighed, member-counted, or
 //!   asset-weighed and determines how the votes of proposals will be tallied.
 //!
+//! ## Relating poll classes to communities
+//!
+//! A community's members vote on the polls (referenda) whose _class_ belongs to
+//! the community. The class of a poll is the referenda _track_ it was submitted
+//! on, and [`Config::CommunityOfClass`] says which community a class belongs
+//! to (`None` if it belongs to none). The pallet does not assume any relation
+//! between the two ids. Three configurations are usual:
+//!
+//! - **Identity (flat ids):** the track id _is_ the community id. Set
+//!   `type CommunityOfClass = IdentityClass;`, which requires
+//!   `Polls::Class == CommunityId`.
+//! - **Group half of a split id:** the track id is wider than the community id
+//!   and combines it with a sub-track, such as `combine(community_id: u16, sub:
+//!   u16)` in a `u32`. The community is the _group_ half of the track id, so a
+//!   community can own several tracks. A runtime implements the converter
+//!   itself, as `Some(class.split().0)` over `fc_pallet_referenda_tracks::SplitId`
+//!   (this crate does not depend on `fc-pallet-referenda-tracks` in production code).
+//! - **Custom relation:** any other `Convert<Class, Option<CommunityId>>`, such as
+//!   a lookup in storage.
+//!
 //! ## Lifecycle
 //!
 //! ```ignore
@@ -134,7 +154,7 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::{ensure_signed, OriginFor};
 use sp_runtime::traits::AccountIdConversion;
-use sp_runtime::traits::{BlockNumberProvider, StaticLookup};
+use sp_runtime::traits::{BlockNumberProvider, Convert, StaticLookup};
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
@@ -231,13 +251,25 @@ pub mod pallet {
                 Membership = MembershipIdOf<Self>,
             > + Rank<Self::AccountId, Group = CommunityIdOf<Self>, Membership = MembershipIdOf<Self>>;
         /// Means to read and mutate the state of a poll.
+        ///
+        /// The poll's class (a referenda track) is not required to be the community's id:
+        /// [`CommunityOfClass`][`Config::CommunityOfClass`] says which community a class
+        /// belongs to.
         type Polls: Polling<
             Tally<Self>,
-            Class = CommunityIdOf<Self>,
             Index = u32,
             Votes = VoteWeight,
             Moment = BlockNumberFor<Self>,
         >;
+        /// Which community a poll class (a referenda track) belongs to; `None` if it
+        /// belongs to none. A community's members can vote only on the polls of the classes
+        /// that belong to it, and a vote on any other poll fails with
+        /// [`InvalidTrack`][`Error::InvalidTrack`].
+        ///
+        /// See the [crate docs](crate#relating-poll-classes-to-communities) for the three
+        /// usual configurations: [`IdentityClass`], the group half of a split id, and a custom
+        /// relation.
+        type CommunityOfClass: Convert<PollClassOf<Self>, Option<CommunityIdOf<Self>>>;
         /// Type represents interactions between fungibles (i.e. assets)
         type Assets: fungibles::Inspect<Self::AccountId, Balance = NativeBalanceOf<Self>>
             + fungibles::Mutate<Self::AccountId>

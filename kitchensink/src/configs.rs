@@ -39,7 +39,10 @@ use frame_system::{
 };
 use pallet_nfts::PalletFeatures;
 use pallet_referenda::PalletsOriginOf;
-use sp_runtime::{traits::AccountIdConversion, Perbill, Percent};
+use sp_runtime::{
+    traits::{AccountIdConversion, Convert},
+    Perbill, Percent,
+};
 
 // Units
 
@@ -366,6 +369,7 @@ impl fc_pallet_communities::Config for Runtime {
     type MembershipId = MembershipId;
     type MemberMgmt = MembershipsManager;
     type Polls = CommunityReferenda;
+    type CommunityOfClass = CommunityOfTrack;
     type Assets = Assets;
     type AssetsFreezer = AssetsFreezer;
     type Balances = Balances;
@@ -396,10 +400,21 @@ impl pallet_referenda::Config for Runtime {
     type BlockNumberProvider = System;
 }
 
+/// A track id is the community (the group) in its high half, and a sub-track in its low half.
+pub type TrackId = u32;
+
+/// The community a track belongs to is the group half of its id.
+pub struct CommunityOfTrack;
+impl Convert<TrackId, Option<CommunityId>> for CommunityOfTrack {
+    fn convert(track: TrackId) -> Option<CommunityId> {
+        Some(fc_pallet_referenda_tracks::SplitId::split(track).0)
+    }
+}
+
 /// `Root` creates groups (and sub-tracks) on the first group.
 pub struct EnsureRootReturnsFirstGroup;
 impl EnsureOriginWithArg<RuntimeOrigin, PalletsOriginOf<Runtime>> for EnsureRootReturnsFirstGroup {
-    type Success = <CommunityId as fc_pallet_referenda_tracks::SplitId>::Half;
+    type Success = <TrackId as fc_pallet_referenda_tracks::SplitId>::Half;
 
     fn try_origin(
         o: RuntimeOrigin,
@@ -421,7 +436,7 @@ impl fc_pallet_referenda_tracks::Config for Runtime {
     type GroupManagerCreateOrigin = EnsureRootReturnsFirstGroup;
     type GroupManagerOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type RemoveGroupOrigin = AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
-    type TrackId = CommunityId;
+    type TrackId = TrackId;
     type MaxTracks = ConstU32<{ u8::MAX as u32 }>;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = benchmark_helpers::TracksBenchmarkHelper;
@@ -925,7 +940,10 @@ pub mod benchmark_helpers {
                     ceil: Perbill::from_percent(100),
                 },
             };
-            CommunityTracks::do_insert(Self::community_id(), info, track_origin)?;
+            // The community's first track: the community is its group, and `0` its sub-track.
+            let track_id =
+                <TrackId as fc_pallet_referenda_tracks::SplitId>::combine(Self::community_id(), 0);
+            CommunityTracks::do_insert(track_id, info, track_origin)?;
             Ok(())
         }
 

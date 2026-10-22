@@ -161,7 +161,7 @@ fn new_test_ext() -> sp_io::TestExternalities {
             pallet_referenda::Event::<Test>::Submitted {
                 index: 0,
                 proposal: ProposalCallAddBob::get(),
-                track: COMMUNITY_A,
+                track: track_of(COMMUNITY_A),
             }
             .into(),
         );
@@ -169,7 +169,7 @@ fn new_test_ext() -> sp_io::TestExternalities {
             pallet_referenda::Event::<Test>::Submitted {
                 index: 1,
                 proposal: ProposalCallAddAlice::get(),
-                track: COMMUNITY_B,
+                track: track_of(COMMUNITY_B),
             }
             .into(),
         );
@@ -177,7 +177,7 @@ fn new_test_ext() -> sp_io::TestExternalities {
             pallet_referenda::Event::<Test>::Submitted {
                 index: 2,
                 proposal: ProposalCallRemoveCharlieFromC::get(),
-                track: COMMUNITY_C,
+                track: track_of(COMMUNITY_C),
             }
             .into(),
         );
@@ -379,7 +379,7 @@ mod vote {
                             nays: 0,
                             ..Default::default()
                         },
-                        COMMUNITY_A
+                        track_of(COMMUNITY_A)
                     ))
                 );
             });
@@ -398,7 +398,7 @@ mod vote {
                 System::assert_has_event(
                     pallet_referenda::Event::<Test>::DecisionStarted {
                         index: 0,
-                        track: COMMUNITY_A,
+                        track: track_of(COMMUNITY_A),
                         proposal: ProposalCallAddBob::get(),
                         tally: Tally::default(),
                     }
@@ -459,7 +459,7 @@ mod vote {
                 System::assert_has_event(
                     pallet_referenda::Event::<Test>::DecisionStarted {
                         index: 0,
-                        track: COMMUNITY_A,
+                        track: track_of(COMMUNITY_A),
                         proposal: ProposalCallAddBob::get(),
                         tally: Tally::default(),
                     }
@@ -508,7 +508,7 @@ mod vote {
                     System::assert_has_event(
                         pallet_referenda::Event::<Test>::DecisionStarted {
                             index: 2,
-                            track: COMMUNITY_C,
+                            track: track_of(COMMUNITY_C),
                             proposal: ProposalCallRemoveCharlieFromC::get(),
                             tally: Tally::default(),
                         }
@@ -641,7 +641,7 @@ mod vote {
                 System::assert_has_event(
                     pallet_referenda::Event::<Test>::DecisionStarted {
                         index: 1,
-                        track: COMMUNITY_B,
+                        track: track_of(COMMUNITY_B),
                         proposal: ProposalCallAddAlice::get(),
                         tally: Tally::default(),
                     }
@@ -697,7 +697,7 @@ mod vote {
                 System::assert_has_event(
                     pallet_referenda::Event::<Test>::DecisionStarted {
                         index: 1,
-                        track: COMMUNITY_B,
+                        track: track_of(COMMUNITY_B),
                         proposal: ProposalCallAddAlice::get(),
                         tally: Tally::default(),
                     }
@@ -753,7 +753,7 @@ mod vote {
                 System::assert_has_event(
                     pallet_referenda::Event::<Test>::DecisionStarted {
                         index: 1,
-                        track: COMMUNITY_B,
+                        track: track_of(COMMUNITY_B),
                         proposal: ProposalCallAddAlice::get(),
                         tally: Tally::default(),
                     }
@@ -833,7 +833,7 @@ mod vote {
                 System::assert_has_event(
                     pallet_referenda::Event::<Test>::DecisionStarted {
                         index: 2,
-                        track: COMMUNITY_C,
+                        track: track_of(COMMUNITY_C),
                         proposal: ProposalCallRemoveCharlieFromC::get(),
                         tally: Tally::default(),
                     }
@@ -886,7 +886,7 @@ mod vote {
                 System::assert_has_event(
                     pallet_referenda::Event::<Test>::DecisionStarted {
                         index: 2,
-                        track: COMMUNITY_C,
+                        track: track_of(COMMUNITY_C),
                         proposal: ProposalCallRemoveCharlieFromC::get(),
                         tally: Tally::default(),
                     }
@@ -974,7 +974,7 @@ mod vote {
                     pallet_referenda::Event::<Test>::Submitted {
                         index: 3,
                         proposal: ProposalCallPromoteCharlie::get(),
-                        track: COMMUNITY_D,
+                        track: track_of(COMMUNITY_D),
                     }
                     .into(),
                 );
@@ -1471,5 +1471,151 @@ mod unlock {
 
             assert_ok!(Communities::unlock(RuntimeOrigin::signed(CHARLIE), 2));
         });
+    }
+}
+
+/// Relation between a poll's class (a referenda track) and a community (W3b, design B): a
+/// community's members vote only on polls whose class belongs to the community, whatever the
+/// class' id looks like.
+mod poll_class {
+    use super::*;
+    use frame_system::RawOrigin;
+    use sp_runtime::traits::Convert;
+
+    fn vote_of(
+        who: AccountId,
+        membership: MembershipId,
+        poll: u32,
+    ) -> frame_support::dispatch::DispatchResult {
+        Communities::vote(
+            RuntimeOrigin::signed(who),
+            membership,
+            poll,
+            Vote::Standard(true),
+        )
+    }
+
+    #[test]
+    fn voting_on_a_poll_of_a_class_that_belongs_to_the_community_works() {
+        // W3b: the class of poll 0 is the first track of community A.
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                CommunityOfTrack::convert(track_of(COMMUNITY_A)),
+                Some(COMMUNITY_A)
+            );
+            assert_ok!(vote_of(ALICE, membership(COMMUNITY_A, 1), 0));
+        });
+    }
+
+    #[test]
+    fn voting_on_a_poll_of_another_communitys_class_fails() {
+        // W3b: poll 1 is of community B's class.
+        new_test_ext().execute_with(|| {
+            assert_noop!(
+                vote_of(ALICE, membership(COMMUNITY_A, 1), 1),
+                Error::InvalidTrack
+            );
+        });
+    }
+
+    #[test]
+    fn removing_a_vote_on_a_poll_of_another_communitys_class_fails() {
+        // W3b.
+        new_test_ext().execute_with(|| {
+            assert_ok!(vote_of(ALICE, membership(COMMUNITY_A, 1), 0));
+            assert_noop!(
+                Communities::remove_vote(
+                    RuntimeOrigin::signed(ALICE),
+                    membership(COMMUNITY_A, 1),
+                    1
+                ),
+                Error::InvalidTrack
+            );
+        });
+    }
+
+    #[test]
+    fn voting_on_a_poll_of_a_class_that_belongs_to_no_community_fails() {
+        // W3b: group 0 belongs to no community in the mock.
+        new_test_ext().execute_with(|| {
+            let class = fc_pallet_referenda_tracks::SplitId::combine(0u16, 7u16);
+            assert_eq!(CommunityOfTrack::convert(class), None);
+
+            assert_ok!(Tracks::do_insert(
+                class,
+                CommunityTrack::get(),
+                OriginCaller::system(RawOrigin::Root)
+            ));
+            assert_ok!(Referenda::submit(
+                RuntimeOrigin::signed(ALICE),
+                Box::new(OriginCaller::system(RawOrigin::Root)),
+                ProposalCallAddBob::get(),
+                frame_support::traits::schedule::DispatchTime::After(1),
+            ));
+
+            // Polls 0 to 2 are the communities'.
+            assert_noop!(
+                vote_of(ALICE, membership(COMMUNITY_A, 1), 3),
+                Error::InvalidTrack
+            );
+        });
+    }
+
+    #[test]
+    fn communities_with_an_id_above_255_work() {
+        // W3b: the track id is a `u32`, so the group half holds a full `u16` community id.
+        const WIDE_A: CommunityId = 444;
+        const WIDE_B: CommunityId = 1786;
+        const MEMBERSHIP_A: MembershipId = 101;
+        const MEMBERSHIP_B: MembershipId = 102;
+
+        TestEnvBuilder::new()
+            .with_balances(&[(ALICE, 15), (BOB, 15)])
+            .add_community(
+                WIDE_A,
+                DecisionMethod::Membership,
+                &[ALICE],
+                &[MEMBERSHIP_A],
+                Some(CommunityTrack::get()),
+            )
+            .add_community(
+                WIDE_B,
+                DecisionMethod::Membership,
+                &[BOB],
+                &[MEMBERSHIP_B],
+                Some(CommunityTrack::get()),
+            )
+            .build()
+            .execute_with(|| {
+                assert_eq!(track_of(WIDE_A), 444 << 16);
+                assert_eq!(CommunityOfTrack::convert(track_of(WIDE_A)), Some(WIDE_A));
+                assert_eq!(CommunityOfTrack::convert(track_of(WIDE_B)), Some(WIDE_B));
+
+                for (who, community) in [(ALICE, WIDE_A), (BOB, WIDE_B)] {
+                    assert_ok!(Referenda::submit(
+                        RuntimeOrigin::signed(who),
+                        Box::new(
+                            TestEnvBuilder::create_community_origin(&community)
+                                .caller()
+                                .clone()
+                        ),
+                        ProposalCallAddAlice::get(),
+                        frame_support::traits::schedule::DispatchTime::After(1),
+                    ));
+                }
+                System::assert_has_event(
+                    pallet_referenda::Event::<Test>::Submitted {
+                        index: 0,
+                        proposal: ProposalCallAddAlice::get(),
+                        track: track_of(WIDE_A),
+                    }
+                    .into(),
+                );
+
+                assert_ok!(vote_of(ALICE, MEMBERSHIP_A, 0));
+                assert_ok!(vote_of(BOB, MEMBERSHIP_B, 1));
+                assert_noop!(vote_of(ALICE, MEMBERSHIP_A, 1), Error::InvalidTrack);
+                assert_noop!(vote_of(BOB, MEMBERSHIP_B, 0), Error::InvalidTrack);
+            });
     }
 }
