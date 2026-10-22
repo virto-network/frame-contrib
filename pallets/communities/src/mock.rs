@@ -1,3 +1,4 @@
+#[allow(deprecated)]
 use frame_contrib_traits::memberships::NonFungiblesMemberships;
 use frame_support::{
     derive_impl,
@@ -467,6 +468,7 @@ parameter_types! {
 type RootCreatesCommunitiesForFree = EnsureRootWithSuccess<AccountId, NoPay>;
 type AnyoneElsePays = EnsureSignedPays<Test, ConstU64<10>, RootAccount>;
 
+#[allow(deprecated)]
 pub type MembershipsManager = NonFungiblesMemberships<Nfts, pallet_nfts::ItemConfig>;
 
 impl Config for Test {
