@@ -40,15 +40,22 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Tracks::<T, I>::get(group, track)
     }
 
+    /// Allocates the next group that has no track, and returns the id of its first track.
+    ///
+    /// `NextGroupId` holds the last group that was handed out. Groups can also be chosen by the
+    /// runtime (see [`Pallet::do_insert`]), so a candidate that already has a track is skipped.
+    /// At most `MaxTracks` groups have a track, so at most `MaxTracks + 1` candidates are tried.
     #[inline]
     pub(crate) fn next_group_track_id() -> Option<T::TrackId> {
-        NextGroupId::<T, I>::try_mutate(|id| -> Result<T::TrackId, ()> {
-            let new_id = id.increment().ok_or(())?;
-            *id = new_id.clone();
-            let track = SubTrackIdOf::<T, I>::default();
-            Ok(T::TrackId::combine(new_id, track))
-        })
-        .ok()
+        let mut group = NextGroupId::<T, I>::get();
+        for _ in 0..=T::MaxTracks::get() {
+            group = group.increment()?;
+            if Tracks::<T, I>::iter_key_prefix(&group).next().is_none() {
+                NextGroupId::<T, I>::put(&group);
+                return Some(T::TrackId::combine(group, SubTrackIdOf::<T, I>::default()));
+            }
+        }
+        None
     }
 
     /// Validates the essential fields of a track configuration.
@@ -66,6 +73,12 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     }
 
     /// Inserts a new track into the tracks storage.
+    ///
+    /// This is also how a runtime creates a group that it names itself (for example a community,
+    /// whose id is the group): the first track of the group is `combine(group, 0)`, and further
+    /// ones are added with [`Pallet::add_sub_track`] (group first, tracks after). The groups that
+    /// [`Pallet::new_group_with_track`] allocates never collide with it: when `group` is the next
+    /// one to be allocated, `NextGroupId` moves on; otherwise the allocator skips it.
     pub fn do_insert(
         id: T::TrackId,
         info: TrackInfoOf<T, I>,
@@ -84,6 +97,9 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
         TracksIds::<T, I>::try_mutate(|ids| ids.try_insert(id))
             .map_err(|_| Error::<T, I>::MaxTracksExceeded)?;
+        if NextGroupId::<T, I>::get().increment().as_ref() == Some(&group) {
+            NextGroupId::<T, I>::put(&group);
+        }
         Tracks::<T, I>::set(group, track, Some(info));
         OriginToTrackId::<T, I>::set(origin.clone(), Some(id));
         TrackIdToOrigin::<T, I>::set(id, Some(origin));

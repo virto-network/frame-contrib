@@ -22,6 +22,7 @@ use crate::{
     Event, OriginToTrackId, Pallet as ReferendaTracks, TrackIdToOrigin, Tracks, TracksIds,
     UpdateType,
 };
+use codec::Encode;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use pallet_referenda::{Curve, TrackInfo, TrackInfoOf};
@@ -100,19 +101,58 @@ fn prepare_tracks<T: Config<I>, I: 'static>(full: bool) -> Option<TrackIdOf<T, I
     }
 }
 
+/// Converts every old id to the first group. The benchmarks measure storage accesses, not values.
+struct AnyGroup<T, I>(core::marker::PhantomData<(T, I)>);
+impl<T: Config<I>, I: 'static> sp_runtime::traits::Convert<u16, Option<GroupIdOf<T, I>>>
+    for AnyGroup<T, I>
+{
+    fn convert(_: u16) -> Option<GroupIdOf<T, I>> {
+        Some(Default::default())
+    }
+}
+
+/// The raw key of a `Tracks` entry in the shape of storage version 0.
+fn v0_track_key<T: Config<I>, I: 'static>(id: u16) -> alloc::vec::Vec<u8> {
+    let encoded = id.encode();
+    let mut key = crate::migration::storage_prefix_of::<T, I>(b"Tracks").to_vec();
+    key.extend_from_slice(&sp_io::hashing::blake2_128(&encoded));
+    key.extend_from_slice(&encoded);
+    key
+}
+
 #[instance_benchmarks]
 mod benchmarks {
     use super::*;
 
     #[benchmark]
     pub fn new_group_with_track() {
-        prepare_tracks::<T, I>(false);
-
+        // The worst case of the allocator: every group from the first one up to the last-but-one
+        // that fits has a track, so it skips as many as `MaxTracks` allows.
         let track = track_info_of::<T, I>();
+        let mut group = GroupIdOf::<T, I>::default();
+        for i in 0..max_tracks::<T, I>() - 1 {
+            group = frame_support::traits::Incrementable::increment(&group).expect("fits a group");
+            let id = T::TrackId::combine(group.clone(), SubTrackIdOf::<T, I>::default());
+            let origin: PalletsOriginOf<T> =
+                RawOrigin::Signed(frame_benchmarking::account("origin", i, 0)).into();
+            TracksIds::<T, I>::mutate(|ids| {
+                ids.try_insert(id).expect("within MaxTracks");
+            });
+            Tracks::<T, I>::insert(
+                group.clone(),
+                SubTrackIdOf::<T, I>::default(),
+                track.clone(),
+            );
+            OriginToTrackId::<T, I>::insert(origin.clone(), id);
+            TrackIdToOrigin::<T, I>::insert(id, origin);
+        }
+
         let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
 
         #[extrinsic_call]
         _(RawOrigin::Root, origin, track);
+
+        assert_eq!(TracksIds::<T, I>::get().len() as u32, max_tracks::<T, I>());
     }
 
     #[benchmark]
@@ -245,6 +285,126 @@ mod benchmarks {
             }
             .into(),
         );
+    }
+
+    /// One unit of the first phase of `MigrateV0ToV1`.
+    #[benchmark]
+    pub fn migrate_track() {
+        use crate::migration::{Cursor, MigrateV0ToV1, Phase};
+        use frame_support::{migrations::SteppedMigration, weights::WeightMeter};
+
+        // A track in the shape of storage version 0 (a `u16` id).
+        let old_id = 1u16;
+        let raw_key = v0_track_key::<T, I>(old_id);
+        frame_support::storage::unhashed::put_raw(&raw_key, &track_info_of::<T, I>().encode());
+        // The meter fits one unit, and no more.
+        let mut meter = WeightMeter::with_limit(<T as Config<I>>::WeightInfo::migrate_track());
+        let cursor: Option<Cursor> = Some((Phase::Tracks, Default::default()));
+
+        #[block]
+        {
+            assert!(matches!(
+                MigrateV0ToV1::<T, I, u16, AnyGroup<T, I>>::step(cursor, &mut meter),
+                Ok(Some(_))
+            ));
+        }
+
+        let (group, sub) = (
+            GroupIdOf::<T, I>::default(),
+            SubTrackIdOf::<T, I>::default(),
+        );
+        assert!(Tracks::<T, I>::contains_key(group, sub));
+        assert!(!frame_support::storage::unhashed::exists(&raw_key));
+    }
+
+    /// One unit of the second phase of `MigrateV0ToV1`.
+    #[benchmark]
+    pub fn migrate_origin() {
+        use crate::migration::{Cursor, MigrateV0ToV1, Phase};
+        use frame_support::{migrations::SteppedMigration, weights::WeightMeter};
+
+        // The track was already migrated, and its origin still has the old value.
+        let (group, sub) = (
+            GroupIdOf::<T, I>::default(),
+            SubTrackIdOf::<T, I>::default(),
+        );
+        Tracks::<T, I>::insert(group.clone(), sub.clone(), track_info_of::<T, I>());
+        let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
+        frame_support::storage::unhashed::put(
+            &OriginToTrackId::<T, I>::hashed_key_for(&origin),
+            &1u16,
+        );
+        let mut meter = WeightMeter::with_limit(<T as Config<I>>::WeightInfo::migrate_origin());
+        let cursor: Option<Cursor> = Some((Phase::Origins, Default::default()));
+
+        #[block]
+        {
+            assert!(matches!(
+                MigrateV0ToV1::<T, I, u16, AnyGroup<T, I>>::step(cursor, &mut meter),
+                Ok(Some(_))
+            ));
+        }
+
+        let id = T::TrackId::combine(group, sub);
+        assert_eq!(OriginToTrackId::<T, I>::get(&origin), Some(id));
+        assert_eq!(TrackIdToOrigin::<T, I>::get(id), Some(origin));
+    }
+
+    /// One unit of the third phase of `MigrateV0ToV1`, with `TracksIds` holding `n` ids.
+    #[benchmark]
+    pub fn migrate_ids(n: Linear<1, { max_tracks::<T, I>() }>) {
+        use crate::migration::{Cursor, MigrateV0ToV1, Phase};
+        use frame_support::{migrations::SteppedMigration, weights::WeightMeter};
+
+        // The track to add is `track_id(0)`; the other `n - 1` are in already.
+        let (group, sub) = T::BenchmarkHelper::track_id(0).split();
+        Tracks::<T, I>::insert(group.clone(), sub, track_info_of::<T, I>());
+        TracksIds::<T, I>::mutate(|ids| {
+            for i in 1..n {
+                ids.try_insert(T::BenchmarkHelper::track_id(i))
+                    .expect("within MaxTracks");
+            }
+        });
+        // The unit is declared at `MaxTracks`; the meter fits that, and no more.
+        let mut meter = WeightMeter::with_limit(<T as Config<I>>::WeightInfo::migrate_ids(
+            max_tracks::<T, I>(),
+        ));
+        let cursor: Option<Cursor> = Some((Phase::TracksIds, Default::default()));
+
+        #[block]
+        {
+            assert!(matches!(
+                MigrateV0ToV1::<T, I, u16, AnyGroup<T, I>>::step(cursor, &mut meter),
+                Ok(Some(_))
+            ));
+        }
+
+        assert_eq!(TracksIds::<T, I>::get().len() as u32, n);
+    }
+
+    /// The last unit of `MigrateV0ToV1`.
+    #[benchmark]
+    pub fn migrate_finalize() {
+        use crate::migration::{Cursor, MigrateV0ToV1, Phase};
+        use frame_support::{
+            migrations::SteppedMigration,
+            traits::{GetStorageVersion, StorageVersion},
+            weights::WeightMeter,
+        };
+
+        StorageVersion::new(0).put::<ReferendaTracks<T, I>>();
+        let mut meter = WeightMeter::new();
+        let cursor: Option<Cursor> = Some((Phase::Finish, Default::default()));
+
+        #[block]
+        {
+            assert!(matches!(
+                MigrateV0ToV1::<T, I, u16, AnyGroup<T, I>>::step(cursor, &mut meter),
+                Ok(None)
+            ));
+        }
+
+        assert_eq!(ReferendaTracks::<T, I>::on_chain_storage_version(), 1);
     }
 
     impl_benchmark_test_suite!(

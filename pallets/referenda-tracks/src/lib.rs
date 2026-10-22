@@ -9,6 +9,32 @@
 //!
 //! Manage referenda voting tracks.
 //!
+//! ### Groups and tracks
+//!
+//! A [`Config::TrackId`] splits in two halves, see [`SplitId`]: a **group** and a **sub-track** in
+//! it. A group exists first, and its tracks are added afterwards (group first, tracks after).
+//! There are two ways to create a group:
+//!
+//! - **Auto-allocated**: [`new_group_with_track`][`crate::Pallet::new_group_with_track`] takes the
+//!   next group from `NextGroupId`, skipping any group that already has a track, and creates the
+//!   group with its first track (sub-track `0`).
+//! - **Explicit**: a runtime that chooses its own group ids (for example, a community is a group,
+//!   named by its id) calls [`do_insert`][`crate::Pallet::do_insert`] with
+//!   `combine(group, 0)`. This path is internal to the runtime; it is not a call.
+//!
+//! The two can be mixed: an auto-allocated group never collides with an explicit one, whichever
+//! came first.
+//!
+//! Sub-tracks are added to an existing group afterwards with
+//! [`add_sub_track`][`crate::Pallet::add_sub_track`].
+//!
+//! ### Migrating from storage version 0
+//!
+//! Chains that had flat track ids need [`migration::MigrateV0ToV1`], a stepped migration to be
+//! registered in `pallet_migrations` in the same runtime upgrade that brings this version. Old
+//! track `n` becomes track `0` of group `n`. See the [`migration`] module for the contract and
+//! how to register it.
+//!
 //! ## Interface
 //!
 //! ### Dispatchable Functions
@@ -196,6 +222,9 @@ pub mod pallet {
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
         /// Create a new track group with its first track.
+        ///
+        /// The group is allocated from `NextGroupId`, skipping the groups that already have a
+        /// track (for example, ones that the runtime created with `do_insert`).
         ///
         /// Parameters:
         /// - `group_origin`: The origin to associate with this track.
