@@ -62,7 +62,8 @@ pub trait WeightInfo {
 	fn set_max_deciding() -> Weight;
 	fn migrate_track() -> Weight;
 	fn migrate_origin() -> Weight;
-	fn migrate_finalize(n: u32) -> Weight;
+	fn migrate_ids(n: u32) -> Weight;
+	fn migrate_finalize() -> Weight;
 }
 
 /// Weights for pallet_referenda_tracks using the Substrate node and recommended hardware.
@@ -156,15 +157,25 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
 
-	/// PLACEHOLDER: not produced by a benchmark run. `n` is `MaxTracks`. DB accesses are counted
-	/// from the code path:
-	/// Storage: `CommunityTracks::Tracks` (r:n) (scan of the double map)
-	/// Storage: `CommunityTracks::NextGroupId` (r:1 w:1), `TracksIds` (w:1), the storage version (w:1)
-	fn migrate_finalize(n: u32) -> Weight {
+	/// PLACEHOLDER: not produced by a benchmark run. `n` is the most ids that `TracksIds` can hold
+	/// (`MaxTracks`): the unit reads and writes the whole value, so it is charged at its largest.
+	/// The proof counts up to 8 bytes per id. DB accesses are counted from the code path:
+	/// Storage: `CommunityTracks::Tracks` (r:1) (next key)
+	/// Storage: `CommunityTracks::TracksIds` (r:1 w:1)
+	/// Storage: `CommunityTracks::NextGroupId` (r:1 w:1)
+	fn migrate_ids(n: u32) -> Weight {
 		Weight::from_parts(15_000_000, 8_000)
-			.saturating_add(Weight::from_parts(1_000_000u64.saturating_mul(n as u64), 500u64.saturating_mul(n as u64)))
-			.saturating_add(T::DbWeight::get().reads(1_u64.saturating_add(n as u64)))
-			.saturating_add(T::DbWeight::get().writes(3_u64))
+			.saturating_add(Weight::from_parts(20_000u64.saturating_mul(n as u64), 8u64.saturating_mul(n as u64)))
+			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().writes(2_u64))
+	}
+
+	/// PLACEHOLDER: not produced by a benchmark run.
+	/// Storage: the storage version (w:1), and `CommunityTracks::Tracks` (r:1) (next key)
+	fn migrate_finalize() -> Weight {
+		Weight::from_parts(10_000_000, 5_000)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 }
 
@@ -222,11 +233,18 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
 
-	/// PLACEHOLDER: mirrors [`SubstrateWeight::migrate_finalize`] with `RocksDbWeight`.
-	fn migrate_finalize(n: u32) -> Weight {
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::migrate_ids`] with `RocksDbWeight`.
+	fn migrate_ids(n: u32) -> Weight {
 		Weight::from_parts(15_000_000, 8_000)
-			.saturating_add(Weight::from_parts(1_000_000u64.saturating_mul(n as u64), 500u64.saturating_mul(n as u64)))
-			.saturating_add(RocksDbWeight::get().reads(1_u64.saturating_add(n as u64)))
-			.saturating_add(RocksDbWeight::get().writes(3_u64))
+			.saturating_add(Weight::from_parts(20_000u64.saturating_mul(n as u64), 8u64.saturating_mul(n as u64)))
+			.saturating_add(RocksDbWeight::get().reads(3_u64))
+			.saturating_add(RocksDbWeight::get().writes(2_u64))
+	}
+
+	/// PLACEHOLDER: mirrors [`SubstrateWeight::migrate_finalize`] with `RocksDbWeight`.
+	fn migrate_finalize() -> Weight {
+		Weight::from_parts(10_000_000, 5_000)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 }

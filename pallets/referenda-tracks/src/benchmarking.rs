@@ -350,16 +350,49 @@ mod benchmarks {
         assert_eq!(TrackIdToOrigin::<T, I>::get(id), Some(origin));
     }
 
-    /// The last unit of `MigrateV0ToV1`, with `n` tracks.
+    /// One unit of the third phase of `MigrateV0ToV1`, with `TracksIds` holding `n` ids.
     #[benchmark]
-    pub fn migrate_finalize(n: Linear<1, { max_tracks::<T, I>() }>) {
+    pub fn migrate_ids(n: Linear<1, { max_tracks::<T, I>() }>) {
         use crate::migration::{Cursor, MigrateV0ToV1, Phase};
         use frame_support::{migrations::SteppedMigration, weights::WeightMeter};
 
-        for i in 0..n {
-            let (group, sub) = T::BenchmarkHelper::track_id(i).split();
-            Tracks::<T, I>::insert(group, sub, track_info_of::<T, I>());
+        // The track to add is `track_id(0)`; the other `n - 1` are in already.
+        let (group, sub) = T::BenchmarkHelper::track_id(0).split();
+        Tracks::<T, I>::insert(group.clone(), sub, track_info_of::<T, I>());
+        TracksIds::<T, I>::mutate(|ids| {
+            for i in 1..n {
+                ids.try_insert(T::BenchmarkHelper::track_id(i))
+                    .expect("within MaxTracks");
+            }
+        });
+        // The unit is declared at `MaxTracks`; the meter fits that, and no more.
+        let mut meter = WeightMeter::with_limit(<T as Config<I>>::WeightInfo::migrate_ids(
+            max_tracks::<T, I>(),
+        ));
+        let cursor: Option<Cursor> = Some((Phase::TracksIds, Default::default()));
+
+        #[block]
+        {
+            assert!(matches!(
+                MigrateV0ToV1::<T, I, u16, AnyGroup<T, I>>::step(cursor, &mut meter),
+                Ok(Some(_))
+            ));
         }
+
+        assert_eq!(TracksIds::<T, I>::get().len() as u32, n);
+    }
+
+    /// The last unit of `MigrateV0ToV1`.
+    #[benchmark]
+    pub fn migrate_finalize() {
+        use crate::migration::{Cursor, MigrateV0ToV1, Phase};
+        use frame_support::{
+            migrations::SteppedMigration,
+            traits::{GetStorageVersion, StorageVersion},
+            weights::WeightMeter,
+        };
+
+        StorageVersion::new(0).put::<ReferendaTracks<T, I>>();
         let mut meter = WeightMeter::new();
         let cursor: Option<Cursor> = Some((Phase::Finish, Default::default()));
 
@@ -371,7 +404,7 @@ mod benchmarks {
             ));
         }
 
-        assert_eq!(TracksIds::<T, I>::get().len() as u32, n);
+        assert_eq!(ReferendaTracks::<T, I>::on_chain_storage_version(), 1);
     }
 
     impl_benchmark_test_suite!(

@@ -45,14 +45,20 @@
 //!
 //! ## The contract
 //!
-//! It runs in three phases, each unit being atomic:
+//! It runs in four phases, each unit being atomic:
 //!
 //! 1. [`Phase::Tracks`]: one `v0` `Tracks` entry per unit moves to the double map.
 //! 2. [`Phase::Origins`]: one `OriginToTrackId` entry per unit gets its value rewritten, and its
 //!    `TrackIdToOrigin` entry written (v0 had no reverse map, so this is the first place where the
 //!    origin of a track is known).
-//! 3. [`Phase::Finish`]: a single unit builds `TracksIds` from the double map, sets `NextGroupId`
-//!    to the highest group plus one (never lowering it), and bumps the storage version to 1.
+//! 3. [`Phase::TracksIds`]: one track of the double map per unit is added to `TracksIds` (which
+//!    the previous phase emptied, as it held the old `Vec`), and `NextGroupId` moves past its
+//!    group if it has to (it never goes down).
+//! 4. [`Phase::Finish`]: a last unit bumps the storage version to 1.
+//!
+//! No unit costs more with the number of tracks: the only one that grows with a bound is the
+//! third, which reads and writes the `TracksIds` value at its largest, `MaxTracks` ids. A runtime
+//! has to make sure that it fits one block (see `WeightInfo::migrate_ids`).
 //!
 //! Before every unit it calls `meter.try_consume(unit)`. When the unit does not fit, it stops and
 //! returns `Ok(Some(cursor))`; it returns [`SteppedMigrationError::InsufficientWeight`] only when
@@ -75,7 +81,7 @@ use codec::{DecodeAll, Encode, FullCodec, MaxEncodedLen};
 use core::{fmt::Debug, marker::PhantomData};
 use frame_support::{
     migrations::{MigrationId, SteppedMigration, SteppedMigrationError},
-    pallet_prelude::{BoundedBTreeSet, BoundedVec, ConstU32, StorageVersion},
+    pallet_prelude::{BoundedVec, ConstU32, StorageVersion},
     storage::unhashed,
     traits::{Get, GetStorageVersion, Incrementable, PalletInfoAccess},
     weights::WeightMeter,
@@ -105,7 +111,9 @@ pub enum Phase {
     Tracks,
     /// Rewrites `OriginToTrackId` and fills `TrackIdToOrigin`.
     Origins,
-    /// Builds `TracksIds`, sets `NextGroupId` and bumps the storage version.
+    /// Adds each track to `TracksIds` and moves `NextGroupId` past its group.
+    TracksIds,
+    /// Bumps the storage version.
     Finish,
 }
 
@@ -171,7 +179,8 @@ where
         match phase {
             Phase::Tracks => <T as Config<I>>::WeightInfo::migrate_track(),
             Phase::Origins => <T as Config<I>>::WeightInfo::migrate_origin(),
-            Phase::Finish => <T as Config<I>>::WeightInfo::migrate_finalize(T::MaxTracks::get()),
+            Phase::TracksIds => <T as Config<I>>::WeightInfo::migrate_ids(T::MaxTracks::get()),
+            Phase::Finish => <T as Config<I>>::WeightInfo::migrate_finalize(),
         }
     }
 
@@ -378,35 +387,24 @@ where
         }
     }
 
-    /// Builds `TracksIds` from the double map, sets `NextGroupId` and bumps the storage version.
-    fn finish() {
-        let max_tracks = T::MaxTracks::get() as usize;
-        let mut ids = BoundedBTreeSet::<TrackIdOf<T, I>, T::MaxTracks>::new();
-        let mut max_group: Option<GroupIdOf<T, I>> = None;
-
-        let mut scanned = 0;
-        for (group, sub) in
-            Self::raw_keys(Self::tracks_prefix()).filter_map(|key| Self::v1_track_of(&key))
-        {
-            scanned += 1;
-            if scanned > max_tracks {
-                log::error!(target: LOG_TARGET, "more tracks than `MaxTracks`: leaving the rest out");
-                break;
-            }
-            if max_group.as_ref().is_none_or(|max| group > *max) {
-                max_group = Some(group.clone());
-            }
-            let _ = ids.try_insert(T::TrackId::combine(group, sub));
+    /// Adds one track of the double map to `TracksIds`, and moves `NextGroupId` past its group.
+    /// Keys that are not of the double map are skipped.
+    fn add_to_ids(raw_key: &[u8]) {
+        let Some((group, sub)) = Self::v1_track_of(raw_key) else {
+            return;
+        };
+        let id = T::TrackId::combine(group.clone(), sub);
+        let inserted = TracksIds::<T, I>::try_mutate(|ids| ids.try_insert(id));
+        if inserted.is_err() {
+            log::error!(
+                target: LOG_TARGET,
+                "more tracks than `MaxTracks`: leaving {:?} out", id
+            );
         }
-        TracksIds::<T, I>::put(ids);
-
-        if let Some(max_group) = max_group {
-            let next = max_group.increment().unwrap_or(max_group);
-            if next > NextGroupId::<T, I>::get() {
-                NextGroupId::<T, I>::put(next);
-            }
+        let next = group.clone().increment().unwrap_or(group);
+        if next > NextGroupId::<T, I>::get() {
+            NextGroupId::<T, I>::put(next);
         }
-        StorageVersion::new(1).put::<Pallet<T, I>>();
     }
 }
 
@@ -473,10 +471,21 @@ where
                         Self::migrate_origin(&raw_key);
                         last = Self::to_cursor_key(&raw_key)?;
                     }
+                    None => {
+                        // It holds the `Vec` of version 0: the next phase fills it again.
+                        TracksIds::<T, I>::kill();
+                        (phase, last) = (Phase::TracksIds, CursorKey::default())
+                    }
+                },
+                Phase::TracksIds => match Self::next_key(&Self::tracks_prefix(), &last) {
+                    Some(raw_key) => {
+                        Self::add_to_ids(&raw_key);
+                        last = Self::to_cursor_key(&raw_key)?;
+                    }
                     None => (phase, last) = (Phase::Finish, CursorKey::default()),
                 },
                 Phase::Finish => {
-                    Self::finish();
+                    StorageVersion::new(1).put::<Pallet<T, I>>();
                     return Ok(None);
                 }
             }

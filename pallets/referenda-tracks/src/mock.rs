@@ -129,7 +129,7 @@ impl<M: Morph<AccountId>> EnsureOriginWithArg<RuntimeOrigin, AccountId> for Ensu
 }
 
 parameter_types! {
-    pub const MaxTracks: u32 = u8::MAX as u32;
+    pub static MaxTracks: u32 = u8::MAX as u32;
     pub static Admins: Vec<AccountId> = vec![1, 2, 3];
 }
 morph_types! {

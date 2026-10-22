@@ -1666,7 +1666,8 @@ mod migration {
                 let unit = match cursor.as_ref().map(|(phase, _)| phase) {
                     None | Some(Phase::Tracks) => <() as WeightInfo>::migrate_track(),
                     Some(Phase::Origins) => <() as WeightInfo>::migrate_origin(),
-                    Some(Phase::Finish) => <() as WeightInfo>::migrate_finalize(MaxTracks::get()),
+                    Some(Phase::TracksIds) => <() as WeightInfo>::migrate_ids(MaxTracks::get()),
+                    Some(Phase::Finish) => <() as WeightInfo>::migrate_finalize(),
                 };
                 let mut meter = WeightMeter::with_limit(unit.saturating_mul(2));
                 cursor = Migration::step(cursor, &mut meter).expect("the unit fits");
@@ -1690,12 +1691,58 @@ mod migration {
                     );
                 }
             }
-            assert_eq!(phases, vec![Phase::Tracks, Phase::Origins, Phase::Finish]);
+            assert_eq!(
+                phases,
+                vec![
+                    Phase::Tracks,
+                    Phase::Origins,
+                    Phase::TracksIds,
+                    Phase::Finish
+                ]
+            );
+            // Two units per step, 23 tracks: many steps.
+            assert!(steps >= 30, "{steps} steps");
             assert_migrated(&live_ids());
             root()
         });
 
         assert_eq!(unlimited, resumed);
+    }
+
+    // `MaxTracks` is 65_536, as in Kreivo's community tracks. No unit costs more than what fits
+    // an empty block, here assumed to be a `MaxServiceWeight` of ref_time 330_000_000_000 and
+    // proof size 1_700_000 (the declared weights are placeholders: the benchmark replaces them,
+    // and then this assertion must hold with the measured ones). If a unit did not fit, `step`
+    // would return `InsufficientWeight`.
+    #[test]
+    fn no_unit_exceeds_an_empty_block_with_65536_max_tracks() {
+        new_test_ext(None).execute_with(|| {
+            MaxTracks::set(65_536);
+            let block = Weight::from_parts(330_000_000_000, 1_700_000);
+            for unit in [
+                <() as WeightInfo>::migrate_track(),
+                <() as WeightInfo>::migrate_origin(),
+                <() as WeightInfo>::migrate_ids(MaxTracks::get()),
+                <() as WeightInfo>::migrate_finalize(),
+            ] {
+                assert!(!unit.any_gt(block), "{unit:?} does not fit {block:?}");
+            }
+
+            put_v0(&live_ids());
+            let mut cursor = None;
+            let mut steps = 0;
+            loop {
+                steps += 1;
+                assert!(steps < 100, "it doesn't end");
+                // A fresh meter that is an empty block: never `InsufficientWeight`.
+                let mut meter = WeightMeter::with_limit(block);
+                cursor = Migration::step(cursor, &mut meter).expect("every unit fits");
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            assert_migrated(&live_ids());
+        });
     }
 
     // One unit fits, a second doesn't: it yields in the middle of a phase.
@@ -1729,8 +1776,12 @@ mod migration {
                     <() as WeightInfo>::migrate_origin(),
                 ),
                 (
+                    Some((Phase::TracksIds, CursorKey::default())),
+                    <() as WeightInfo>::migrate_ids(MaxTracks::get()),
+                ),
+                (
                     Some((Phase::Finish, CursorKey::default())),
-                    <() as WeightInfo>::migrate_finalize(MaxTracks::get()),
+                    <() as WeightInfo>::migrate_finalize(),
                 ),
             ] {
                 let mut meter = WeightMeter::with_limit(Weight::zero());
