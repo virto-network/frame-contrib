@@ -369,9 +369,10 @@ mod benchmarks {
                     .expect("within MaxTracks");
             }
         });
-        // The unit is declared at `MaxTracks`; the meter fits that, and no more.
-        let mut meter = WeightMeter::with_limit(<T as Config<I>>::WeightInfo::migrate_ids(
-            max_tracks::<T, I>(),
+        // The unit is declared at `MaxTracks` (and the proof size of `TracksIds` at its largest);
+        // the meter fits that, and no more.
+        let mut meter = WeightMeter::with_limit(MigrateV0ToV1::<T, I, u16, AnyGroup<T, I>>::unit(
+            Phase::TracksIds,
         ));
         let cursor: Option<Cursor> = Some((Phase::TracksIds, Default::default()));
 
