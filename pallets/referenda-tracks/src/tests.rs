@@ -1336,6 +1336,117 @@ mod track_for {
     }
 }
 
+mod group_allocation {
+    use super::*;
+    use crate::{NextGroupId, Tracks as TracksMap};
+
+    fn origin(n: u64) -> OriginCaller {
+        OriginCaller::system(RawOrigin::Signed(n))
+    }
+
+    fn auto(n: u64) -> u16 {
+        assert_ok!(ReferendaTracks::<Test, ()>::new_group_with_track(
+            RuntimeOrigin::root(),
+            origin(n),
+            TRACK,
+        ));
+        crate::OriginToTrackId::<Test, ()>::get(origin(n))
+            .expect("the origin is mapped")
+            .split()
+            .0
+    }
+
+    fn explicit(group: u16, sub: u16, n: u64) {
+        assert_ok!(ReferendaTracks::<Test, ()>::do_insert(
+            u32::combine(group, sub),
+            TRACK,
+            origin(n),
+        ));
+    }
+
+    // Explicit groups 2 and 5 exist before the auto-allocated ones: 1, 3, 4, 6 are taken, and the
+    // allocator skips 2 and 5.
+    #[test]
+    fn auto_allocation_skips_explicit_groups_created_first() {
+        new_test_ext(None).execute_with(|| {
+            explicit(2, 0, 100);
+            explicit(5, 0, 101);
+
+            let groups: Vec<u16> = (0..4).map(auto).collect();
+
+            assert_eq!(groups, vec![1, 3, 4, 6]);
+        });
+    }
+
+    // Groups 1 and 2 are auto-allocated; then explicit groups 2 (taken: fails), 3 and 9 are
+    // created, and the next auto-allocated ones are 4 and 5, then 6, 7, 8 and 10.
+    #[test]
+    fn explicit_groups_created_after_auto_allocation_are_not_reused() {
+        new_test_ext(None).execute_with(|| {
+            assert_eq!(auto(0), 1);
+            assert_eq!(auto(1), 2);
+
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::do_insert(u32::combine(2, 0), TRACK, origin(100)),
+                Error::<Test, ()>::TrackIdAlreadyExisting
+            );
+            explicit(3, 0, 101);
+            explicit(9, 0, 102);
+
+            let groups: Vec<u16> = (10..16).map(auto).collect();
+            assert_eq!(groups, vec![4, 5, 6, 7, 8, 10]);
+        });
+    }
+
+    // A group that only has a sub-track other than 0 is a group with a track as well.
+    #[test]
+    fn a_group_with_only_another_sub_track_is_taken() {
+        new_test_ext(None).execute_with(|| {
+            explicit(1, 7, 100);
+
+            assert_eq!(auto(0), 2);
+        });
+    }
+
+    // Explicit groups that come right after the last allocated one move `NextGroupId` along, so
+    // the allocator does not have to skip them one by one.
+    #[test]
+    fn contiguous_explicit_groups_move_next_group_id() {
+        new_test_ext(None).execute_with(|| {
+            assert_eq!(auto(0), 1);
+            explicit(2, 0, 100);
+            explicit(3, 0, 101);
+            assert_eq!(NextGroupId::<Test, ()>::get(), 3);
+
+            // Not the next one: it stays.
+            explicit(9, 0, 102);
+            assert_eq!(NextGroupId::<Test, ()>::get(), 3);
+
+            assert_eq!(auto(1), 4);
+        });
+    }
+
+    // Groups 1..=255 all have a track: the next allocation fails instead of looping forever.
+    #[test]
+    fn allocation_fails_when_every_group_is_taken() {
+        new_test_ext(None).execute_with(|| {
+            for group in 1..=u8::MAX as u16 {
+                explicit(group, 0, 1000 + group as u64);
+            }
+            assert_eq!(TracksMap::<Test, ()>::iter().count(), 255);
+
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::new_group_with_track(
+                    RuntimeOrigin::root(),
+                    origin(5000),
+                    TRACK,
+                ),
+                Error::<Test, ()>::MaxTracksExceeded
+            );
+        });
+    }
+}
+
 mod migration {
     use super::*;
     use crate::migration::v0;
