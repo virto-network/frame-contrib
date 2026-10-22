@@ -294,6 +294,8 @@ impl fc_pallet_pass::Config for Runtime {
     type MaxDevicesPerAccount = ConstU32<10>;
     type MaxSessionsPerAccount = ConstU32<10>;
     type MaxSessionDuration = ConstU32<DAYS>;
+    type MaxNestedCallDepth = ConstU32<4>;
+    type MaxNestedCalls = ConstU32<64>;
     type MaxFilteredCalls = ConstU32<32>;
     type MaxFilteredAssets = ConstU32<8>;
     type UnrestrictedSessionKeys = ConstBool<true>;

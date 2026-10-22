@@ -97,7 +97,9 @@ pub mod pallet {
         /// Use `()` if spend-only devices aren't needed.
         type SpendMatcher: SpendMatcher<Self::RuntimeCall>;
         /// Identifies calls as `(pallet_index, call_index)` for filter
-        /// matching. Defaults can use `ScaleCallMatcher` from this pallet.
+        /// matching, and lists the calls that wrapper calls carry. `ScaleCallMatcher` from this
+        /// pallet knows no wrappers: runtimes that allow wrappers in restricted filters must
+        /// implement [`CallMatcher::nested_calls`] (see its documentation).
         type CallMatcher: CallMatcher<Self::RuntimeCall>;
 
         // Considerations: Costs that are "taken from [the caller's] account temporarily in order to
@@ -125,6 +127,21 @@ pub mod pallet {
         /// The maximum duration of a session
         #[pallet::constant]
         type MaxSessionDuration: Get<BlockNumberFor<Self, I>>;
+        /// How many levels of wrapper calls (`utility.batch`, `proxy.proxy`, ...) a transaction
+        /// signed by a restricted device or session key may nest. The outer call is level 0, so
+        /// `0` allows no wrappers at all. Deeper transactions are rejected as a filter
+        /// rejection (`InvalidTransaction::Call`). See [`CallMatcher::nested_calls`].
+        ///
+        /// Suggested for Kreivo: `4`.
+        #[pallet::constant]
+        type MaxNestedCallDepth: Get<u32>;
+        /// How many calls (wrappers included, the outer call excluded) a transaction signed by a
+        /// restricted device or session key may carry. More are rejected as a filter rejection
+        /// (`InvalidTransaction::Call`). See [`CallMatcher::nested_calls`].
+        ///
+        /// Suggested for Kreivo: `64`.
+        #[pallet::constant]
+        type MaxNestedCalls: Get<u32>;
         /// Maximum entries in a device's call/pallet filter.
         #[pallet::constant]
         type MaxFilteredCalls: Get<u32>;
