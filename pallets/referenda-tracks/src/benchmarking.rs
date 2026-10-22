@@ -24,6 +24,7 @@ use crate::{
 };
 use codec::Encode;
 use frame_benchmarking::v2::*;
+use frame_support::traits::EnsureOriginWithArg;
 use frame_system::RawOrigin;
 use pallet_referenda::{Curve, TrackInfo, TrackInfoOf};
 use sp_core::Get;
@@ -165,13 +166,16 @@ mod benchmarks {
     }
 
     #[benchmark]
-    pub fn remove() {
+    pub fn remove() -> Result<(), BenchmarkError> {
         let id = prepare_tracks::<T, I>(true).expect("full prepare returns id");
+        let origin =
+            T::RemoveOrigin::try_successful_origin(&id).map_err(|_| BenchmarkError::Weightless)?;
 
         #[extrinsic_call]
-        _(RawOrigin::Root, id);
+        _(origin as T::RuntimeOrigin, id);
 
         assert_last_event::<T, I>(Event::Removed { id }.into());
+        Ok(())
     }
 
     #[benchmark]

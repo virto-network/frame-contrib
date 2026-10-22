@@ -508,7 +508,7 @@ mod remove_edge_cases {
             pallet_referenda::DecidingCount::<Test, ()>::insert(65536u32, 1u32);
 
             assert_noop!(
-                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(1), 65536),
+                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::root(), 65536),
                 Error::<Test, ()>::CannotRemove
             );
 
@@ -522,14 +522,14 @@ mod remove_edge_cases {
             pallet_referenda::DecidingCount::<Test, ()>::insert(65536u32, 1u32);
 
             assert_noop!(
-                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(1), 65536),
+                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::root(), 65536),
                 Error::<Test, ()>::CannotRemove
             );
 
             pallet_referenda::DecidingCount::<Test, ()>::insert(65536u32, 0u32);
 
             assert_ok!(ReferendaTracks::<Test, ()>::remove(
-                RuntimeOrigin::signed(1),
+                RuntimeOrigin::root(),
                 65536,
             ));
         });
@@ -539,7 +539,7 @@ mod remove_edge_cases {
     fn origin_can_be_reused_after_removal() {
         new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
             assert_ok!(ReferendaTracks::<Test, ()>::remove(
-                RuntimeOrigin::signed(1),
+                RuntimeOrigin::root(),
                 65536,
             ));
 
@@ -645,7 +645,7 @@ mod remove {
     fn it_works() {
         new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
             assert_ok!(ReferendaTracks::<Test, ()>::remove(
-                RuntimeOrigin::signed(1),
+                RuntimeOrigin::root(),
                 65536,
             ));
 
@@ -663,6 +663,50 @@ mod remove {
     }
 
     #[test]
+    fn manager_cannot_remove_its_track() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            // Account 1 manages the group of track 65536, and can update the track...
+            assert_ok!(ReferendaTracks::<Test, ()>::set_decision_deposit(
+                RuntimeOrigin::signed(1),
+                65536,
+                100
+            ));
+
+            // ...but `RemoveOrigin` is root only.
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(1), 65536),
+                BadOrigin
+            );
+            assert!(ReferendaTracks::<Test>::get_track_info(65536).is_some());
+        });
+    }
+
+    #[test]
+    fn manager_can_remove_if_remove_origin_accepts_it() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            ManagerCanRemove::set(true);
+
+            assert_ok!(ReferendaTracks::<Test, ()>::remove(
+                RuntimeOrigin::signed(1),
+                65536,
+            ));
+            assert_eq!(ReferendaTracks::<Test>::get_track_info(65536), None);
+        });
+    }
+
+    #[test]
+    fn manager_of_another_group_cannot_remove_even_if_remove_origin_accepts_managers() {
+        new_test_ext(Some(vec![(TRACK, ORIGIN_SIGNED_1)])).execute_with(|| {
+            ManagerCanRemove::set(true);
+
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::remove(RuntimeOrigin::signed(2), 65536),
+                BadOrigin
+            );
+        });
+    }
+
+    #[test]
     fn cleans_up_origin_mappings() {
         use pallet_referenda::TracksInfo;
 
@@ -674,7 +718,7 @@ mod remove {
             );
 
             assert_ok!(ReferendaTracks::<Test, ()>::remove(
-                RuntimeOrigin::signed(1),
+                RuntimeOrigin::root(),
                 65536,
             ));
 

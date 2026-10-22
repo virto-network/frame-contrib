@@ -312,6 +312,7 @@ impl fc_pallet_referenda_tracks::Config for Test {
     type CreateOrigin = frame_support::traits::AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type GroupManagerCreateOrigin = EnsureRootReturnGroupId;
     type GroupManagerOrigin = EnsureOriginToTrack;
+    type RemoveOrigin = frame_support::traits::AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type RemoveGroupOrigin = frame_support::traits::AsEnsureOriginWithArg<EnsureRoot<AccountId>>;
     type TrackId = TrackId;
     type MaxTracks = MaxTracks;
