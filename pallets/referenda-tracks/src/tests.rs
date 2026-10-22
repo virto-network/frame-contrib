@@ -1514,9 +1514,12 @@ mod group_allocation {
 mod migration {
     use super::*;
     use crate::{
-        migration::{v0, Cursor, CursorKey, MigrateV0ToV1, Phase, TryIntoGroup},
+        migration::{
+            check_key_fits, v0, Cursor, CursorKey, MigrateV0ToV1, Phase, TryIntoGroup, MAX_KEY_LEN,
+        },
         WeightInfo,
     };
+    use codec::MaxEncodedLen;
     use frame_support::{
         migrations::{SteppedMigration, SteppedMigrationError},
         storage::unhashed,
@@ -1710,7 +1713,7 @@ mod migration {
                 let unit = match cursor.as_ref().map(|(phase, _)| phase) {
                     None | Some(Phase::Tracks) => <() as WeightInfo>::migrate_track(),
                     Some(Phase::Origins) => <() as WeightInfo>::migrate_origin(),
-                    Some(Phase::TracksIds) => <() as WeightInfo>::migrate_ids(MaxTracks::get()),
+                    Some(Phase::TracksIds) => Migration::unit(Phase::TracksIds),
                     Some(Phase::Finish) => <() as WeightInfo>::migrate_finalize(),
                 };
                 let mut meter = WeightMeter::with_limit(unit.saturating_mul(2));
@@ -1753,24 +1756,51 @@ mod migration {
         assert_eq!(unlimited, resumed);
     }
 
-    // `MaxTracks` is 65_536, as in Kreivo's community tracks. No unit costs more than what fits
-    // an empty block, here assumed to be a `MaxServiceWeight` of ref_time 330_000_000_000 and
-    // proof size 1_700_000 (the declared weights are placeholders: the benchmark replaces them,
-    // and then this assertion must hold with the measured ones). If a unit did not fit, `step`
-    // would return `InsufficientWeight`.
+    // `MaxTracks` is 65_536 and the id a `u32`, as in Kreivo's community tracks. No unit costs more
+    // than what fits an empty block, here assumed to be a `MaxServiceWeight` of ref_time
+    // 330_000_000_000 and proof size 1_700_000 (Kreivo's is 332_414_064_333 / 1_743_482). If a
+    // unit did not fit, `step` would return `InsufficientWeight`. The unit that reads `TracksIds`
+    // declares the proof size of its type, not the constant that the benchmark measured.
     #[test]
     fn no_unit_exceeds_an_empty_block_with_65536_max_tracks() {
         new_test_ext(None).execute_with(|| {
             MaxTracks::set(65_536);
             let block = Weight::from_parts(330_000_000_000, 1_700_000);
-            for unit in [
-                <() as WeightInfo>::migrate_track(),
-                <() as WeightInfo>::migrate_origin(),
-                <() as WeightInfo>::migrate_ids(MaxTracks::get()),
-                <() as WeightInfo>::migrate_finalize(),
+            for phase in [
+                Phase::Tracks,
+                Phase::Origins,
+                Phase::TracksIds,
+                Phase::Finish,
             ] {
-                assert!(!unit.any_gt(block), "{unit:?} does not fit {block:?}");
+                let unit = Migration::unit(phase);
+                assert!(
+                    unit.all_lt(block),
+                    "{phase:?}: {unit:?} does not fit {block:?}"
+                );
             }
+
+            // 65_536 ids of 4 bytes, and the length prefix (`Compact(65_536)` is 4 bytes).
+            assert_eq!(Migration::tracks_ids_max_size(), 262_148);
+            let ids = Migration::unit(Phase::TracksIds);
+            assert!(ids.proof_size() >= 262_148, "{ids:?}");
+            // On top of the benchmarked weight, which is untouched in ref_time.
+            let benchmarked = <() as WeightInfo>::migrate_ids(MaxTracks::get());
+            assert_eq!(ids.ref_time(), benchmarked.ref_time());
+            assert_eq!(ids.proof_size(), benchmarked.proof_size() + 262_148);
+
+            // The phases that don't read `TracksIds` declare what they were benchmarked at.
+            assert_eq!(
+                Migration::unit(Phase::Tracks),
+                <() as WeightInfo>::migrate_track()
+            );
+            assert_eq!(
+                Migration::unit(Phase::Origins),
+                <() as WeightInfo>::migrate_origin()
+            );
+            assert_eq!(
+                Migration::unit(Phase::Finish),
+                <() as WeightInfo>::migrate_finalize()
+            );
 
             put_v0(&live_ids());
             let mut cursor = None;
@@ -1821,7 +1851,7 @@ mod migration {
                 ),
                 (
                     Some((Phase::TracksIds, CursorKey::default())),
-                    <() as WeightInfo>::migrate_ids(MaxTracks::get()),
+                    Migration::unit(Phase::TracksIds),
                 ),
                 (
                     Some((Phase::Finish, CursorKey::default())),
@@ -1964,6 +1994,77 @@ mod migration {
     #[test]
     fn keys_of_the_cursor_fit() {
         Migration::integrity_test();
+    }
+
+    #[test]
+    fn the_cursor_is_bounded_by_a_wide_origin() {
+        // `Phase` (1 byte), the length prefix of the key (2 bytes) and 1_024 bytes of key.
+        assert_eq!(MAX_KEY_LEN, 1_024);
+        assert_eq!(Cursor::max_encoded_len(), 1_027);
+    }
+
+    // A wide `PalletsOrigin`: Kreivo's encodes up to 604 bytes, which makes the key of an
+    // `OriginToTrackId` entry 32 + 16 + 604 = 652 bytes. It is a dummy type of that width, not
+    // the origin of the mock, which is narrow.
+    #[test]
+    fn a_wide_origin_fits_the_cursor() {
+        check_key_fits::<[u8; 604]>("an origin");
+        // The widest that fits: 32 + 16 + 976 = 1_024.
+        check_key_fits::<[u8; 976]>("an origin");
+    }
+
+    #[test]
+    #[should_panic(expected = "an origin does not fit the cursor of the migration")]
+    fn an_origin_wider_than_the_bound_does_not_pass_integrity_test() {
+        // 32 + 16 + 977 = 1_025.
+        check_key_fits::<[u8; 977]>("an origin");
+    }
+
+    fn raw_tracks_key(len: usize) -> Vec<u8> {
+        let mut key = frame_support::storage::storage_prefix(b"Tracks", b"Tracks").to_vec();
+        key.resize(len, 0xAB);
+        key
+    }
+
+    // A key under the prefix of `Tracks` that is as long as the cursor can hold is not a track of
+    // either version: it is passed over, and the cursor is that key.
+    #[test]
+    fn a_key_as_long_as_the_bound_is_skipped() {
+        new_test_ext(None).execute_with(|| {
+            put_v0(&[]);
+            let key = raw_tracks_key(MAX_KEY_LEN as usize);
+            unhashed::put_raw(&key, &[1, 2, 3]);
+
+            let mut meter = WeightMeter::with_limit(Migration::unit(Phase::Tracks));
+            let cursor = Migration::step(None, &mut meter).expect("it doesn't fail");
+
+            assert_eq!(
+                cursor,
+                Some((Phase::Tracks, key.clone().try_into().unwrap()))
+            );
+            assert_eq!(unhashed::get_raw(&key), Some(vec![1, 2, 3]));
+        });
+    }
+
+    // A key that is one byte longer than the bound cannot be resumed from: the migration fails
+    // (it does not skip it, nor truncate it), with the state as it was.
+    #[test]
+    fn a_key_longer_than_the_bound_fails_safely() {
+        new_test_ext(None).execute_with(|| {
+            put_v0(&[]);
+            let key = raw_tracks_key(MAX_KEY_LEN as usize + 1);
+            unhashed::put_raw(&key, &[1, 2, 3]);
+            let before = root();
+
+            assert_eq!(
+                Migration::step(None, &mut WeightMeter::new()),
+                Err(SteppedMigrationError::Failed)
+            );
+
+            assert_eq!(root(), before);
+            assert_eq!(unhashed::get_raw(&key), Some(vec![1, 2, 3]));
+            assert_eq!(ReferendaTracks::<Test>::on_chain_storage_version(), 0);
+        });
     }
 }
 

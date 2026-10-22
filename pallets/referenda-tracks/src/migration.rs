@@ -58,13 +58,40 @@
 //!
 //! No unit costs more with the number of tracks: the only one that grows with a bound is the
 //! third, which reads and writes the `TracksIds` value at its largest, `MaxTracks` ids. A runtime
-//! has to make sure that it fits one block (see `WeightInfo::migrate_ids`).
+//! has to make sure that it fits one block.
+//!
+//! The declared weight of that unit is `WeightInfo::migrate_ids(MaxTracks)` **plus**, in its proof
+//! size, the maximum encoded length of the `TracksIds` value (`MaxTracks * TrackId::max_encoded_len()`
+//! and the length prefix). The proof size of a generated weight is a constant, measured with
+//! whatever `MaxTracks` the benchmark runtime had, so it is the type that is trusted here and
+//! not the benchmark: a `MaxTracks` of 65 536 with a `u32` id declares 262 148 B more. No other
+//! phase reads `TracksIds` (the `kill` that ends the second one is a blind write), so no other
+//! unit declares it.
 //!
 //! Before every unit it calls `meter.try_consume(unit)`. When the unit does not fit, it stops and
 //! returns `Ok(Some(cursor))`; it returns [`SteppedMigrationError::InsufficientWeight`] only when
 //! not even one unit fits an *empty* meter. Anything odd in the data (an id that does not
 //! convert, a value that does not decode, a conflicting entry) is skipped and logged. The cursor
 //! is a phase and a bounded raw storage key.
+//!
+//! ## The size of the cursor
+//!
+//! The cursor is `(Phase, BoundedVec<u8, ConstU32<MAX_KEY_LEN>>)`: at most 1 027 B once encoded
+//! (`Cursor::max_encoded_len()`), with a [`MAX_KEY_LEN`] of 1 024. `pallet_migrations` checks that
+//! against its `CursorMaxLen`, so **a runtime's `CursorMaxLen` must be at least 1 027** (the
+//! bound is of the type, not of the keys that are in storage).
+//!
+//! [`MigrateV0ToV1::integrity_test`] asserts that every raw key that goes into the cursor fits
+//! [`MAX_KEY_LEN`]: the longest is an `OriginToTrackId` key, which is 48 B plus the largest
+//! encoding of the runtime's `PalletsOrigin`. That is 976 B at most, which covers a wide origin
+//! (Kreivo's encodes up to 604 B, so its key is 652 B). If a runtime's origin is wider, the
+//! assertion fails: the bound is a constant of the pallet, so raise [`MAX_KEY_LEN`] (and the
+//! runtime's `CursorMaxLen` with it) rather than the migration skipping those origins.
+//!
+//! A raw key that does not fit the cursor cannot be resumed from: `step` then fails with
+//! [`SteppedMigrationError::Failed`] (and logs it) **before** it touches the entry, so the state
+//! is as it was. Given `integrity_test` that is unreachable for the keys the pallet writes; it is
+//! only reached by a foreign key under one of the pallet's storage prefixes.
 //!
 //! v0 and v1 `Tracks` entries **share one storage prefix**, so the first phase walks raw keys and
 //! tells the shapes apart by the exact length of the key (and by its hash): a typed iteration
@@ -81,7 +108,7 @@ use codec::{DecodeAll, Encode, FullCodec, MaxEncodedLen};
 use core::{fmt::Debug, marker::PhantomData};
 use frame_support::{
     migrations::{MigrationId, SteppedMigration, SteppedMigrationError},
-    pallet_prelude::{BoundedVec, ConstU32, StorageVersion},
+    pallet_prelude::{BoundedBTreeSet, BoundedVec, ConstU32, StorageVersion},
     storage::unhashed,
     traits::{Get, GetStorageVersion, Incrementable, PalletInfoAccess},
     weights::WeightMeter,
@@ -99,7 +126,11 @@ const PREFIX_LEN: usize = 32;
 const HASH_LEN: usize = 16;
 
 /// The most bytes of a raw storage key that a [`Cursor`] can hold.
-pub const MAX_KEY_LEN: u32 = 256;
+///
+/// It covers the key of an `OriginToTrackId` entry of a runtime whose `PalletsOrigin` encodes up
+/// to 976 B. A runtime's `pallet_migrations::Config::CursorMaxLen` must be at least that plus 3
+/// (see the [module docs][self]).
+pub const MAX_KEY_LEN: u32 = 1024;
 
 /// A raw storage key, bounded.
 pub type CursorKey = BoundedVec<u8, ConstU32<MAX_KEY_LEN>>;
@@ -154,6 +185,20 @@ pub mod v0 {
         StorageMap<Pallet<T, I>, Blake2_128Concat, OldId, TrackInfoOf<T, I>>;
 }
 
+/// Asserts that a raw key of `len` bytes fits the cursor.
+fn check_len(len: usize, what: &str) {
+    assert!(
+        len <= MAX_KEY_LEN as usize,
+        "{what} does not fit the cursor of the migration: raise `MAX_KEY_LEN`"
+    );
+}
+
+/// Asserts that the raw key of a `Blake2_128Concat` map entry, whose key is a `K`, fits the
+/// cursor.
+pub(crate) fn check_key_fits<K: MaxEncodedLen>(what: &str) {
+    check_len(PREFIX_LEN + HASH_LEN + K::max_encoded_len(), what);
+}
+
 /// What an `OriginToTrackId` value is.
 enum OriginValue<Id, OldId> {
     /// Already in the shape of version 1.
@@ -175,26 +220,38 @@ where
     C: Convert<OldId, Option<GroupIdOf<T, I>>>,
 {
     /// The weight of one unit of work in the given phase.
-    fn unit(phase: Phase) -> frame_support::weights::Weight {
+    ///
+    /// The proof size of `TracksIds` comes from its type: the unit of [`Phase::TracksIds`] reads
+    /// and rewrites the whole value, which can take `MaxTracks * TrackId::max_encoded_len()`
+    /// bytes (plus the length prefix), while the proof size of `migrate_ids` is a constant that
+    /// was measured with the `MaxTracks` of the benchmark runtime. It is **added** to the proof
+    /// size of the benchmarked weight, not taken as a maximum with it: that one also accounts for
+    /// the `Tracks` entry and `NextGroupId`, which the value does not. The sum over-counts the
+    /// `TracksIds` that the benchmark did include, about 1 KB.
+    pub(crate) fn unit(phase: Phase) -> frame_support::weights::Weight {
         match phase {
             Phase::Tracks => <T as Config<I>>::WeightInfo::migrate_track(),
             Phase::Origins => <T as Config<I>>::WeightInfo::migrate_origin(),
-            Phase::TracksIds => <T as Config<I>>::WeightInfo::migrate_ids(T::MaxTracks::get()),
+            Phase::TracksIds => {
+                <T as Config<I>>::WeightInfo::migrate_ids(T::MaxTracks::get()).saturating_add(
+                    frame_support::weights::Weight::from_parts(0, Self::tracks_ids_max_size()),
+                )
+            }
             Phase::Finish => <T as Config<I>>::WeightInfo::migrate_finalize(),
         }
+    }
+
+    /// The most bytes that the value of `TracksIds` can take.
+    pub(crate) fn tracks_ids_max_size() -> u64 {
+        <BoundedBTreeSet<TrackIdOf<T, I>, T::MaxTracks> as MaxEncodedLen>::max_encoded_len() as u64
     }
 
     /// Checks that every raw key that the migration stores in its cursor fits it. Call it from
     /// the runtime's `integrity_test`.
     pub fn integrity_test() {
-        assert!(
-            PREFIX_LEN + HASH_LEN + OldId::max_encoded_len() <= MAX_KEY_LEN as usize,
-            "an old track id does not fit the cursor of the migration"
-        );
-        assert!(
-            PREFIX_LEN + HASH_LEN + PalletsOriginOf::<T>::max_encoded_len() <= MAX_KEY_LEN as usize,
-            "an origin does not fit the cursor of the migration"
-        );
+        check_key_fits::<OldId>("an old track id");
+        check_key_fits::<PalletsOriginOf<T>>("an origin");
+        check_len(Self::v1_track_key_len(), "the key of a track");
     }
 
     /// The size of the raw key of a `v0::Tracks` entry.
@@ -229,10 +286,16 @@ where
         sp_io::storage::next_key(&from).filter(|key| key.starts_with(prefix))
     }
 
+    /// The cursor for a raw key. It is taken **before** the entry is touched, so that a key that
+    /// does not fit (it could not be resumed from) fails the migration with the state as it was.
+    /// `integrity_test` makes this unreachable for the keys that the pallet writes.
     fn to_cursor_key(raw: &[u8]) -> Result<CursorKey, SteppedMigrationError> {
         CursorKey::try_from(raw.to_vec()).map_err(|_| {
-            // `integrity_test` makes this unreachable.
-            log::error!(target: LOG_TARGET, "storage key does not fit the cursor");
+            log::error!(
+                target: LOG_TARGET,
+                "a storage key of {} bytes does not fit the cursor (at most {}): failing",
+                raw.len(), MAX_KEY_LEN
+            );
             SteppedMigrationError::Failed
         })
     }
@@ -461,15 +524,17 @@ where
             match phase {
                 Phase::Tracks => match Self::next_key(&Self::tracks_prefix(), &last) {
                     Some(raw_key) => {
+                        let key = Self::to_cursor_key(&raw_key)?;
                         Self::migrate_track(&raw_key);
-                        last = Self::to_cursor_key(&raw_key)?;
+                        last = key;
                     }
                     None => (phase, last) = (Phase::Origins, CursorKey::default()),
                 },
                 Phase::Origins => match Self::next_key(&Self::origins_prefix(), &last) {
                     Some(raw_key) => {
+                        let key = Self::to_cursor_key(&raw_key)?;
                         Self::migrate_origin(&raw_key);
-                        last = Self::to_cursor_key(&raw_key)?;
+                        last = key;
                     }
                     None => {
                         // It holds the `Vec` of version 0: the next phase fills it again.
@@ -479,8 +544,9 @@ where
                 },
                 Phase::TracksIds => match Self::next_key(&Self::tracks_prefix(), &last) {
                     Some(raw_key) => {
+                        let key = Self::to_cursor_key(&raw_key)?;
                         Self::add_to_ids(&raw_key);
-                        last = Self::to_cursor_key(&raw_key)?;
+                        last = key;
                     }
                     None => (phase, last) = (Phase::Finish, CursorKey::default()),
                 },
