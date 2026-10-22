@@ -1,8 +1,6 @@
 use super::*;
 use alloc::vec::Vec;
 
-type InventoryIdTuple<T, I> = (<T as Config<I>>::MerchantId, <T as Config<I>>::InventoryId);
-
 mod inventory {
     use super::*;
     use nonfungibles_v2::{Create, InspectEnumerable, Mutate};
