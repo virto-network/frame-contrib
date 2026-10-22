@@ -126,13 +126,33 @@ mod benchmarks {
 
     #[benchmark]
     pub fn new_group_with_track() {
-        prepare_tracks::<T, I>(false);
-
+        // The worst case of the allocator: every group from the first one up to the last-but-one
+        // that fits has a track, so it skips as many as `MaxTracks` allows.
         let track = track_info_of::<T, I>();
+        let mut group = GroupIdOf::<T, I>::default();
+        for i in 0..max_tracks::<T, I>() - 1 {
+            group = frame_support::traits::Incrementable::increment(&group).expect("fits a group");
+            let id = T::TrackId::combine(group.clone(), SubTrackIdOf::<T, I>::default());
+            let origin: PalletsOriginOf<T> =
+                RawOrigin::Signed(frame_benchmarking::account("origin", i, 0)).into();
+            TracksIds::<T, I>::mutate(|ids| {
+                ids.try_insert(id).expect("within MaxTracks");
+            });
+            Tracks::<T, I>::insert(
+                group.clone(),
+                SubTrackIdOf::<T, I>::default(),
+                track.clone(),
+            );
+            OriginToTrackId::<T, I>::insert(origin.clone(), id);
+            TrackIdToOrigin::<T, I>::insert(id, origin);
+        }
+
         let origin: PalletsOriginOf<T> = RawOrigin::Signed(whitelisted_caller()).into();
 
         #[extrinsic_call]
         _(RawOrigin::Root, origin, track);
+
+        assert_eq!(TracksIds::<T, I>::get().len() as u32, max_tracks::<T, I>());
     }
 
     #[benchmark]

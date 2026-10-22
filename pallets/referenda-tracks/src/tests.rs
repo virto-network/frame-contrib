@@ -1426,9 +1426,29 @@ mod group_allocation {
         });
     }
 
-    // Groups 1..=255 all have a track: the next allocation fails instead of looping forever.
+    // Every group has a track: the allocator ends instead of looping, and fails.
     #[test]
-    fn allocation_fails_when_every_group_is_taken() {
+    fn allocation_fails_when_it_runs_out_of_groups() {
+        new_test_ext(None).execute_with(|| {
+            NextGroupId::<Test, ()>::put(u16::MAX - 2);
+            explicit(u16::MAX - 1, 0, 100);
+            explicit(u16::MAX, 0, 101);
+            assert_eq!(NextGroupId::<Test, ()>::get(), u16::MAX);
+
+            assert_noop!(
+                ReferendaTracks::<Test, ()>::new_group_with_track(
+                    RuntimeOrigin::root(),
+                    origin(5000),
+                    TRACK,
+                ),
+                Error::<Test, ()>::MaxTracksExceeded
+            );
+        });
+    }
+
+    // Groups 1..=255 all have a track, which is `MaxTracks`: the next one doesn't fit.
+    #[test]
+    fn allocation_fails_when_tracks_are_full() {
         new_test_ext(None).execute_with(|| {
             for group in 1..=u8::MAX as u16 {
                 explicit(group, 0, 1000 + group as u64);
@@ -1587,12 +1607,24 @@ mod migration {
             #[cfg(feature = "try-runtime")]
             Migration::post_upgrade(state).expect("post_upgrade");
 
-            // The group-first model works on it: a sub-track is added to a group afterwards.
+            // The group-first model works on it: a sub-track is added afterwards to group 1
+            // (account 2 manages it, and origin 10 is one of its origins). Sub-tracks start at 1,
+            // and the migrated track stays the first one.
             assert_ok!(ReferendaTracks::<Test, ()>::add_sub_track(
-                RuntimeOrigin::root(),
-                OriginCaller::system(RawOrigin::Signed(1)),
+                RuntimeOrigin::signed(2),
+                OriginCaller::system(RawOrigin::Signed(10)),
                 TRACK,
             ));
+            assert_eq!(
+                crate::OriginToTrackId::<Test, ()>::get(OriginCaller::system(RawOrigin::Signed(
+                    10
+                ))),
+                Some(u32::combine(1, 1))
+            );
+            assert_eq!(
+                ReferendaTracks::<Test>::get_track_info(new_id(1)),
+                Some(info_of(1))
+            );
         });
     }
 
