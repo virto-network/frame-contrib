@@ -24,7 +24,7 @@ use crate::{
 };
 use codec::Encode;
 use frame_benchmarking::v2::*;
-use frame_support::traits::EnsureOriginWithArg;
+use frame_support::traits::{EnsureOriginWithArg, Incrementable};
 use frame_system::RawOrigin;
 use pallet_referenda::{Curve, TrackInfo, TrackInfoOf};
 use sp_core::Get;
@@ -102,6 +102,55 @@ fn prepare_tracks<T: Config<I>, I: 'static>(full: bool) -> Option<TrackIdOf<T, I
     }
 }
 
+/// Occupies groups with one track each, to build the worst case of the group allocator:
+/// the extrinsic has to skip every one of them.
+///
+/// The groups are taken from the allocator itself, so the number of them is bounded by what the
+/// types allow, not by `MaxTracks` alone: the group half of a `TrackId` may hold fewer than
+/// `MaxTracks` groups (a `u32` id has `u16` groups, and the allocator never hands out the group
+/// `0`). The allocator fills until it reaches `MaxTracks - 1` groups (the last track is for the
+/// extrinsic) or until just one group is left, whichever comes first.
+///
+/// Afterwards `NextGroupId` is back where it was, as when the runtime chose those groups itself
+/// (see [`Pallet::do_insert`]): the allocator starts over and skips all of them.
+///
+/// Returns the number of groups occupied, which is also the number of tracks. It assumes that
+/// there are no tracks yet.
+fn prefill_groups<T: Config<I>, I: 'static>() -> u32 {
+    let track = track_info_of::<T, I>();
+    let first = NextGroupId::<T, I>::get();
+    let mut ids = alloc::collections::BTreeSet::new();
+
+    while (ids.len() as u32) < max_tracks::<T, I>() - 1 {
+        // Peek without consuming: two groups after the last one handed out means that, once this
+        // one is taken, there is still one left.
+        if NextGroupId::<T, I>::get()
+            .increment()
+            .and_then(|group| group.increment())
+            .is_none()
+        {
+            break;
+        }
+
+        let id = ReferendaTracks::<T, I>::next_group_track_id().expect("peeked: a group is left");
+        let (group, sub) = id.split();
+        let origin: PalletsOriginOf<T> =
+            RawOrigin::Signed(frame_benchmarking::account("origin", ids.len() as u32, 0)).into();
+        Tracks::<T, I>::insert(group, sub, track.clone());
+        OriginToTrackId::<T, I>::insert(origin.clone(), id);
+        TrackIdToOrigin::<T, I>::insert(id, origin);
+        ids.insert(id);
+    }
+
+    let prefilled = ids.len() as u32;
+    // Written once: inserting id by id would decode and encode the whole set each time.
+    TracksIds::<T, I>::put(
+        frame_support::BoundedBTreeSet::try_from(ids).expect("within MaxTracks"),
+    );
+    NextGroupId::<T, I>::put(first);
+    prefilled
+}
+
 /// Converts every old id to the first group. The benchmarks measure storage accesses, not values.
 struct AnyGroup<T, I>(core::marker::PhantomData<(T, I)>);
 impl<T: Config<I>, I: 'static> sp_runtime::traits::Convert<u16, Option<GroupIdOf<T, I>>>
@@ -132,31 +181,20 @@ mod benchmarks {
         let caller = T::CreateOrigin::try_successful_origin(&origin)
             .map_err(|_| BenchmarkError::Weightless)?;
 
-        // The worst case of the allocator: every group from the first one up to the last-but-one
-        // that fits has a track, so it skips as many as `MaxTracks` allows.
+        // The worst case of the allocator: it skips as many groups with a track as it can,
+        // which is `MaxTracks - 1` if the groups are that many, or all but one if they are not.
+        let prefilled = prefill_groups::<T, I>();
         let track = track_info_of::<T, I>();
-        let mut group = GroupIdOf::<T, I>::default();
-        for i in 0..max_tracks::<T, I>() - 1 {
-            group = frame_support::traits::Incrementable::increment(&group).expect("fits a group");
-            let id = T::TrackId::combine(group.clone(), SubTrackIdOf::<T, I>::default());
-            let origin: PalletsOriginOf<T> =
-                RawOrigin::Signed(frame_benchmarking::account("origin", i, 0)).into();
-            TracksIds::<T, I>::mutate(|ids| {
-                ids.try_insert(id).expect("within MaxTracks");
-            });
-            Tracks::<T, I>::insert(
-                group.clone(),
-                SubTrackIdOf::<T, I>::default(),
-                track.clone(),
-            );
-            OriginToTrackId::<T, I>::insert(origin.clone(), id);
-            TrackIdToOrigin::<T, I>::insert(id, origin);
-        }
 
+        // Not `Weightless`: the origin is available, so the call has to be dispatched.
         #[extrinsic_call]
         _(caller as T::RuntimeOrigin, origin, track);
 
-        assert_eq!(TracksIds::<T, I>::get().len() as u32, max_tracks::<T, I>());
+        assert_eq!(
+            TracksIds::<T, I>::get().len() as u32,
+            prefilled + 1,
+            "the extrinsic creates exactly one track"
+        );
         Ok(())
     }
 
@@ -273,14 +311,21 @@ mod benchmarks {
             .expect("at least one track");
         let (group, _) = id.split();
 
-        for i in 1..n {
-            let sub_id = ReferendaTracks::<T, I>::next_sub_track_id(group.clone())
-                .expect("sub-track id available");
+        // The sub-tracks of a group can be fewer than `MaxTracks` (a `u32` id has `u16` of them,
+        // and the first one is the track of the group), so `n` is clamped to what the type
+        // allows: the group is filled until the allocator has no sub-track left.
+        let mut count = 1;
+        while count < n {
+            let Some(sub_id) = ReferendaTracks::<T, I>::next_sub_track_id(group.clone()) else {
+                break;
+            };
             let sub_origin: PalletsOriginOf<T> =
-                RawOrigin::Signed(account("sub_track", i, 0)).into();
+                RawOrigin::Signed(account("sub_track", count, 0)).into();
             ReferendaTracks::<T, I>::do_insert(sub_id, track.clone(), sub_origin)
                 .expect("inserts sub-track");
+            count += 1;
         }
+        let n = count;
         assert_eq!(Tracks::<T, I>::iter_key_prefix(&group).count() as u32, n);
 
         let caller = T::RemoveGroupOrigin::try_successful_origin(&group)
@@ -458,6 +503,81 @@ mod benchmarks {
                 CreateIsNever::set(false);
                 assert!(Pallet::<Test>::test_bench_by_name(b"new_group_with_track").is_ok());
             });
+        }
+    }
+
+    /// Tests for runtimes whose group space is smaller than `MaxTracks`.
+    #[cfg(test)]
+    mod group_space_tests {
+        use super::*;
+        use crate::{
+            mock::{self, new_test_ext},
+            mock_small,
+        };
+
+        const NAMES: [&[u8]; 12] = [
+            b"new_group_with_track",
+            b"add_sub_track",
+            b"remove",
+            b"set_decision_deposit",
+            b"set_periods",
+            b"set_curves",
+            b"remove_group",
+            b"set_max_deciding",
+            b"migrate_track",
+            b"migrate_origin",
+            b"migrate_ids",
+            b"migrate_finalize",
+        ];
+
+        /// `MaxTracks` fits in the groups: all but the last track are prefilled.
+        #[test]
+        fn prefill_fills_max_tracks_minus_one() {
+            new_test_ext(None).execute_with(|| {
+                assert_eq!(prefill_groups::<mock::Test, ()>(), 254);
+                assert_eq!(TracksIds::<mock::Test>::get().len(), 254);
+                assert_eq!(NextGroupId::<mock::Test>::get(), 0);
+            });
+        }
+
+        /// The Kreivo case: `MaxTracks` is `65_536` and the groups are `u16`, `65_535` of them
+        /// allocatable. One is left for the extrinsic.
+        #[test]
+        fn u16_groups_with_65_536_max_tracks() {
+            new_test_ext(None).execute_with(|| {
+                mock::MaxTracks::set(65_536);
+                assert_eq!(prefill_groups::<mock::Test, ()>(), 65_534);
+            });
+            new_test_ext(None).execute_with(|| {
+                mock::MaxTracks::set(65_536);
+                assert!(Pallet::<mock::Test>::test_bench_by_name(b"new_group_with_track").is_ok());
+            });
+        }
+
+        /// `MaxTracks` is `300` and the groups are `u8`, `255` of them allocatable.
+        #[test]
+        fn u8_groups_with_more_max_tracks() {
+            mock_small::new_test_ext().execute_with(|| {
+                assert_eq!(prefill_groups::<mock_small::Test, ()>(), 254);
+                assert_eq!(NextGroupId::<mock_small::Test>::get(), 0);
+                // The one that is left is for the extrinsic.
+                let id = ReferendaTracks::<mock_small::Test>::next_group_track_id();
+                assert_eq!(id.map(|id| id.split().0), Some(255));
+                assert!(ReferendaTracks::<mock_small::Test>::next_group_track_id().is_none());
+            });
+        }
+
+        #[test]
+        fn every_benchmark_runs_with_u8_groups() {
+            for name in NAMES {
+                mock_small::new_test_ext().execute_with(|| {
+                    assert!(
+                        Pallet::<mock_small::Test>::test_bench_by_name(name).is_ok(),
+                        "{}",
+                        core::str::from_utf8(name).unwrap()
+                    );
+                });
+            }
         }
     }
 
