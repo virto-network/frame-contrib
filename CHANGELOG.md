@@ -10,6 +10,69 @@ with one extra rule: every new Polkadot SDK line is a major release.
 
 ## [Unreleased]
 
+## [3.0.0-pre.3](https://github.com/virto-network/frame-contrib/releases/tag/v3.0.0-pre.3) - 2026-10-23
+
+### ⚠ Breaking changes
+
+- *(fc-pallet-referenda-tracks)* Give track removal its own origin ([#158](https://github.com/virto-network/frame-contrib/pull/158))
+- *(fc-pallet-referenda-tracks)* Stepped MigrateV0ToV1 that keeps the old id as the group ([#156](https://github.com/virto-network/frame-contrib/pull/156))
+- *(fc-traits-memberships)* Remove NonFungiblesMemberships ([#153](https://github.com/virto-network/frame-contrib/pull/153))
+- *(fc-pallet-pass)* Restore the unfiltered calls, backfill device filters and add set_device_filter ([#155](https://github.com/virto-network/frame-contrib/pull/155))
+- *(deps)* Update to polkadot-sdk `stable2606-2` ([#78](https://github.com/virto-network/frame-contrib/pull/78))
+
+### Added
+
+- *(fc-pallet-communities)* Relate poll classes to communities (W3b) ([#157](https://github.com/virto-network/frame-contrib/pull/157))
+- *(fc-pallet-usage-subscription)* Resolve an account's community for fc-pallet-fees ([#154](https://github.com/virto-network/frame-contrib/pull/154))
+- *(fc-pallet-usage-subscription)* Sales capacity ([#151](https://github.com/virto-network/frame-contrib/pull/151))
+- *(fc-pallet-usage-subscription)* Benchmarks and payment-step guide ([#149](https://github.com/virto-network/frame-contrib/pull/149))
+- *(fc-pallet-usage-subscription)* View functions ([#148](https://github.com/virto-network/frame-contrib/pull/148))
+- *(fc-pallet-usage-subscription)* The payment step ([#147](https://github.com/virto-network/frame-contrib/pull/147))
+- *(fc-pallet-usage-subscription)* Trials, conversions and amendments ([#146](https://github.com/virto-network/frame-contrib/pull/146))
+- *(fc-pallet-usage-subscription)* Offers and contracts ([#145](https://github.com/virto-network/frame-contrib/pull/145))
+- *(fc-pallet-communities)* Transfer within the group ([#144](https://github.com/virto-network/frame-contrib/pull/144))
+- *(fc-traits-memberships)* Group collection memberships ([#143](https://github.com/virto-network/frame-contrib/pull/143))
+- *(fc-pallet-listings)* Recurring subscriptions ([#142](https://github.com/virto-network/frame-contrib/pull/142))
+- *(fc-traits-listings)* Subscription types and traits ([#141](https://github.com/virto-network/frame-contrib/pull/141))
+- *(fc-pallet-payments)* Direct payments ([#140](https://github.com/virto-network/frame-contrib/pull/140))
+- *(fc-traits-authn)* Let authenticators report their weight components ([#112](https://github.com/virto-network/frame-contrib/pull/112))
+- *(fc-traits-authn)* Bind authenticator verification weights through the runtime ([#102](https://github.com/virto-network/frame-contrib/pull/102))
+- Add a kitchensink runtime for benchmarks ([#96](https://github.com/virto-network/frame-contrib/pull/96))
+- *(fc-pallet-pass)* Move benchmark helpers to the authenticators ([#91](https://github.com/virto-network/frame-contrib/pull/91))
+- *(fc-pallet-pass)* Add `FirstItemsAreFree<N, C>` ([#82](https://github.com/virto-network/frame-contrib/pull/82))
+- Custom fees pallet with protocol and community fee layers ([#70](https://github.com/virto-network/frame-contrib/pull/70))
+- Update to polkadot-sdk `stable2603` ([#73](https://github.com/virto-network/frame-contrib/pull/73))
+- *(pallet-pass)* Per-device call filters ([#71](https://github.com/virto-network/frame-contrib/pull/71))
+- Refereda multi tracks ([#68](https://github.com/virto-network/frame-contrib/pull/68))
+
+### Fixed
+
+- *(fc-pallet-referenda-tracks)* Build the new_group_with_track worst case from the group space ([#163](https://github.com/virto-network/frame-contrib/pull/163))
+- *(fc-pallet-pass)* Charge FirstItemsAreFree on the same footprint in new and update ([#162](https://github.com/virto-network/frame-contrib/pull/162))
+- *(fc-pallet-referenda-tracks)* Take the benchmark origins from the Config ([#161](https://github.com/virto-network/frame-contrib/pull/161))
+- *(fc-pallet-pass)* Check the calls that wrapper calls carry against the device filter ([#159](https://github.com/virto-network/frame-contrib/pull/159))
+- *(fc-pallet-referenda-tracks)* Bound the proof size and the cursor of MigrateV0ToV1 by type ([#160](https://github.com/virto-network/frame-contrib/pull/160))
+- *(fc-pallet-gas-transaction-payment, fc-traits-gas-tank)* Read-only check, agreeing phases, metered weight ([#138](https://github.com/virto-network/frame-contrib/pull/138))
+- *(fc-pallet-communities)* Only a community's admin can set its decision method ([#115](https://github.com/virto-network/frame-contrib/pull/115))
+- *(fc-pallet-referenda-tracks)* Give the remove_group benchmark its component ([#101](https://github.com/virto-network/frame-contrib/pull/101))
+- *(ci)* Tell release-plz the template pallet isn't published ([#94](https://github.com/virto-network/frame-contrib/pull/94))
+- *(fc-pallet-pass)* Charge authenticator-reported verification weights ([#87](https://github.com/virto-network/frame-contrib/pull/87))
+- *(fc-pallet-pass)* Charge `PassAuthenticate` only for the branch it takes ([#86](https://github.com/virto-network/frame-contrib/pull/86))
+
+### Performance
+
+- *(fc-pallet-pass)* Clear the authentication context every block, not every transaction ([#88](https://github.com/virto-network/frame-contrib/pull/88))
+
+### Documentation
+
+- *(fc-pallet-gas-transaction-payment)* Integration guide ([#139](https://github.com/virto-network/frame-contrib/pull/139))
+
+### Other
+
+- *(kitchensink)* Wire usage subscriptions for benchmarks ([#150](https://github.com/virto-network/frame-contrib/pull/150))
+- Automate SDK upgrades, lockstep versioning and crates.io releases ([#77](https://github.com/virto-network/frame-contrib/pull/77))
+- Gate frame-support behind runtime feature ([#72](https://github.com/virto-network/frame-contrib/pull/72))
+
 ## [3.0.0-pre.2](https://github.com/virto-network/frame-contrib/releases/tag/v3.0.0-pre.2) - 2026-09-22
 
 ### ⚠ Breaking changes
