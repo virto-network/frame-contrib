@@ -74,6 +74,8 @@ pub mod weights;
 #[cfg(test)]
 mod mock;
 #[cfg(test)]
+mod mock_small;
+#[cfg(test)]
 mod tests;
 
 use codec::DecodeWithMemTracking;
@@ -96,6 +98,7 @@ pub mod pallet {
 
     #[cfg(feature = "runtime-benchmarks")]
     pub trait BenchmarkHelper<T: Config<I>, I: 'static = ()> {
+        /// The `id`-th track id. Must be different for each `id` below `MaxTracks`.
         fn track_id(id: u32) -> TrackIdOf<T, I>;
     }
 
