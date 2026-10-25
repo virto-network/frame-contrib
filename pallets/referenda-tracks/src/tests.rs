@@ -1337,6 +1337,164 @@ mod remove_group {
     }
 }
 
+/// `remove_group` rewrites `TracksIds` once for the whole group, not once per sub-track.
+mod remove_group_cost {
+    use super::*;
+    use crate::{NextSubTrackId, OriginToTrackId, TrackIdToOrigin, Tracks, TracksIds};
+    use alloc::{collections::BTreeSet, vec::Vec};
+
+    const GROUP: u16 = 1;
+    const OTHER_GROUP: u16 = 2;
+    const SUB_TRACKS: u16 = 2_000;
+    const FILLER: u32 = 20_000;
+
+    fn origin_of(id: u32) -> OriginCaller {
+        OriginCaller::system(RawOrigin::Signed(1_000_000 + id as u64))
+    }
+
+    fn put_track(id: u32) {
+        let (group, sub) = id.split();
+        Tracks::<Test, ()>::insert(group, sub, TRACK);
+        OriginToTrackId::<Test, ()>::insert(origin_of(id), id);
+        TrackIdToOrigin::<Test, ()>::insert(id, origin_of(id));
+    }
+
+    /// `GROUP` has `SUB_TRACKS` tracks, `OTHER_GROUP` has three, and `TracksIds` holds those and
+    /// `FILLER` more (ids of tracks that are not stored: it is the size of the value that counts).
+    fn big_state() {
+        MaxTracks::set(65_536);
+        let mut ids = BTreeSet::new();
+        for sub in 0..SUB_TRACKS {
+            let id = u32::combine(GROUP, sub);
+            put_track(id);
+            ids.insert(id);
+        }
+        NextSubTrackId::<Test, ()>::insert(GROUP, SUB_TRACKS - 1);
+        for sub in 0..3 {
+            let id = u32::combine(OTHER_GROUP, sub);
+            put_track(id);
+            ids.insert(id);
+        }
+        NextSubTrackId::<Test, ()>::insert(OTHER_GROUP, 2);
+        for i in 0..FILLER {
+            ids.insert(u32::combine(100 + (i / 1_000) as u16, (i % 1_000) as u16));
+        }
+        TracksIds::<Test, ()>::put(frame_support::BoundedBTreeSet::try_from(ids).unwrap());
+    }
+
+    /// The way that `do_remove_group` was written before: `TracksIds` is mutated once per
+    /// sub-track.
+    fn reference_remove_group(
+        group: u16,
+        max_tracks: u32,
+    ) -> frame_support::dispatch::DispatchResult {
+        let sub_tracks: Vec<u16> = Tracks::<Test, ()>::iter_key_prefix(group).collect();
+        frame_support::ensure!(
+            sub_tracks.len() as u32 <= max_tracks,
+            Error::<Test, ()>::TooManyTracks
+        );
+        frame_support::ensure!(!sub_tracks.is_empty(), Error::<Test, ()>::GroupNotFound);
+        let count = sub_tracks.len() as u32;
+        for sub in sub_tracks {
+            let id = u32::combine(group, sub);
+            Tracks::<Test, ()>::remove(group, sub);
+            if let Some(origin) = TrackIdToOrigin::<Test, ()>::take(id) {
+                OriginToTrackId::<Test, ()>::remove(&origin);
+            }
+            TracksIds::<Test, ()>::mutate(|ids| {
+                ids.remove(&id);
+            });
+        }
+        NextSubTrackId::<Test, ()>::remove(group);
+        ReferendaTracks::<Test, ()>::deposit_event(Event::GroupRemoved {
+            group,
+            tracks_removed: count,
+        });
+        Ok(())
+    }
+
+    /// Every key and value in storage.
+    fn dump() -> Vec<(Vec<u8>, Vec<u8>)> {
+        let mut all = Vec::new();
+        let mut key = Vec::new();
+        while let Some(next) = sp_io::storage::next_key(&key) {
+            let value = sp_io::storage::get(&next)
+                .map(|v| v.to_vec())
+                .unwrap_or_default();
+            all.push((next.clone(), value));
+            key = next;
+        }
+        all
+    }
+
+    #[test]
+    fn leaves_the_same_state_as_removing_one_by_one() {
+        let expected = new_test_ext(None).execute_with(|| {
+            big_state();
+            assert_ok!(reference_remove_group(GROUP, SUB_TRACKS as u32));
+            dump()
+        });
+        let (actual, ids) = new_test_ext(None).execute_with(|| {
+            big_state();
+            assert_ok!(ReferendaTracks::<Test, ()>::remove_group(
+                RuntimeOrigin::root(),
+                GROUP,
+                SUB_TRACKS as u32,
+            ));
+            (dump(), TracksIds::<Test, ()>::get())
+        });
+
+        assert!(
+            expected == actual,
+            "the storage differs from the one-by-one removal"
+        );
+        // And not trivially so: the group is gone, the rest is not.
+        assert_eq!(ids.len() as u32, 3 + FILLER);
+        assert!(ids.iter().all(|id| id.split().0 != GROUP));
+        new_test_ext(None).execute_with(|| {
+            big_state();
+            assert_ok!(ReferendaTracks::<Test, ()>::remove_group(
+                RuntimeOrigin::root(),
+                GROUP,
+                SUB_TRACKS as u32,
+            ));
+            assert_eq!(Tracks::<Test, ()>::iter_key_prefix(GROUP).count(), 0);
+            assert_eq!(Tracks::<Test, ()>::iter_key_prefix(OTHER_GROUP).count(), 3);
+            assert_eq!(NextSubTrackId::<Test, ()>::get(OTHER_GROUP), 2);
+            assert!(!OriginToTrackId::<Test, ()>::contains_key(origin_of(
+                u32::combine(GROUP, 7)
+            )));
+            assert!(OriginToTrackId::<Test, ()>::contains_key(origin_of(
+                u32::combine(OTHER_GROUP, 1)
+            )));
+        });
+    }
+
+    /// `TracksIds` is decoded once per rewrite and the bound is read once per decode, so the
+    /// reads of `MaxTracks` count the rewrites. They do not grow with the sub-tracks.
+    #[test]
+    fn rewrites_the_ids_once() {
+        new_test_ext(None).execute_with(|| {
+            big_state();
+            MaxTracks::reset_reads();
+            assert_ok!(reference_remove_group(GROUP, SUB_TRACKS as u32));
+            // The counter sees what it has to: one rewrite per sub-track.
+            assert!(MaxTracks::reads() >= SUB_TRACKS as u32);
+        });
+        new_test_ext(None).execute_with(|| {
+            big_state();
+            MaxTracks::reset_reads();
+            assert_ok!(ReferendaTracks::<Test, ()>::remove_group(
+                RuntimeOrigin::root(),
+                GROUP,
+                SUB_TRACKS as u32,
+            ));
+            // One decode of `TracksIds`, and one read of the bound for the capacity.
+            assert!(MaxTracks::reads() <= 3, "{}", MaxTracks::reads());
+        });
+    }
+}
+
 mod track_for {
     use super::*;
     use pallet_referenda::TracksInfo;

@@ -128,8 +128,39 @@ impl<M: Morph<AccountId>> EnsureOriginWithArg<RuntimeOrigin, AccountId> for Ensu
     }
 }
 
+thread_local! {
+    static MAX_TRACKS: core::cell::Cell<u32> = const { core::cell::Cell::new(u8::MAX as u32) };
+    static MAX_TRACKS_READS: core::cell::Cell<u32> = const { core::cell::Cell::new(0) };
+}
+
+/// `MaxTracks`, which a test can `set`, and which counts how many times it is read. Decoding a
+/// `BoundedBTreeSet` reads its bound once, so the count is a measure of the times that
+/// `TracksIds` is decoded, which is what a storage write of the whole value costs.
+pub struct MaxTracks;
+impl MaxTracks {
+    pub fn set(value: u32) {
+        MAX_TRACKS.with(|max| max.set(value));
+    }
+    /// The value, without counting the read.
+    pub fn get() -> u32 {
+        MAX_TRACKS.with(|max| max.get())
+    }
+    /// The reads since the last call to `reset_reads`.
+    pub fn reads() -> u32 {
+        MAX_TRACKS_READS.with(|reads| reads.get())
+    }
+    pub fn reset_reads() {
+        MAX_TRACKS_READS.with(|reads| reads.set(0));
+    }
+}
+impl frame_support::traits::Get<u32> for MaxTracks {
+    fn get() -> u32 {
+        MAX_TRACKS_READS.with(|reads| reads.set(reads.get() + 1));
+        MAX_TRACKS.with(|max| max.get())
+    }
+}
+
 parameter_types! {
-    pub static MaxTracks: u32 = u8::MAX as u32;
     pub static Admins: Vec<AccountId> = vec![1, 2, 3];
 }
 morph_types! {
