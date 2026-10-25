@@ -1495,6 +1495,103 @@ mod remove_group_cost {
     }
 }
 
+/// `TracksInfo::info` looks the track up, it does not scan the `Tracks` map.
+mod info {
+    use super::*;
+    use crate::{TrackIdToOrigin, Tracks};
+    use pallet_referenda::TracksInfo;
+    use std::borrow::Cow;
+
+    type Info = ReferendaTracks<Test, ()>;
+
+    /// What the default of `TracksInfo::info` returns: a scan of `tracks()`.
+    fn scanned(id: u32) -> Option<Cow<'static, pallet_referenda::TrackInfoOf<Test, ()>>> {
+        <Info as TracksInfo<u64, u64>>::tracks()
+            .find(|track| track.id == id)
+            .map(|track| Cow::Owned(track.into_owned().info))
+    }
+
+    fn put_track(id: u32, max_deciding: u32) {
+        let (group, sub) = id.split();
+        let mut info = TRACK;
+        info.max_deciding = max_deciding;
+        Tracks::<Test, ()>::insert(group, sub, info);
+    }
+
+    #[test]
+    fn matches_scanning_the_tracks() {
+        new_test_ext(None).execute_with(|| {
+            MaxTracks::set(65_536);
+            // Each track is told apart by its `max_deciding`.
+            put_track(u32::combine(0, 0), 1);
+            put_track(u32::combine(0, 3), 2);
+            put_track(u32::combine(7, 0), 3);
+            put_track(u32::combine(7, 9), 4);
+
+            for id in [
+                u32::combine(0, 0),
+                u32::combine(0, 3),
+                u32::combine(7, 0),
+                u32::combine(7, 9),
+            ] {
+                let info = <Info as TracksInfo<u64, u64>>::info(id);
+                assert!(info.is_some());
+                assert_eq!(info, scanned(id));
+            }
+            assert_eq!(
+                <Info as TracksInfo<u64, u64>>::info(u32::combine(7, 9))
+                    .map(|info| info.max_deciding),
+                Some(4)
+            );
+
+            // A group that does not exist.
+            assert_eq!(
+                <Info as TracksInfo<u64, u64>>::info(u32::combine(5, 0)),
+                None
+            );
+            assert_eq!(scanned(u32::combine(5, 0)), None);
+            // A group that exists, with a sub-track that does not.
+            assert_eq!(
+                <Info as TracksInfo<u64, u64>>::info(u32::combine(7, 1)),
+                None
+            );
+            assert_eq!(scanned(u32::combine(7, 1)), None);
+            // An origin is not needed to have a track.
+            assert!(!TrackIdToOrigin::<Test, ()>::contains_key(u32::combine(
+                7, 9
+            )));
+        });
+    }
+
+    /// With the tracks of many groups in storage, `info` reads a bounded number of trie nodes,
+    /// and the scan reads all of them: the storage proof of the call is what tells.
+    #[test]
+    fn reads_a_constant_number_of_nodes() {
+        let mut ext = new_test_ext(None);
+        ext.execute_with(|| {
+            MaxTracks::set(65_536);
+            for i in 0..5_000u32 {
+                put_track(u32::combine(1 + (i / 100) as u16, (i % 100) as u16), 1 + i);
+            }
+        });
+        // The proof is of what the backend serves, so the tracks are committed to it.
+        ext.commit_all().unwrap();
+
+        let id = u32::combine(30, 42);
+        let (found, proof_of_info) = ext.execute_and_prove(|| {
+            <Info as TracksInfo<u64, u64>>::info(id).map(|info| info.max_deciding)
+        });
+        assert_eq!(found, Some(1 + 30 * 100 - 100 + 42));
+        let (found, proof_of_scan) = ext.execute_and_prove(|| scanned(id).is_some());
+        assert!(found);
+
+        let (info_nodes, scan_nodes) = (proof_of_info.len(), proof_of_scan.len());
+        std::println!("trie nodes: info {info_nodes}, scan {scan_nodes}");
+        assert!(info_nodes < 20, "{info_nodes}");
+        assert!(scan_nodes > 1_000, "{scan_nodes}");
+    }
+}
+
 mod track_for {
     use super::*;
     use pallet_referenda::TracksInfo;

@@ -31,6 +31,12 @@ impl<T: Config<I>, I: 'static> pallet_referenda::TracksInfo<BalanceOf<T, I>, Blo
     fn track_ids() -> impl Iterator<Item = Self::Id> {
         TracksIds::<T, I>::get().into_iter()
     }
+
+    /// A direct lookup of the track. The default scans `tracks()`, which iterates and decodes
+    /// the whole `Tracks` map for each referendum operation that reads the info of a track.
+    fn info(id: Self::Id) -> Option<Cow<'static, TrackInfoOf<T, I>>> {
+        Self::get_track_info(id).map(Cow::Owned)
+    }
 }
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
