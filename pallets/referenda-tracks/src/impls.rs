@@ -31,6 +31,12 @@ impl<T: Config<I>, I: 'static> pallet_referenda::TracksInfo<BalanceOf<T, I>, Blo
     fn track_ids() -> impl Iterator<Item = Self::Id> {
         TracksIds::<T, I>::get().into_iter()
     }
+
+    /// A direct lookup of the track. The default scans `tracks()`, which iterates and decodes
+    /// the whole `Tracks` map for each referendum operation that reads the info of a track.
+    fn info(id: Self::Id) -> Option<Cow<'static, TrackInfoOf<T, I>>> {
+        Self::get_track_info(id).map(Cow::Owned)
+    }
 }
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
@@ -257,18 +263,26 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             );
         }
 
-        // Remove all tracks in the group
+        // Remove all tracks in the group. `TracksIds` is a single value that holds up to
+        // `MaxTracks` ids, and every mutation of it decodes and encodes all of them: it is
+        // mutated once, for the whole group, and not once per sub-track (which would cost
+        // `O(n * MaxTracks)` for a group of `n` sub-tracks, against the `O(n)` that the weight of
+        // the call declares).
         let count = sub_tracks.len() as u32;
+        let mut removed_ids = alloc::vec::Vec::with_capacity(sub_tracks.len());
         for sub in sub_tracks {
             let id = T::TrackId::combine(group.clone(), sub.clone());
             Tracks::<T, I>::remove(&group, &sub);
             if let Some(origin) = TrackIdToOrigin::<T, I>::take(id) {
                 OriginToTrackId::<T, I>::remove(&origin);
             }
-            TracksIds::<T, I>::mutate(|ids| {
-                ids.remove(&id);
-            });
+            removed_ids.push(id);
         }
+        TracksIds::<T, I>::mutate(|ids| {
+            for id in &removed_ids {
+                ids.remove(id);
+            }
+        });
 
         // Clean up sub-track counter
         NextSubTrackId::<T, I>::remove(&group);
